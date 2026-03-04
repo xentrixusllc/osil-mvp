@@ -6,16 +6,20 @@ from typing import Dict, Any, List, Tuple
 import numpy as np
 import pandas as pd
 
-# Charts
 import matplotlib.pyplot as plt
 
-# ReportLab (Platypus)
 from reportlab.lib.pagesizes import LETTER
 from reportlab.lib.units import inch
 from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.platypus import (
-    SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image, PageBreak
+    SimpleDocTemplate,
+    Paragraph,
+    Spacer,
+    Table,
+    TableStyle,
+    Image,
+    PageBreak,
 )
 from reportlab.lib.enums import TA_RIGHT
 
@@ -66,10 +70,15 @@ def _radar_png(domain_scores: Dict[str, float]) -> BytesIO:
     """
     Crisp, non-stretched radar chart for PDF embedding.
     - Higher DPI for clarity
-    - Slightly taller aspect ratio for a "rounder" look
-    - White background for clean consulting aesthetic
+    - Taller aspect ratio for a rounder look
+    - White background
     """
-    labels = ["Service Resilience", "Change Governance", "Structural Risk Debt™", "Reliability Momentum"]
+    labels = [
+        "Service Resilience",
+        "Change Governance",
+        "Structural Risk Debt™",
+        "Reliability Momentum",
+    ]
     values = [
         float(domain_scores.get("Overall Service Resilience", 0)),
         float(domain_scores.get("Overall Change Governance", 0)),
@@ -81,7 +90,6 @@ def _radar_png(domain_scores: Dict[str, float]) -> BytesIO:
     values_loop = values + values[:1]
     angles_loop = angles + angles[:1]
 
-    # Higher DPI + slightly taller figure => crisper and less “wide”
     fig = plt.figure(figsize=(6.6, 5.1), dpi=260)
     ax = plt.subplot(111, polar=True)
 
@@ -98,10 +106,8 @@ def _radar_png(domain_scores: Dict[str, float]) -> BytesIO:
     ax.set_yticklabels(["20", "40", "60", "80", "100"], fontsize=8)
     ax.set_ylim(0, 100)
 
-    # Clean grid
     ax.grid(color="#D1D5DB", linewidth=0.8, alpha=0.95)
 
-    # Line and subtle fill (consulting style)
     ax.plot(angles_loop, values_loop, linewidth=2.4, color="#0A192F")
     ax.fill(angles_loop, values_loop, alpha=0.12, color="#64FFDA")
 
@@ -115,8 +121,7 @@ def _radar_png(domain_scores: Dict[str, float]) -> BytesIO:
     return buf
 
 
-def _draw_header(canvas, doc, title: str, subtitle: str, as_of: str):
-    """Top band header for every page."""
+def _draw_header(canvas, doc, title: str, subtitle: str, as_of: str) -> None:
     w, h = LETTER
     band_h = 0.85 * inch
 
@@ -144,7 +149,7 @@ def _draw_header(canvas, doc, title: str, subtitle: str, as_of: str):
     canvas.drawString(
         0.75 * inch,
         0.55 * inch,
-        "Operational Stability Intelligence (OSIL™)  •  BVSI™  •  Structural Risk Debt™"
+        "Operational Stability Intelligence (OSIL™)  •  BVSI™  •  Structural Risk Debt™",
     )
     canvas.drawRightString(w - 0.75 * inch, 0.55 * inch, "© Xentrixus • Confidential")
 
@@ -152,40 +157,69 @@ def _draw_header(canvas, doc, title: str, subtitle: str, as_of: str):
 
 
 def build_osil_pdf_report(results: Dict[str, Any]) -> bytes:
-    overall = results["overall"]
-    bvsi = float(overall["BVSI"])
-    posture = results.get("posture", "").strip()
+    overall = results.get("overall", {})
+    bvsi = float(overall.get("BVSI", 0))
+    posture = (results.get("posture", "") or "").strip()
     as_of = results.get("as_of", "")
 
     sip_df = _safe_df(results.get("sip_table"))
     if not sip_df.empty:
         sip_df = sip_df.head(10).copy()
 
+    # -----------------------------
     # Styles
+    # -----------------------------
     styles = getSampleStyleSheet()
+
     base = styles["BodyText"]
     base.fontName = "Helvetica"
     base.fontSize = 10.5
     base.leading = 13.5
     base.textColor = DARK
 
-    h2 = ParagraphStyle("H2", parent=styles["Heading2"], fontName="Helvetica-Bold", fontSize=12.5, textColor=DARK, spaceAfter=6)
-    small = ParagraphStyle("Small", parent=base, fontSize=9.5, leading=12, textColor=MID)
-    right = ParagraphStyle("Right", parent=base, alignment=TA_RIGHT)
-    score_right = ParagraphStyle("ScoreRight", parent=right, fontName="Helvetica-Bold")
+    h2 = ParagraphStyle(
+        "H2",
+        parent=styles["Heading2"],
+        fontName="Helvetica-Bold",
+        fontSize=12.5,
+        textColor=DARK,
+        spaceAfter=6,
+    )
 
-    # Doc
+    small = ParagraphStyle(
+        "Small",
+        parent=base,
+        fontSize=9.5,
+        leading=12,
+        textColor=MID,
+    )
+
+    right = ParagraphStyle(
+        "Right",
+        parent=base,
+        alignment=TA_RIGHT,
+    )
+
+    score_right = ParagraphStyle(
+        "ScoreRight",
+        parent=right,
+        fontName="Helvetica-Bold",
+    )
+
+    # -----------------------------
+    # Document
+    # -----------------------------
     out = BytesIO()
     doc = SimpleDocTemplate(
         out,
         pagesize=LETTER,
         leftMargin=0.75 * inch,
         rightMargin=0.75 * inch,
-        topMargin=1.20 * inch,   # space for header
-        bottomMargin=0.85 * inch # space for footer
+        topMargin=1.20 * inch,
+        bottomMargin=0.85 * inch,
     )
 
-    story = []
+    story: List[Any] = []
 
     # =========================
     # Page 1 — Executive Brief
@@ -194,7 +228,7 @@ def build_osil_pdf_report(results: Dict[str, Any]) -> bytes:
 
     bvsi_block = Paragraph(
         f"<b style='font-size:28px'>{bvsi:.1f}</b><br/><font size='10'>BVSI™ (Business Value Stability Index)</font>",
-        base
+        base,
     )
 
     posture_style = ParagraphStyle("chip", parent=base, textColor=chip_text)
@@ -203,54 +237,61 @@ def build_osil_pdf_report(results: Dict[str, Any]) -> bytes:
         colWidths=[3.6 * inch],
         rowHeights=[0.45 * inch],
     )
-    posture_block.setStyle(TableStyle([
-        ("BACKGROUND", (0,0), (-1,-1), chip_fill),
-        ("BOX", (0,0), (-1,-1), 0.6, BORDER),
-        ("LEFTPADDING", (0,0), (-1,-1), 10),
-        ("RIGHTPADDING", (0,0), (-1,-1), 10),
-        ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
-    ]))
+    posture_block.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, -1), chip_fill),
+                ("BOX", (0, 0), (-1, -1), 0.6, BORDER),
+                ("LEFTPADDING", (0, 0), (-1, -1), 10),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ]
+        )
+    )
 
     top_row = Table([[bvsi_block, posture_block]], colWidths=[2.2 * inch, 4.55 * inch])
-    top_row.setStyle(TableStyle([("VALIGN", (0,0), (-1,-1), "TOP")]))
+    top_row.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP")]))
     story.append(top_row)
     story.append(Spacer(1, 10))
 
     # BVSI interpretation
     interp_lines = "<br/>".join(_bvsi_scale_lines(bvsi))
     interp_tbl = Table([[Paragraph(interp_lines, base)]], colWidths=[6.75 * inch])
-    interp_tbl.setStyle(TableStyle([
-        ("BACKGROUND", (0,0), (-1,-1), LIGHT),
-        ("BOX", (0,0), (-1,-1), 0.6, BORDER),
-        ("LEFTPADDING", (0,0), (-1,-1), 10),
-        ("RIGHTPADDING", (0,0), (-1,-1), 10),
-        ("TOPPADDING", (0,0), (-1,-1), 8),
-        ("BOTTOMPADDING", (0,0), (-1,-1), 8),
-    ]))
+    interp_tbl.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, -1), LIGHT),
+                ("BOX", (0, 0), (-1, -1), 0.6, BORDER),
+                ("LEFTPADDING", (0, 0), (-1, -1), 10),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+                ("TOPPADDING", (0, 0), (-1, -1), 8),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+            ]
+        )
+    )
     story.append(Paragraph("BVSI™ Interpretation", h2))
     story.append(interp_tbl)
     story.append(Spacer(1, 12))
 
-    # Executive Summary
-    summary_text = (
-        f"Your organization is operating in a <b>{posture}</b> stability posture based on a BVSI™ score of <b>{bvsi:.1f}</b>. "
-        "Operational control exists, but recurring instability patterns still create exposure—especially across higher-impact services. "
-        "Targeted Service Improvement Programs (SIPs) in the next 30–60 days can increase executive confidence and preserve customer trust "
-        "during disruption events."
+    # Executive Signal (NEW)
+    signal_text = (
+        f"Operational stability is currently <b>{posture}</b>, with a BVSI™ score of "
+        f"<b>{bvsi:.1f}</b> indicating that governance mechanisms are functioning but "
+        "recurring instability patterns remain across Tier-1 services. Focused "
+        "Service Improvement Programs targeting the highest-impact services will "
+        "deliver the greatest stability improvement over the next <b>30–60 days</b>."
     )
-    # Executive Signal (NEW SECTION)
-
-signal_text = (
-    f"Operational stability is currently <b>{posture}</b>, with a BVSI™ score of "
-    f"<b>{bvsi:.1f}</b> indicating that governance mechanisms are functioning but "
-    f"recurring instability patterns remain across Tier-1 services. Focused "
-    f"Service Improvement Programs targeting the highest-impact services will "
-    f"deliver the greatest stability improvement over the next <b>30–60 days</b>."
-)
-
     story.append(Paragraph("Executive Signal", h2))
     story.append(Paragraph(signal_text, base))
     story.append(Spacer(1, 12))
+
+    # Executive Summary
+    summary_text = (
+        f"Your organization is operating in a <b>{posture}</b> stability posture based on a BVSI™ score of "
+        f"<b>{bvsi:.1f}</b>. Operational control exists, but recurring instability patterns still create exposure—"
+        "especially across higher-impact services. Targeted Service Improvement Programs (SIPs) in the next 30–60 "
+        "days can increase executive confidence and preserve customer trust during disruption events."
+    )
     story.append(Paragraph("Executive Summary", h2))
     story.append(Paragraph(summary_text, base))
     story.append(Spacer(1, 10))
@@ -274,17 +315,19 @@ signal_text = (
 
     radar_buf = _radar_png(overall)
 
-    # Aspect-preserving sizing: avoids stretch + blur
+    # Aspect-preserving sizing (prevents stretch)
     RADAR_W = 6.55 * inch
-    RADAR_ASPECT = 0.78  # slightly taller = neater, less wide
+    RADAR_ASPECT = 0.78
     radar_img = Image(radar_buf, width=RADAR_W, height=RADAR_W * RADAR_ASPECT)
 
     story.append(radar_img)
     story.append(Spacer(1, 6))
-    story.append(Paragraph(
-        "How to read: a balanced shape suggests aligned governance; a collapsed axis indicates a concentrated stability gap.",
-        small
-    ))
+    story.append(
+        Paragraph(
+            "How to read: a balanced shape suggests aligned governance; a collapsed axis indicates a concentrated stability gap.",
+            small,
+        )
+    )
     story.append(Spacer(1, 12))
 
     story.append(Paragraph("Domain Scores (0–100)", h2))
@@ -300,19 +343,27 @@ signal_text = (
         dom_rows.append([Paragraph(name, base), Paragraph(f"{score:.1f}", score_right)])
 
     dom_tbl = Table(dom_rows, colWidths=[4.9 * inch, 1.85 * inch])
-    dom_tbl.setStyle(TableStyle([
-        ("BACKGROUND", (0,0), (-1,0), LIGHT),
-        ("BOX", (0,0), (-1,-1), 0.6, BORDER),
-        ("INNERGRID", (0,0), (-1,-1), 0.4, BORDER),
-        ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
-        ("LEFTPADDING", (0,0), (-1,-1), 10),
-        ("RIGHTPADDING", (0,0), (-1,-1), 10),
-        ("TOPPADDING", (0,0), (-1,-1), 6),
-        ("BOTTOMPADDING", (0,0), (-1,-1), 6),
-    ]))
+    dom_tbl.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, 0), LIGHT),
+                ("BOX", (0, 0), (-1, -1), 0.6, BORDER),
+                ("INNERGRID", (0, 0), (-1, -1), 0.4, BORDER),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 10),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+                ("TOPPADDING", (0, 0), (-1, -1), 6),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+            ]
+        )
+    )
     story.append(dom_tbl)
-    story.append(Spacer(1, 12))
 
+    story.append(PageBreak())
+
+    # =========================
+    # Page 3 — Findings + Actions
+    # =========================
     story.append(Paragraph("Key Stability Findings", h2))
     findings = [
         "Tier-1 services should be treated as the primary stability surface area due to business impact concentration.",
@@ -335,30 +386,42 @@ signal_text = (
     story.append(PageBreak())
 
     # =========================
-    # Page 3 — SIP Priorities (wrapping table)
+    # Page 4 — SIP Priorities
     # =========================
     story.append(Paragraph("Service Improvement Priorities (SIPs)", h2))
-    story.append(Paragraph(
-        "SIPs below are prioritized by Service + Theme and tier exposure. These represent the most actionable stability initiatives "
-        "to improve BVSI™ and reduce avoidable disruption.",
-        base
-    ))
+    story.append(
+        Paragraph(
+            "SIPs below are prioritized by Service + Theme and tier exposure. These represent the most actionable stability initiatives "
+            "to improve BVSI™ and reduce avoidable disruption.",
+            base,
+        )
+    )
     story.append(Spacer(1, 10))
 
     if sip_df.empty:
         story.append(Paragraph("<i>No SIP candidates available from the current dataset.</i>", small))
     else:
-        for col in ["Service", "Service_Tier", "Suggested_Theme", "Priority_Label", "Why_Flagged", "SIP_Priority_Score"]:
+        required_cols = [
+            "Service",
+            "Service_Tier",
+            "Suggested_Theme",
+            "Priority_Label",
+            "Why_Flagged",
+            "SIP_Priority_Score",
+        ]
+        for col in required_cols:
             if col not in sip_df.columns:
                 sip_df[col] = ""
 
         top3 = sip_df.head(3)
         story.append(Paragraph("Top 3 Initiatives to Brief Leadership", h2))
         for _, r in top3.iterrows():
-            story.append(Paragraph(
-                f"• <b>{r['Service']}</b> — {r['Suggested_Theme']} (<b>{r['Priority_Label']}</b>)",
-                base
-            ))
+            story.append(
+                Paragraph(
+                    f"• <b>{r['Service']}</b> — {r['Suggested_Theme']} (<b>{r['Priority_Label']}</b>)",
+                    base,
+                )
+            )
         story.append(Spacer(1, 10))
 
         story.append(Paragraph("SIP Candidates (Top 10)", h2))
@@ -376,10 +439,10 @@ signal_text = (
                 return colors.HexColor("#F3F4F6")
             return WHITE
 
-        bg_colors = [LIGHT]
+        row_bg = [LIGHT]  # header background
+
         for _, r in sip_df.head(10).iterrows():
-            pr = str(r["Priority_Label"])
-            bg_colors.append(priority_bg(pr))
+            row_bg.append(priority_bg(str(r["Priority_Label"])))
 
             score_val = ""
             try:
@@ -388,44 +451,50 @@ signal_text = (
             except Exception:
                 score_val = str(r["SIP_Priority_Score"])
 
-            rows.append([
-                Paragraph(str(r["Service"]), base),
-                Paragraph(str(r["Service_Tier"]), base),
-                Paragraph(str(r["Suggested_Theme"]), base),
-                Paragraph(str(r["Priority_Label"]), base),
-                Paragraph(str(r["Why_Flagged"]), base),
-                Paragraph(score_val, score_right),
-            ])
+            rows.append(
+                [
+                    Paragraph(str(r["Service"]), base),
+                    Paragraph(str(r["Service_Tier"]), base),
+                    Paragraph(str(r["Suggested_Theme"]), base),
+                    Paragraph(str(r["Priority_Label"]), base),
+                    Paragraph(str(r["Why_Flagged"]), base),  # wraps
+                    Paragraph(score_val, score_right),
+                ]
+            )
 
-        col_widths = [1.55*inch, 0.65*inch, 0.95*inch, 1.05*inch, 2.05*inch, 0.70*inch]
+        col_widths = [1.55 * inch, 0.65 * inch, 0.95 * inch, 1.05 * inch, 2.05 * inch, 0.70 * inch]
         sip_tbl = Table(rows, colWidths=col_widths, repeatRows=1)
 
         ts = [
-            ("BOX", (0,0), (-1,-1), 0.6, BORDER),
-            ("INNERGRID", (0,0), (-1,-1), 0.4, BORDER),
-            ("VALIGN", (0,0), (-1,-1), "TOP"),
-            ("LEFTPADDING", (0,0), (-1,-1), 8),
-            ("RIGHTPADDING", (0,0), (-1,-1), 8),
-            ("TOPPADDING", (0,0), (-1,-1), 6),
-            ("BOTTOMPADDING", (0,0), (-1,-1), 6),
-            ("BACKGROUND", (0,0), (-1,0), LIGHT),
+            ("BOX", (0, 0), (-1, -1), 0.6, BORDER),
+            ("INNERGRID", (0, 0), (-1, -1), 0.4, BORDER),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 8),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+            ("TOPPADDING", (0, 0), (-1, -1), 6),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+            ("BACKGROUND", (0, 0), (-1, 0), LIGHT),
         ]
-        for i in range(1, len(bg_colors)):
-            ts.append(("BACKGROUND", (0,i), (-1,i), bg_colors[i]))
+        for i in range(1, len(row_bg)):
+            ts.append(("BACKGROUND", (0, i), (-1, i), row_bg[i]))
 
         sip_tbl.setStyle(TableStyle(ts))
         story.append(sip_tbl)
 
-    # Render
+    # -----------------------------
+    # Render with headers/footers
+    # -----------------------------
     def on_page(canvas, doc_):
         page = canvas.getPageNumber()
         if page == 1:
-            sub = "Operational Stability Intelligence Report"
+            subtitle = "Operational Stability Intelligence Report"
         elif page == 2:
-            sub = "Operational Stability Profile & Diagnostics"
+            subtitle = "Operational Stability Profile & Diagnostics"
+        elif page == 3:
+            subtitle = "Stability Findings & Recommended Actions"
         else:
-            sub = "Service Improvement Priorities (SIPs)"
-        _draw_header(canvas, doc_, "OSIL™ by Xentrixus", sub, as_of)
+            subtitle = "Service Improvement Priorities (SIPs)"
+        _draw_header(canvas, doc_, "OSIL™ by Xentrixus", subtitle, as_of)
 
     doc.build(story, onFirstPage=on_page, onLaterPages=on_page)
 
