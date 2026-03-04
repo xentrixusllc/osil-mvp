@@ -24,7 +24,7 @@ from reportlab.lib.enums import TA_RIGHT
 
 
 # -----------------------------
-# Brand
+# Brand (Consulting Style)
 # -----------------------------
 NAVY = colors.HexColor("#0A192F")
 TEAL = colors.HexColor("#64FFDA")
@@ -35,9 +35,6 @@ BORDER = colors.HexColor("#D1D5DB")
 WHITE = colors.white
 
 
-# -----------------------------
-# Utilities
-# -----------------------------
 def _safe_df(obj) -> pd.DataFrame:
     if obj is None:
         return pd.DataFrame()
@@ -48,16 +45,12 @@ def _safe_df(obj) -> pd.DataFrame:
 
 def _posture_chip_colors(posture: str) -> Tuple[colors.Color, colors.Color]:
     posture = (posture or "").strip()
-
     if posture == "High Confidence Operations":
         return colors.HexColor("#D1FAE5"), colors.HexColor("#065F46")
-
     if posture == "Controlled but Exposed":
         return colors.HexColor("#FEF3C7"), colors.HexColor("#92400E")
-
     if posture == "Fragile Stability":
         return colors.HexColor("#FFE4E6"), colors.HexColor("#9F1239")
-
     return colors.HexColor("#E5E7EB"), colors.HexColor("#111827")
 
 
@@ -72,18 +65,13 @@ def _bvsi_scale_lines(bvsi: float) -> List[str]:
     ]
 
 
-# -----------------------------
-# Radar Chart
-# -----------------------------
 def _radar_png(domain_scores: Dict[str, float]) -> BytesIO:
-
     labels = [
         "Service Resilience",
         "Change Governance",
         "Structural Risk Debt™",
         "Reliability Momentum",
     ]
-
     values = [
         float(domain_scores.get("Overall Service Resilience", 0)),
         float(domain_scores.get("Overall Change Governance", 0)),
@@ -92,11 +80,10 @@ def _radar_png(domain_scores: Dict[str, float]) -> BytesIO:
     ]
 
     angles = np.linspace(0, 2 * np.pi, len(labels), endpoint=False).tolist()
-
     values_loop = values + values[:1]
     angles_loop = angles + angles[:1]
 
-    fig = plt.figure(figsize=(6.5, 5), dpi=260)
+    fig = plt.figure(figsize=(6.6, 5.1), dpi=260)
     ax = plt.subplot(111, polar=True)
 
     fig.patch.set_facecolor("white")
@@ -110,10 +97,9 @@ def _radar_png(domain_scores: Dict[str, float]) -> BytesIO:
 
     ax.set_yticks([20, 40, 60, 80, 100])
     ax.set_yticklabels(["20", "40", "60", "80", "100"], fontsize=8)
-
     ax.set_ylim(0, 100)
 
-    ax.grid(color="#D1D5DB", linewidth=0.8)
+    ax.grid(color="#D1D5DB", linewidth=0.8, alpha=0.95)
 
     ax.plot(angles_loop, values_loop, linewidth=2.4, color="#0A192F")
     ax.fill(angles_loop, values_loop, alpha=0.12, color="#64FFDA")
@@ -121,23 +107,72 @@ def _radar_png(domain_scores: Dict[str, float]) -> BytesIO:
     ax.set_title("Operational Stability Profile", fontsize=11, pad=14)
 
     buf = BytesIO()
-
     plt.tight_layout()
-
     fig.savefig(buf, format="png", bbox_inches="tight", dpi=260)
-
     plt.close(fig)
-
     buf.seek(0)
-
     return buf
 
 
-# -----------------------------
-# Header / Footer
-# -----------------------------
-def _draw_header(canvas, doc, title: str, subtitle: str, as_of: str):
+def _heatmap_png(service_risk_df: pd.DataFrame) -> BytesIO:
+    """
+    Heatmap for Page 4: Service × Stability Risk.
+    Expects columns:
+      Service, Service_Tier,
+      Recurrence_Risk, MTTR_Drag_Risk, Reopen_Churn_Risk, Change_Collision_Risk
+    """
+    df = _safe_df(service_risk_df)
+    if df.empty:
+        # Return a small blank image if no data
+        fig = plt.figure(figsize=(6, 3), dpi=220)
+        plt.text(0.5, 0.5, "No Service Risk data available.", ha="center", va="center")
+        plt.axis("off")
+        buf = BytesIO()
+        plt.tight_layout()
+        fig.savefig(buf, format="png", bbox_inches="tight", dpi=220)
+        plt.close(fig)
+        buf.seek(0)
+        return buf
 
+    metric_cols = ["Recurrence_Risk", "MTTR_Drag_Risk", "Reopen_Churn_Risk", "Change_Collision_Risk"]
+    for c in metric_cols:
+        if c not in df.columns:
+            df[c] = 0.0
+
+    services = df["Service"].astype(str).tolist()
+    tiers = df["Service_Tier"].astype(str).tolist()
+    matrix = df[metric_cols].to_numpy(dtype=float)
+
+    fig = plt.figure(figsize=(9.2, 5.0), dpi=260)
+    ax = plt.gca()
+
+    im = ax.imshow(matrix, aspect="auto", vmin=0, vmax=100)
+
+    ax.set_xticks(np.arange(len(metric_cols)))
+    ax.set_xticklabels(["Recurrence", "MTTR Drag", "Reopen Churn", "Change Collision"], fontsize=9)
+
+    ax.set_yticks(np.arange(len(services)))
+    ax.set_yticklabels([f"{s} ({t})" for s, t in zip(services, tiers)], fontsize=9)
+
+    ax.set_title("Service Stability Heatmap (0–100)", fontsize=11, pad=10)
+
+    for i in range(matrix.shape[0]):
+        for j in range(matrix.shape[1]):
+            ax.text(j, i, f"{matrix[i, j]:.0f}", ha="center", va="center", fontsize=9)
+
+    cbar = plt.colorbar(im, ax=ax, fraction=0.03, pad=0.02)
+    cbar.set_label("Risk Score (0–100)", fontsize=9)
+
+    plt.tight_layout()
+
+    buf = BytesIO()
+    fig.savefig(buf, format="png", bbox_inches="tight", dpi=260)
+    plt.close(fig)
+    buf.seek(0)
+    return buf
+
+
+def _draw_header(canvas, doc, title: str, subtitle: str, as_of: str) -> None:
     w, h = LETTER
     band_h = 0.85 * inch
 
@@ -150,7 +185,6 @@ def _draw_header(canvas, doc, title: str, subtitle: str, as_of: str):
     canvas.rect(0, h - band_h, w, 0.06 * inch, fill=1, stroke=0)
 
     canvas.setFillColor(WHITE)
-
     canvas.setFont("Helvetica-Bold", 18)
     canvas.drawString(0.75 * inch, h - 0.55 * inch, title)
 
@@ -160,44 +194,37 @@ def _draw_header(canvas, doc, title: str, subtitle: str, as_of: str):
     canvas.setFont("Helvetica", 9)
     canvas.drawRightString(w - 0.75 * inch, h - 0.72 * inch, f"As-of: {as_of}")
 
+    # Footer
     canvas.setFillColor(MID)
-
     canvas.setFont("Helvetica", 8.5)
     canvas.drawString(
         0.75 * inch,
         0.55 * inch,
-        "Operational Stability Intelligence (OSIL™) • BVSI™ • Structural Risk Debt™",
+        "Operational Stability Intelligence (OSIL™)  •  BVSI™  •  Structural Risk Debt™",
     )
-
-    canvas.drawRightString(
-        w - 0.75 * inch,
-        0.55 * inch,
-        "© Xentrixus • Confidential",
-    )
+    canvas.drawRightString(w - 0.75 * inch, 0.55 * inch, "© Xentrixus • Confidential")
 
     canvas.restoreState()
 
 
-# -----------------------------
-# Report Builder
-# -----------------------------
 def build_osil_pdf_report(results: Dict[str, Any]) -> bytes:
-
     overall = results.get("overall", {})
     bvsi = float(overall.get("BVSI", 0))
-
     posture = (results.get("posture", "") or "").strip()
-
     as_of = results.get("as_of", "")
 
     sip_df = _safe_df(results.get("sip_table"))
-
     if not sip_df.empty:
-        sip_df = sip_df.head(10)
+        sip_df = sip_df.head(10).copy()
+
+    service_risk_df = _safe_df(results.get("service_risk_df"))
+    if not service_risk_df.empty:
+        service_risk_df = service_risk_df.head(10).copy()
 
     styles = getSampleStyleSheet()
 
     base = styles["BodyText"]
+    base.fontName = "Helvetica"
     base.fontSize = 10.5
     base.leading = 13.5
     base.textColor = DARK
@@ -205,6 +232,7 @@ def build_osil_pdf_report(results: Dict[str, Any]) -> bytes:
     h2 = ParagraphStyle(
         "H2",
         parent=styles["Heading2"],
+        fontName="Helvetica-Bold",
         fontSize=12.5,
         textColor=DARK,
         spaceAfter=6,
@@ -214,6 +242,7 @@ def build_osil_pdf_report(results: Dict[str, Any]) -> bytes:
         "Small",
         parent=base,
         fontSize=9.5,
+        leading=12,
         textColor=MID,
     )
 
@@ -230,7 +259,6 @@ def build_osil_pdf_report(results: Dict[str, Any]) -> bytes:
     )
 
     out = BytesIO()
-
     doc = SimpleDocTemplate(
         out,
         pagesize=LETTER,
@@ -242,22 +270,22 @@ def build_osil_pdf_report(results: Dict[str, Any]) -> bytes:
 
     story: List[Any] = []
 
+    # =========================
+    # Page 1 — Executive Brief
+    # =========================
     chip_fill, chip_text = _posture_chip_colors(posture)
 
-    # BVSI Block
-
     bvsi_block = Paragraph(
-        f"<b style='font-size:28px'>{bvsi:.1f}</b><br/><font size='10'>BVSI™</font>",
+        f"<b style='font-size:28px'>{bvsi:.1f}</b><br/><font size='10'>BVSI™ (Business Value Stability Index)</font>",
         base,
     )
 
     posture_style = ParagraphStyle("chip", parent=base, textColor=chip_text)
-
     posture_block = Table(
         [[Paragraph(f"<b>Operating Posture:</b> {posture}", posture_style)]],
         colWidths=[3.6 * inch],
+        rowHeights=[0.45 * inch],
     )
-
     posture_block.setStyle(
         TableStyle(
             [
@@ -265,21 +293,18 @@ def build_osil_pdf_report(results: Dict[str, Any]) -> bytes:
                 ("BOX", (0, 0), (-1, -1), 0.6, BORDER),
                 ("LEFTPADDING", (0, 0), (-1, -1), 10),
                 ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
             ]
         )
     )
 
     top_row = Table([[bvsi_block, posture_block]], colWidths=[2.2 * inch, 4.55 * inch])
-
+    top_row.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP")]))
     story.append(top_row)
     story.append(Spacer(1, 10))
 
-    # BVSI interpretation
-
     interp_lines = "<br/>".join(_bvsi_scale_lines(bvsi))
-
     interp_tbl = Table([[Paragraph(interp_lines, base)]], colWidths=[6.75 * inch])
-
     interp_tbl.setStyle(
         TableStyle(
             [
@@ -287,140 +312,223 @@ def build_osil_pdf_report(results: Dict[str, Any]) -> bytes:
                 ("BOX", (0, 0), (-1, -1), 0.6, BORDER),
                 ("LEFTPADDING", (0, 0), (-1, -1), 10),
                 ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+                ("TOPPADDING", (0, 0), (-1, -1), 8),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
             ]
         )
     )
-
     story.append(Paragraph("BVSI™ Interpretation", h2))
     story.append(interp_tbl)
     story.append(Spacer(1, 12))
 
-    # -----------------------------
     # Executive Signal (short)
-    # -----------------------------
-
     signal_text = (
         f"Operational stability is <b>{posture}</b>, with recurring disruptions in "
         "Tier-1 services limiting reliability gains despite strong governance. "
-        "Immediate Service Improvement Programs targeting the highest-impact "
-        "services will deliver the fastest improvement in operational stability."
+        "Immediate Service Improvement Programs targeting the highest-impact services "
+        "will deliver the fastest improvement in operational stability."
     )
-
     story.append(Paragraph("Executive Signal", h2))
     story.append(Paragraph(signal_text, base))
     story.append(Spacer(1, 12))
 
-    # -----------------------------
     # Executive Summary (expanded)
-    # -----------------------------
-
     summary_text = (
-        f"Your organization is operating in a <b>{posture}</b> stability posture "
-        f"with a BVSI™ score of <b>{bvsi:.1f}</b>. While governance mechanisms "
-        "such as change management appear strong, recurring incident patterns "
-        "and structural risk debt across Tier-1 services continue to create "
-        "operational exposure. These patterns suggest that instability is driven "
-        "less by governance breakdowns and more by underlying reliability "
-        "challenges within critical services. Targeted Service Improvement "
-        "Programs focused on the highest-impact services can materially reduce "
-        "recurrence, improve recovery performance, and strengthen operational "
-        "confidence over the next <b>30–60 days</b>."
+        f"Your organization is operating in a <b>{posture}</b> stability posture with a BVSI™ score of "
+        f"<b>{bvsi:.1f}</b>. While governance mechanisms such as change management appear strong, "
+        "recurring incident patterns and structural risk debt across Tier-1 services continue to create "
+        "operational exposure. These patterns suggest that instability is driven less by governance "
+        "breakdowns and more by underlying reliability challenges within critical services. "
+        "Targeted Service Improvement Programs focused on the highest-impact services can materially "
+        "reduce recurrence, improve recovery performance, and strengthen operational confidence over "
+        "the next <b>30–60 days</b>."
     )
-
     story.append(Paragraph("Executive Summary", h2))
     story.append(Paragraph(summary_text, base))
     story.append(Spacer(1, 10))
 
     bullets = [
-        "Treat Tier-1 services as the primary stability surface area.",
-        "Convert recurring incidents into prevention programs.",
-        "Strong governance should now translate into reliability gains.",
+        "Treat Tier-1 services as the primary stability surface area due to business and customer impact concentration.",
+        "Convert recurring incidents into prevention programs (SIPs) with owners, due dates, and verification steps.",
+        "Strong governance should now translate into reliability gains and a measurable BVSI™ uplift.",
     ]
-
-    story.append(Paragraph("Key Takeaways", h2))
-
+    story.append(Paragraph("Key Takeaways (Leadership View)", h2))
     for b in bullets:
         story.append(Paragraph(f"• {b}", base))
 
     story.append(PageBreak())
 
-    # Radar Page
-
-    story.append(Paragraph("Operational Stability Profile", h2))
+    # =========================
+    # Page 2 — Radar + Diagnostics
+    # =========================
+    story.append(Paragraph("Operational Stability Profile (Radar)", h2))
 
     radar_buf = _radar_png(overall)
-
-    radar_img = Image(radar_buf, width=6.5 * inch, height=4.5 * inch)
+    RADAR_W = 6.55 * inch
+    RADAR_ASPECT = 0.78
+    radar_img = Image(radar_buf, width=RADAR_W, height=RADAR_W * RADAR_ASPECT)
 
     story.append(radar_img)
+    story.append(Spacer(1, 6))
+    story.append(
+        Paragraph(
+            "How to read: a balanced shape suggests aligned governance; a collapsed axis indicates a concentrated stability gap.",
+            small,
+        )
+    )
+    story.append(Spacer(1, 12))
+
+    story.append(Paragraph("Domain Scores (0–100)", h2))
+    domains = [
+        ("Service Resilience", float(overall.get("Overall Service Resilience", 0))),
+        ("Change Governance", float(overall.get("Overall Change Governance", 0))),
+        ("Structural Risk Debt™", float(overall.get("Overall Structural Risk Debt", 0))),
+        ("Reliability Momentum", float(overall.get("Overall Reliability Momentum", 0))),
+    ]
+
+    dom_rows = [[Paragraph("<b>Domain</b>", base), Paragraph("<b>Score (0–100)</b>", right)]]
+    for name, score in domains:
+        dom_rows.append([Paragraph(name, base), Paragraph(f"{score:.1f}", score_right)])
+
+    dom_tbl = Table(dom_rows, colWidths=[4.9 * inch, 1.85 * inch])
+    dom_tbl.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, 0), LIGHT),
+                ("BOX", (0, 0), (-1, -1), 0.6, BORDER),
+                ("INNERGRID", (0, 0), (-1, -1), 0.4, BORDER),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 10),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+                ("TOPPADDING", (0, 0), (-1, -1), 6),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+            ]
+        )
+    )
+    story.append(dom_tbl)
+
+    story.append(PageBreak())
+
+    # =========================
+    # Page 3 — SIP Priorities
+    # =========================
+    story.append(Paragraph("Service Improvement Priorities (SIPs)", h2))
+    story.append(
+        Paragraph(
+            "SIPs below are prioritized by Service + Theme and tier exposure. These represent the most actionable stability initiatives "
+            "to improve BVSI™ and reduce avoidable disruption.",
+            base,
+        )
+    )
+    story.append(Spacer(1, 10))
+
+    if sip_df.empty:
+        story.append(Paragraph("<i>No SIP candidates available from the current dataset.</i>", small))
+    else:
+        required_cols = ["Service", "Service_Tier", "Suggested_Theme", "Priority_Label", "Why_Flagged", "SIP_Priority_Score"]
+        for col in required_cols:
+            if col not in sip_df.columns:
+                sip_df[col] = ""
+
+        top3 = sip_df.head(3)
+        story.append(Paragraph("Top 3 Initiatives to Brief Leadership", h2))
+        for _, r in top3.iterrows():
+            story.append(
+                Paragraph(
+                    f"• <b>{r['Service']}</b> — {r['Suggested_Theme']} (<b>{r['Priority_Label']}</b>)",
+                    base,
+                )
+            )
+        story.append(Spacer(1, 10))
+
+        story.append(Paragraph("SIP Candidates (Top 10)", h2))
+
+        header = ["Service", "Tier", "Theme", "Priority", "Why Flagged", "Score"]
+        rows = [[Paragraph(f"<b>{h}</b>", base) for h in header]]
+
+        for _, r in sip_df.head(10).iterrows():
+            score_val = ""
+            try:
+                if str(r["SIP_Priority_Score"]).strip() != "":
+                    score_val = f"{float(r['SIP_Priority_Score']):.2f}"
+            except Exception:
+                score_val = str(r["SIP_Priority_Score"])
+
+            rows.append(
+                [
+                    Paragraph(str(r["Service"]), base),
+                    Paragraph(str(r["Service_Tier"]), base),
+                    Paragraph(str(r["Suggested_Theme"]), base),
+                    Paragraph(str(r["Priority_Label"]), base),
+                    Paragraph(str(r["Why_Flagged"]), base),
+                    Paragraph(score_val, score_right),
+                ]
+            )
+
+        col_widths = [1.55 * inch, 0.65 * inch, 0.95 * inch, 1.05 * inch, 2.05 * inch, 0.70 * inch]
+        sip_tbl = Table(rows, colWidths=col_widths, repeatRows=1)
+
+        sip_tbl.setStyle(
+            TableStyle(
+                [
+                    ("BOX", (0, 0), (-1, -1), 0.6, BORDER),
+                    ("INNERGRID", (0, 0), (-1, -1), 0.4, BORDER),
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 8),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+                    ("TOPPADDING", (0, 0), (-1, -1), 6),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+                    ("BACKGROUND", (0, 0), (-1, 0), LIGHT),
+                ]
+            )
+        )
+
+        story.append(sip_tbl)
+
+    story.append(PageBreak())
+
+    # =========================
+    # Page 4 — Service Stability Heatmap (NEW)
+    # =========================
+    story.append(Paragraph("Service Stability Heatmap (Top 10 Services)", h2))
+    story.append(
+        Paragraph(
+            "This heatmap highlights where stability risk is concentrated by service across four executive-relevant risk drivers. "
+            "Scores are normalized 0–100 (higher = more risk).",
+            base,
+        )
+    )
+    story.append(Spacer(1, 10))
+
+    heat_buf = _heatmap_png(service_risk_df)
+    heat_img = Image(heat_buf, width=6.75 * inch, height=4.05 * inch)
+    story.append(heat_img)
+    story.append(Spacer(1, 10))
 
     story.append(
         Paragraph(
-            "Balanced shape indicates aligned governance. Collapsed axis highlights stability gaps.",
+            "<b>How to read:</b> Focus first on services with consistently high risk across multiple columns (recurrence + MTTR drag + churn). "
+            "Those services typically produce the highest BVSI™ volatility and should be prioritized for SIP execution.",
             small,
         )
     )
 
-    story.append(PageBreak())
-
-    # SIP Table
-
-    story.append(Paragraph("Service Improvement Priorities (SIPs)", h2))
-
-    if sip_df.empty:
-
-        story.append(Paragraph("No SIP candidates available.", small))
-
-    else:
-
-        header = ["Service", "Tier", "Theme", "Priority", "Why Flagged", "Score"]
-
-        rows = [header]
-
-        for _, r in sip_df.iterrows():
-
-            rows.append(
-                [
-                    str(r.get("Service", "")),
-                    str(r.get("Service_Tier", "")),
-                    str(r.get("Suggested_Theme", "")),
-                    str(r.get("Priority_Label", "")),
-                    str(r.get("Why_Flagged", "")),
-                    str(r.get("SIP_Priority_Score", "")),
-                ]
-            )
-
-        sip_table = Table(rows, repeatRows=1)
-
-        sip_table.setStyle(
-            TableStyle(
-                [
-                    ("BACKGROUND", (0, 0), (-1, 0), LIGHT),
-                    ("BOX", (0, 0), (-1, -1), 0.6, BORDER),
-                    ("INNERGRID", (0, 0), (-1, -1), 0.4, BORDER),
-                ]
-            )
-        )
-
-        story.append(sip_table)
-
+    # -----------------------------
+    # Render with headers/footers
+    # -----------------------------
     def on_page(canvas, doc_):
-
         page = canvas.getPageNumber()
-
         if page == 1:
             subtitle = "Operational Stability Intelligence Report"
-
         elif page == 2:
-            subtitle = "Operational Stability Profile"
-
+            subtitle = "Operational Stability Profile & Diagnostics"
+        elif page == 3:
+            subtitle = "Service Improvement Priorities (SIPs)"
         else:
-            subtitle = "Service Improvement Priorities"
-
+            subtitle = "Service Stability Heatmap (Top 10)"
         _draw_header(canvas, doc_, "OSIL™ by Xentrixus", subtitle, as_of)
 
     doc.build(story, onFirstPage=on_page, onLaterPages=on_page)
 
     out.seek(0)
-
     return out.getvalue()
