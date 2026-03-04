@@ -1,11 +1,16 @@
 import streamlit as st
 import pandas as pd
+from pathlib import Path
+import os
 import plotly.express as px
+
+# IMPORTANT: your repo has osil_engine.py (not osil_engine.py)
 from osil_engine import run_osil
 
-st.set_page_config(page_title="Xentrixus OSIL MVP", layout="wide")
+APP_TITLE = "Xentrixus OSIL — Stability Intelligence MVP"
 
-st.title("Xentrixus OSIL — Stability Intelligence MVP")
+st.set_page_config(page_title=APP_TITLE, layout="wide")
+st.title(APP_TITLE)
 st.caption("Upload ITSM exports → get BVSI, Structural Risk Debt™, SIP priorities, and executive interpretation.")
 
 with st.expander("CSV Template (Required Columns)", expanded=False):
@@ -15,25 +20,33 @@ with st.expander("CSV Template (Required Columns)", expanded=False):
         language="text"
     )
 
-uploaded = st.file_uploader("Upload your ITSM CSV export", type=["csv"])
+with st.expander("Demo Data Diagnostics (temporary)", expanded=False):
+    st.write("Working directory:", os.getcwd())
+    st.write("Repo root files:", [p.name for p in Path(".").iterdir()])
+    if Path("data").exists():
+        st.write("./data files:", [p.name for p in Path("data").iterdir()])
+    else:
+        st.error("Folder './data' NOT found.")
 
-if uploaded:
-    df = pd.read_csv(uploaded)
-    try:
-        results = run_osil(df)
-    except Exception as e:
-        st.error(f"OSIL could not run: {e}")
-        st.stop()
+def load_demo_single():
+    """
+    Your current engine expects ONE dataframe with Change_Related_Flag column.
+    So we will load demo_incidents.csv only (it already contains the required columns).
+    """
+    p = Path("data") / "demo_incidents.csv"
+    if not p.exists():
+        raise FileNotFoundError(f"Missing {p}. Please ensure it exists in the repo.")
+    return pd.read_csv(p)
 
+def render_results(results: dict):
     bvsi = results["overall"]["BVSI"]
     posture = results["posture"]
 
-    col1, col2, col3 = st.columns(3)
-    col1.metric("BVSI", f"{bvsi:.1f}")
-    col2.metric("Operating Posture", posture)
-    col3.metric("As-of Date", results["as_of"])
+    c1, c2, c3 = st.columns(3)
+    c1.metric("BVSI", f"{bvsi:.1f}")
+    c2.metric("Operating Posture", posture)
+    c3.metric("As-of Date", results["as_of"])
 
-    # Interpretation blocks
     st.subheader("Executive Interpretation")
     if bvsi < 40:
         st.write("Your organization operates in a reactive stability posture. Executive confidence and customer trust exposure may be materially constrained during disruption events.")
@@ -46,12 +59,7 @@ if uploaded:
 
     st.divider()
 
-    svc = results["service_table"].copy()
-
-    # Radar (diamond) via long-form + polar
     st.subheader("Stability Domain Profile (Radar)")
-    radar = svc[["Service","Service_Resilience","Change_Governance","Structural_Risk_Debt","Reliability_Momentum"]].copy()
-    # show overall radar instead of per service
     overall = results["overall"]
     radar_overall = pd.DataFrame({
         "Domain": ["Service Resilience","Change Governance","Structural Risk Debt","Reliability Momentum"],
@@ -65,20 +73,30 @@ if uploaded:
     fig_radar = px.line_polar(radar_overall, r="Score", theta="Domain", line_close=True)
     st.plotly_chart(fig_radar, use_container_width=True)
 
-    st.subheader("Risk Concentration Heatmap (Service × Domain)")
-    heat = svc.set_index(["Service","Service_Tier"])[["Service_Resilience","Change_Governance","Structural_Risk_Debt","Reliability_Momentum"]]
-    heat_reset = heat.reset_index()
-    heat_melt = heat_reset.melt(id_vars=["Service","Service_Tier"], var_name="Domain", value_name="Score")
-    fig_heat = px.density_heatmap(
-        heat_melt, x="Domain", y="Service", z="Score",
-        color_continuous_scale="RdYlGn"
-    )
-    st.plotly_chart(fig_heat, use_container_width=True)
-
     st.subheader("Top SIP Candidates (Next 30 Days)")
     st.dataframe(results["sip_table"], use_container_width=True)
 
-    with st.expander("Full Service Table (for analysts)", expanded=False):
-        st.dataframe(svc, use_container_width=True)
-else:
-    st.info("Upload a CSV to run OSIL.")
+    with st.expander("Analyst View (Service Table)", expanded=False):
+        st.dataframe(results["service_table"], use_container_width=True)
+
+st.subheader("Run Options")
+
+colA, colB = st.columns(2)
+with colA:
+    if st.button("Run with Demo Data"):
+        try:
+            demo_df = load_demo_single()
+            results = run_osil(demo_df)
+            render_results(results)
+        except Exception as e:
+            st.error(f"Demo run failed: {e}")
+
+with colB:
+    uploaded = st.file_uploader("Upload your ITSM CSV export", type=["csv"])
+    if uploaded and st.button("Run OSIL with Uploaded CSV"):
+        try:
+            df = pd.read_csv(uploaded)
+            results = run_osil(df)
+            render_results(results)
+        except Exception as e:
+            st.error(f"Run failed: {e}")
