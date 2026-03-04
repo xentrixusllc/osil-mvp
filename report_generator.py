@@ -248,9 +248,9 @@ signal_text = (
     f"deliver the greatest stability improvement over the next <b>30–60 days</b>."
 )
 
-story.append(Paragraph("Executive Signal", h2))
-story.append(Paragraph(signal_text, base))
-story.append(Spacer(1, 12))
+    story.append(Paragraph("Executive Signal", h2))
+    story.append(Paragraph(signal_text, base))
+    story.append(Spacer(1, 12))
     story.append(Paragraph("Executive Summary", h2))
     story.append(Paragraph(summary_text, base))
     story.append(Spacer(1, 10))
