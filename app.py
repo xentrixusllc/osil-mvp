@@ -1,224 +1,223 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import plotly.express as px
+import matplotlib.pyplot as plt
+from io import BytesIO
 
-from osil_engine import run_osil
+from osil_engine import run_osil, REQUIRED_COLUMNS
 from report_generator import build_osil_pdf_report
 
-APP_TITLE = "OSIL by Xentrixus"
 
-st.set_page_config(page_title=APP_TITLE, layout="wide")
-st.title(APP_TITLE)
-st.caption("Upload ITSM exports → get BVSI, Structural Risk Debt™, SIP priorities, and executive interpretation.")
-
-# ---------------------------
-# Helpers
-# ---------------------------
-def posture_from_bvsi(bvsi: float) -> str:
-    if bvsi < 40:
-        return "Reactive Instability"
-    if bvsi < 60:
-        return "Fragile Stability"
-    if bvsi < 80:
-        return "Controlled but Exposed"
-    return "High Confidence Operations"
+st.set_page_config(
+    page_title="OSIL™ by Xentrixus",
+    layout="wide",
+)
 
 
-def posture_exec_meaning(posture: str) -> str:
-    meanings = {
-        "Reactive Instability": "Operational performance is unpredictable. Executive confidence and customer trust are exposed during disruption events.",
-        "Fragile Stability": "Basic control exists, but recurring instability remains active. Confidence is vulnerable under peak demand or change periods.",
-        "Controlled but Exposed": "Operations are stable enough to grow, but persistent structural drivers still create avoidable risk. Targeted SIPs will raise confidence and trust.",
-        "High Confidence Operations": "Stability is predictable and governed. The organization can scale change while preserving service experience and trust.",
-    }
-    return meanings.get(posture, "")
+APP_TITLE = "Xentrixus OSIL™ — Stability Intelligence MVP"
+APP_SUB = "Upload ITSM exports → get BVSI™, Structural Risk Debt™, SIP priorities, and executive interpretation."
 
 
-def bvsi_legend_markdown(bvsi: float) -> str:
-    return f"""
-**BVSI Scale (Business Value Stability Index)**  
-- **80–100:** High Confidence Operations  
-- **60–79:** Controlled but Exposed  
-- **40–59:** Fragile Stability  
-- **0–39:** Reactive Instability  
-
-**Current BVSI:** **{bvsi:.1f}**
-"""
-
-
-def recommended_actions(overall: dict) -> list[str]:
-    """
-    Generates 3 exec-ready actions based on weakest overall domain.
-    """
-    domain_map = {
-        "Overall Service Resilience": "Service Resilience",
-        "Overall Change Governance": "Change Governance",
-        "Overall Structural Risk Debt": "Structural Risk Debt™",
-        "Overall Reliability Momentum": "Reliability Momentum",
-    }
-
-    # Identify weakest domain
-    candidates = {k: overall.get(k, np.nan) for k in domain_map.keys()}
-    candidates = {k: v for k, v in candidates.items() if pd.notna(v)}
-    weakest_key = min(candidates, key=candidates.get) if candidates else "Overall Structural Risk Debt"
-    weakest = domain_map.get(weakest_key, "Structural Risk Debt™")
-
-    if weakest == "Change Governance":
-        return [
-            "Launch a 30-day SIP on Tier 1 services with high change-induced instability (tighten risk checks and deployment discipline).",
-            "Establish a focused change review for repeat offenders: enforce rollback readiness, test coverage, and owner accountability.",
-            "Reduce recovery time by pre-defining runbooks and escalation paths for the highest-impact failure modes."
-        ]
-    if weakest == "Service Resilience":
-        return [
-            "Launch a Tier 1 resilience SIP: reduce MTTR drivers via runbooks, alert quality, and ownership clarity.",
-            "Cut reopen churn by strengthening closure quality (verification steps, defect linkage, and prevention tasks).",
-            "Stabilize the highest-impact failure theme (e.g., performance/login) with targeted engineering fixes and monitoring."
-        ]
-    if weakest == "Reliability Momentum":
-        return [
-            "Treat recurring instability as a managed backlog: build a weekly reliability cadence tied to Tier 1 outcomes.",
-            "Prioritize prevention over speed: address the top recurrence drivers behind repeat incidents and reopens.",
-            "Create visible stability commitments (top SIPs, owners, due dates) to restore executive confidence through predictability."
-        ]
-
-    # Default: Structural Risk Debt™
-    return [
-        "Launch SIPs against recurring instability clusters in Tier 1 services (reduce repeat incidents and reopen churn).",
-        "Strengthen closure-to-prevention flow: convert repeat themes into corrective actions with owners, due dates, and verification steps.",
-        "Tighten change discipline for high-impact services to reduce instability introduced by releases and configuration shifts."
-    ]
-
-
-# ---------------------------
-# Data Safety Note
-# ---------------------------
-with st.expander("Data Safety (MVP)", expanded=False):
-    st.write(
-        "This MVP is designed for early demos and pilots. It processes data in-memory for scoring and visualization. "
-        "Avoid uploading sensitive personal data. Use sanitized exports during pilots."
-    )
-
-# ---------------------------
-# CSV Template
-# ---------------------------
-with st.expander("CSV Template (Required Columns)", expanded=False):
-    st.markdown("Minimum required columns:")
-    st.code(
-        "Service,Service_Tier,Opened_Date,Closed_Date,Priority,Reopened_Flag,Category\n"
-        "Customer Portal,Tier 1,2026-01-05 08:00,2026-01-05 12:30,P2,0,Performance",
-        language="text"
-    )
-    st.markdown("Optional columns supported:")
-    st.code(
-        "Resolved_Date,Change_Related_Flag\n"
-        "Resolved_Date is preferred for MTTR when present. Change_Related_Flag defaults to 0 if missing.",
-        language="text"
-    )
-
-# ---------------------------
-# Demo loader
-# ---------------------------
-def load_demo():
+def _load_demo_csv() -> pd.DataFrame:
+    # Demo incidents data path in repo
+    # If you later add other demo files, we can extend this.
     return pd.read_csv("data/demo_incidents.csv")
 
 
-# ---------------------------
-# Render Results
-# ---------------------------
-def render_results(results: dict):
-    overall = results["overall"]
-    bvsi = float(overall["BVSI"])
-    posture = results.get("posture") or posture_from_bvsi(bvsi)
+def _required_template_text() -> str:
+    cols = ",".join(REQUIRED_COLUMNS)
+    example = "Customer Portal,Tier 1,2026-01-05,2026-01-06,P2,0,1,Performance"
+    return f"{cols}\n{example}"
 
-    # Summary metrics
-    c1, c2, c3 = st.columns(3)
-    c1.metric("BVSI", f"{bvsi:.1f}")
-    c2.metric("Operating Posture", posture)
-    c3.metric("As-of Date", results.get("as_of", ""))
 
-    # BVSI meaning (exec-facing)
-    st.info(bvsi_legend_markdown(bvsi))
-    st.write(f"**What this means for leadership:** {posture_exec_meaning(posture)}")
+def _render_heatmap(service_risk_df: pd.DataFrame) -> None:
+    st.subheader("Service Stability Heatmap (Top 10 Services by Risk)")
+    st.caption("Executive view: Service × Stability Risk (Recurrence, MTTR Drag, Reopen Churn, Change Collision).")
 
-    # Executive Interpretation
-    st.subheader("Executive Interpretation")
-    st.write(
-        "Your organization’s stability posture reflects how consistently services deliver outcomes without disruption. "
-        "BVSI consolidates stability performance across resilience, change governance, structural risk exposure, and reliability momentum."
+    if service_risk_df is None or service_risk_df.empty:
+        st.info("No service risk data available yet.")
+        return
+
+    # Heatmap matrix
+    metric_cols = ["Recurrence_Risk", "MTTR_Drag_Risk", "Reopen_Churn_Risk", "Change_Collision_Risk"]
+    display_cols = ["Service", "Service_Tier"] + metric_cols + ["Total_Service_Risk"]
+
+    show = service_risk_df.copy()
+    show = show[display_cols]
+
+    # Prepare matrix values
+    services = show["Service"].tolist()
+    tiers = show["Service_Tier"].tolist()
+
+    matrix = show[metric_cols].to_numpy(dtype=float)
+
+    # Plot
+    fig = plt.figure(figsize=(10, 5), dpi=160)
+    ax = plt.gca()
+
+    # Use a built-in colormap; values 0-100
+    im = ax.imshow(matrix, aspect="auto", vmin=0, vmax=100)
+
+    ax.set_xticks(np.arange(len(metric_cols)))
+    ax.set_xticklabels(["Recurrence", "MTTR Drag", "Reopen Churn", "Change Collision"], rotation=0)
+
+    ax.set_yticks(np.arange(len(services)))
+    ax.set_yticklabels([f"{s} ({t})" for s, t in zip(services, tiers)])
+
+    ax.set_title("Service × Stability Risk (0–100)")
+
+    # Annotate values
+    for i in range(matrix.shape[0]):
+        for j in range(matrix.shape[1]):
+            ax.text(j, i, f"{matrix[i, j]:.0f}", ha="center", va="center", fontsize=9)
+
+    cbar = plt.colorbar(im, ax=ax, fraction=0.025, pad=0.02)
+    cbar.set_label("Risk Score (0–100)")
+
+    plt.tight_layout()
+    st.pyplot(fig)
+
+    # Show the table under the heatmap
+    st.markdown("**Top 10 Services — Risk Breakdown**")
+    st.dataframe(show, use_container_width=True)
+
+    # Download CSV
+    csv_bytes = show.to_csv(index=False).encode("utf-8")
+    st.download_button(
+        label="Download Service Risk Table (CSV)",
+        data=csv_bytes,
+        file_name="osil_service_risk_top10.csv",
+        mime="text/csv",
     )
 
-    # Recommended next actions (auto)
-    st.subheader("Recommended Next Actions (Next 30 Days)")
-    for i, action in enumerate(recommended_actions(overall), start=1):
-        st.write(f"{i}. {action}")
 
-    st.divider()
+def main():
+    st.title(APP_TITLE)
+    st.write(APP_SUB)
 
-    # Radar chart
-    st.subheader("Operational Stability Profile (Radar)")
-    radar_overall = pd.DataFrame({
-        "Domain": ["Service Resilience", "Change Governance", "Structural Risk Debt™", "Reliability Momentum"],
-        "Score": [
-            overall.get("Overall Service Resilience", 0),
-            overall.get("Overall Change Governance", 0),
-            overall.get("Overall Structural Risk Debt", 0),
-            overall.get("Overall Reliability Momentum", 0),
-        ]
-    })
-    fig_radar = px.line_polar(radar_overall, r="Score", theta="Domain", line_close=True)
-    st.plotly_chart(fig_radar, use_container_width=True)
-    st.caption("How to read: a balanced shape suggests aligned governance; a collapsed axis indicates a concentrated stability gap.")
+    with st.expander("CSV Template (Required Columns)", expanded=False):
+        st.code(_required_template_text())
 
-    # SIP candidates
-    st.subheader("Top SIP Candidates (Next 30 Days)")
-    st.dataframe(results["sip_table"], use_container_width=True)
+    st.markdown("### Run Options")
+    mode = st.radio("Choose a run mode", ["Run with Demo Data", "Upload a CSV"], horizontal=True)
 
-    # Executive Report download (PDF)
-    st.subheader("Executive Report")
-    st.caption("Download a consulting-style stability report for leadership review.")
+    df = None
+
+    if mode == "Run with Demo Data":
+        if st.button("Run with Demo Data"):
+            try:
+                df = _load_demo_csv()
+                st.success("Demo data loaded. Running OSIL…")
+            except Exception as e:
+                st.error(f"Failed to load demo data: {e}")
+                return
+
+    else:
+        uploaded = st.file_uploader("Upload your ITSM CSV export", type=["csv"])
+        if uploaded is not None:
+            try:
+                df = pd.read_csv(uploaded)
+                st.success("Upload received. Running OSIL…")
+            except Exception as e:
+                st.error(f"Could not read CSV: {e}")
+                return
+
+    # Run only if df is present
+    if df is None:
+        st.info("Choose Demo Data or Upload a CSV to run OSIL.")
+        return
+
+    # Run OSIL
     try:
-        pdf_bytes = build_osil_pdf_report(results)
-        st.download_button(
-            label="Download Executive Report (PDF)",
-            data=pdf_bytes,
-            file_name=f"OSIL_Executive_Report_{results.get('as_of','')}.pdf",
-            mime="application/pdf",
-        )
+        results = run_osil(df)
     except Exception as e:
-        st.error(f"Report generation failed: {e}")
+        st.error(f"Run failed: {e}")
+        return
 
-    # Analyst view
-    with st.expander("Analyst View (Service Table)", expanded=False):
-        st.dataframe(results["service_table"], use_container_width=True)
+    overall = results.get("overall", {})
+    posture = results.get("posture", "")
+    as_of = results.get("as_of", "")
 
-# ---------------------------
-# Run Options (clear two-path UX)
-# ---------------------------
-st.subheader("Run Options")
+    # KPI Row
+    c1, c2, c3 = st.columns([1, 2, 1])
 
-left, right = st.columns(2)
+    with c1:
+        st.metric("BVSI™", f"{overall.get('BVSI', 0):.1f}" if "BVSI" in overall else "—")
 
-with left:
-    st.markdown("### Explore with Demo Data")
-    st.caption("One click to see OSIL outputs using sample ITSM data.")
-    if st.button("Run Demo Analysis"):
+    with c2:
+        st.metric("Operating Posture", posture if posture else "—")
+
+    with c3:
+        st.metric("As-of Date", as_of if as_of else "—")
+
+    st.markdown("---")
+
+    # Radar + Domains
+    st.subheader("Operational Stability Profile (Radar)")
+
+    # Build a simple radar in-app as well (optional but useful)
+    labels = ["Service Resilience", "Change Governance", "Structural Risk Debt™", "Reliability Momentum"]
+    values = [
+        float(overall.get("Overall Service Resilience", 0)),
+        float(overall.get("Overall Change Governance", 0)),
+        float(overall.get("Overall Structural Risk Debt", 0)),
+        float(overall.get("Overall Reliability Momentum", 0)),
+    ]
+
+    angles = np.linspace(0, 2 * np.pi, len(labels), endpoint=False).tolist()
+    values_loop = values + values[:1]
+    angles_loop = angles + angles[:1]
+
+    fig = plt.figure(figsize=(6.8, 5), dpi=160)
+    ax = plt.subplot(111, polar=True)
+    ax.set_theta_offset(np.pi / 2)
+    ax.set_theta_direction(-1)
+
+    ax.set_xticks(angles)
+    ax.set_xticklabels(labels, fontsize=10)
+    ax.set_yticks([20, 40, 60, 80, 100])
+    ax.set_yticklabels(["20", "40", "60", "80", "100"], fontsize=9)
+    ax.set_ylim(0, 100)
+
+    ax.plot(angles_loop, values_loop, linewidth=2)
+    ax.fill(angles_loop, values_loop, alpha=0.10)
+
+    st.pyplot(fig)
+
+    # NEW: Service Stability Heatmap (Option 1: Top 10)
+    st.markdown("---")
+    _render_heatmap(results.get("service_risk_df"))
+
+    # SIP Candidates
+    st.markdown("---")
+    st.subheader("Top SIP Candidates (Next 30 Days)")
+    sip_df = results.get("sip_table")
+    if sip_df is None or len(sip_df) == 0:
+        st.info("No SIP candidates generated.")
+    else:
+        st.dataframe(sip_df, use_container_width=True)
+
+    # Analyst Review
+    st.markdown("---")
+    st.subheader("Executive Interpretation")
+    st.write(results.get("analyst_review", ""))
+
+    # Report Download
+    st.markdown("---")
+    st.subheader("Executive Report (PDF)")
+    if st.button("Generate Executive Report (PDF)"):
         try:
-            demo_df = load_demo()
-            results = run_osil(demo_df)
-            render_results(results)
+            pdf_bytes = build_osil_pdf_report(results)
+            st.download_button(
+                label="Download OSIL Executive Report (PDF)",
+                data=pdf_bytes,
+                file_name=f"OSIL_Executive_Report_{as_of or 'latest'}.pdf",
+                mime="application/pdf",
+            )
+            st.success("Report generated.")
         except Exception as e:
-            st.error(f"Demo run failed: {e}")
+            st.error(f"Report generation failed: {e}")
 
-with right:
-    st.markdown("### Analyze Your Data")
-    st.caption("Upload a CSV export and generate your stability profile.")
-    uploaded = st.file_uploader("Upload your ITSM CSV export", type=["csv"])
-    if uploaded and st.button("Run OSIL with Uploaded CSV"):
-        try:
-            df = pd.read_csv(uploaded)
-            results = run_osil(df)
-            render_results(results)
-        except Exception as e:
-            st.error(f"Run failed: {e}")
+
+if __name__ == "__main__":
+    main()
