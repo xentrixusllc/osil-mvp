@@ -17,7 +17,7 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.platypus import (
     SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image, PageBreak
 )
-from reportlab.lib.enums import TA_LEFT, TA_RIGHT
+from reportlab.lib.enums import TA_RIGHT
 
 
 # -----------------------------
@@ -63,6 +63,12 @@ def _bvsi_scale_lines(bvsi: float) -> List[str]:
 
 
 def _radar_png(domain_scores: Dict[str, float]) -> BytesIO:
+    """
+    Crisp, non-stretched radar chart for PDF embedding.
+    - Higher DPI for clarity
+    - Slightly taller aspect ratio for a "rounder" look
+    - White background for clean consulting aesthetic
+    """
     labels = ["Service Resilience", "Change Governance", "Structural Risk Debt™", "Reliability Momentum"]
     values = [
         float(domain_scores.get("Overall Service Resilience", 0)),
@@ -75,8 +81,13 @@ def _radar_png(domain_scores: Dict[str, float]) -> BytesIO:
     values_loop = values + values[:1]
     angles_loop = angles + angles[:1]
 
-    fig = plt.figure(figsize=(6.2, 4.3), dpi=170)
+    # Higher DPI + slightly taller figure => crisper and less “wide”
+    fig = plt.figure(figsize=(6.6, 5.1), dpi=260)
     ax = plt.subplot(111, polar=True)
+
+    fig.patch.set_facecolor("white")
+    ax.set_facecolor("white")
+
     ax.set_theta_offset(np.pi / 2)
     ax.set_theta_direction(-1)
 
@@ -87,14 +98,18 @@ def _radar_png(domain_scores: Dict[str, float]) -> BytesIO:
     ax.set_yticklabels(["20", "40", "60", "80", "100"], fontsize=8)
     ax.set_ylim(0, 100)
 
-    ax.plot(angles_loop, values_loop, linewidth=2.2, color="#0A192F")
+    # Clean grid
+    ax.grid(color="#D1D5DB", linewidth=0.8, alpha=0.95)
+
+    # Line and subtle fill (consulting style)
+    ax.plot(angles_loop, values_loop, linewidth=2.4, color="#0A192F")
     ax.fill(angles_loop, values_loop, alpha=0.12, color="#64FFDA")
-    ax.grid(color="#D1D5DB", linewidth=0.7, alpha=0.9)
+
     ax.set_title("Operational Stability Profile", fontsize=11, pad=14)
 
     buf = BytesIO()
     plt.tight_layout()
-    fig.savefig(buf, format="png", bbox_inches="tight")
+    fig.savefig(buf, format="png", bbox_inches="tight", dpi=260)
     plt.close(fig)
     buf.seek(0)
     return buf
@@ -106,6 +121,7 @@ def _draw_header(canvas, doc, title: str, subtitle: str, as_of: str):
     band_h = 0.85 * inch
 
     canvas.saveState()
+
     canvas.setFillColor(NAVY)
     canvas.rect(0, h - band_h, w, band_h, fill=1, stroke=0)
 
@@ -125,7 +141,11 @@ def _draw_header(canvas, doc, title: str, subtitle: str, as_of: str):
     # Footer
     canvas.setFillColor(MID)
     canvas.setFont("Helvetica", 8.5)
-    canvas.drawString(0.75 * inch, 0.55 * inch, "Operational Stability Intelligence (OSIL™)  •  BVSI™  •  Structural Risk Debt™")
+    canvas.drawString(
+        0.75 * inch,
+        0.55 * inch,
+        "Operational Stability Intelligence (OSIL™)  •  BVSI™  •  Structural Risk Debt™"
+    )
     canvas.drawRightString(w - 0.75 * inch, 0.55 * inch, "© Xentrixus • Confidential")
 
     canvas.restoreState()
@@ -149,11 +169,10 @@ def build_osil_pdf_report(results: Dict[str, Any]) -> bytes:
     base.leading = 13.5
     base.textColor = DARK
 
-    h1 = ParagraphStyle("H1", parent=styles["Heading1"], fontName="Helvetica-Bold", fontSize=16, textColor=DARK, spaceAfter=10)
     h2 = ParagraphStyle("H2", parent=styles["Heading2"], fontName="Helvetica-Bold", fontSize=12.5, textColor=DARK, spaceAfter=6)
     small = ParagraphStyle("Small", parent=base, fontSize=9.5, leading=12, textColor=MID)
     right = ParagraphStyle("Right", parent=base, alignment=TA_RIGHT)
-    bold = ParagraphStyle("Bold", parent=base, fontName="Helvetica-Bold")
+    score_right = ParagraphStyle("ScoreRight", parent=right, fontName="Helvetica-Bold")
 
     # Doc
     out = BytesIO()
@@ -162,21 +181,25 @@ def build_osil_pdf_report(results: Dict[str, Any]) -> bytes:
         pagesize=LETTER,
         leftMargin=0.75 * inch,
         rightMargin=0.75 * inch,
-        topMargin=1.20 * inch,   # leave space for header band
-        bottomMargin=0.85 * inch # leave space for footer
+        topMargin=1.20 * inch,   # space for header
+        bottomMargin=0.85 * inch # space for footer
     )
 
     story = []
 
-    # ================
+    # =========================
     # Page 1 — Executive Brief
-    # ================
+    # =========================
     chip_fill, chip_text = _posture_chip_colors(posture)
 
-    # BVSI + posture row (as a table for alignment)
-    bvsi_block = Paragraph(f"<b style='font-size:28px'>{bvsi:.1f}</b><br/><font size='10'>BVSI™ (Business Value Stability Index)</font>", base)
+    bvsi_block = Paragraph(
+        f"<b style='font-size:28px'>{bvsi:.1f}</b><br/><font size='10'>BVSI™ (Business Value Stability Index)</font>",
+        base
+    )
+
+    posture_style = ParagraphStyle("chip", parent=base, textColor=chip_text)
     posture_block = Table(
-        [[Paragraph(f"<b>Operating Posture:</b> {posture}", ParagraphStyle("chip", parent=base, textColor=chip_text))]],
+        [[Paragraph(f"<b>Operating Posture:</b> {posture}", posture_style)]],
         colWidths=[3.6 * inch],
         rowHeights=[0.45 * inch],
     )
@@ -190,11 +213,10 @@ def build_osil_pdf_report(results: Dict[str, Any]) -> bytes:
 
     top_row = Table([[bvsi_block, posture_block]], colWidths=[2.2 * inch, 4.55 * inch])
     top_row.setStyle(TableStyle([("VALIGN", (0,0), (-1,-1), "TOP")]))
-
     story.append(top_row)
     story.append(Spacer(1, 10))
 
-    # BVSI interpretation box
+    # BVSI interpretation
     interp_lines = "<br/>".join(_bvsi_scale_lines(bvsi))
     interp_tbl = Table([[Paragraph(interp_lines, base)]], colWidths=[6.75 * inch])
     interp_tbl.setStyle(TableStyle([
@@ -209,7 +231,7 @@ def build_osil_pdf_report(results: Dict[str, Any]) -> bytes:
     story.append(interp_tbl)
     story.append(Spacer(1, 12))
 
-    # Executive summary + key takeaways
+    # Executive Summary
     summary_text = (
         f"Your organization is operating in a <b>{posture}</b> stability posture based on a BVSI™ score of <b>{bvsi:.1f}</b>. "
         "Operational control exists, but recurring instability patterns still create exposure—especially across higher-impact services. "
@@ -220,6 +242,7 @@ def build_osil_pdf_report(results: Dict[str, Any]) -> bytes:
     story.append(Paragraph(summary_text, base))
     story.append(Spacer(1, 10))
 
+    # Key Takeaways
     bullets = [
         "Treat Tier-1 services as the primary stability surface area due to customer and business impact concentration.",
         "Use SIPs to convert recurring incident themes into prevention work with owners, due dates, and verification steps.",
@@ -231,15 +254,24 @@ def build_osil_pdf_report(results: Dict[str, Any]) -> bytes:
 
     story.append(PageBreak())
 
-    # ================
+    # =========================
     # Page 2 — Radar + Diagnostics
-    # ================
+    # =========================
     story.append(Paragraph("Operational Stability Profile (Radar)", h2))
+
     radar_buf = _radar_png(overall)
-    radar_img = Image(radar_buf, width=6.3 * inch, height=3.5 * inch)
+
+    # Aspect-preserving sizing: avoids stretch + blur
+    RADAR_W = 6.55 * inch
+    RADAR_ASPECT = 0.78  # slightly taller = neater, less wide
+    radar_img = Image(radar_buf, width=RADAR_W, height=RADAR_W * RADAR_ASPECT)
+
     story.append(radar_img)
     story.append(Spacer(1, 6))
-    story.append(Paragraph("How to read: a balanced shape suggests aligned governance; a collapsed axis indicates a concentrated stability gap.", small))
+    story.append(Paragraph(
+        "How to read: a balanced shape suggests aligned governance; a collapsed axis indicates a concentrated stability gap.",
+        small
+    ))
     story.append(Spacer(1, 12))
 
     story.append(Paragraph("Domain Scores (0–100)", h2))
@@ -252,7 +284,7 @@ def build_osil_pdf_report(results: Dict[str, Any]) -> bytes:
 
     dom_rows = [[Paragraph("<b>Domain</b>", base), Paragraph("<b>Score (0–100)</b>", right)]]
     for name, score in domains:
-        dom_rows.append([Paragraph(name, base), Paragraph(f"{score:.1f}", ParagraphStyle("score", parent=right, fontName="Helvetica-Bold"))])
+        dom_rows.append([Paragraph(name, base), Paragraph(f"{score:.1f}", score_right)])
 
     dom_tbl = Table(dom_rows, colWidths=[4.9 * inch, 1.85 * inch])
     dom_tbl.setStyle(TableStyle([
@@ -289,9 +321,9 @@ def build_osil_pdf_report(results: Dict[str, Any]) -> bytes:
 
     story.append(PageBreak())
 
-    # ================
-    # Page 3 — SIP Priorities (WRAPPING TABLE — FIXES OVERLAP)
-    # ================
+    # =========================
+    # Page 3 — SIP Priorities (wrapping table)
+    # =========================
     story.append(Paragraph("Service Improvement Priorities (SIPs)", h2))
     story.append(Paragraph(
         "SIPs below are prioritized by Service + Theme and tier exposure. These represent the most actionable stability initiatives "
@@ -318,39 +350,43 @@ def build_osil_pdf_report(results: Dict[str, Any]) -> bytes:
 
         story.append(Paragraph("SIP Candidates (Top 10)", h2))
 
-        # Table data with Paragraphs (wrap!)
         header = ["Service", "Tier", "Theme", "Priority", "Why Flagged", "Score"]
         rows = [[Paragraph(f"<b>{h}</b>", base) for h in header]]
 
         def priority_bg(label: str) -> colors.Color:
             label = (label or "").strip()
             if label.startswith("Immediate"):
-                return colors.HexColor("#FFE4E6")  # soft rose
+                return colors.HexColor("#FFE4E6")
             if label.startswith("Next"):
-                return colors.HexColor("#FEF3C7")  # soft amber
+                return colors.HexColor("#FEF3C7")
             if label.startswith("Monitor"):
-                return colors.HexColor("#F3F4F6")  # soft gray
+                return colors.HexColor("#F3F4F6")
             return WHITE
 
-        bg_colors = [LIGHT]  # header bg
+        bg_colors = [LIGHT]
         for _, r in sip_df.head(10).iterrows():
             pr = str(r["Priority_Label"])
             bg_colors.append(priority_bg(pr))
+
+            score_val = ""
+            try:
+                if str(r["SIP_Priority_Score"]).strip() != "":
+                    score_val = f"{float(r['SIP_Priority_Score']):.2f}"
+            except Exception:
+                score_val = str(r["SIP_Priority_Score"])
 
             rows.append([
                 Paragraph(str(r["Service"]), base),
                 Paragraph(str(r["Service_Tier"]), base),
                 Paragraph(str(r["Suggested_Theme"]), base),
                 Paragraph(str(r["Priority_Label"]), base),
-                Paragraph(str(r["Why_Flagged"]), base),  # wraps safely
-                Paragraph(f"{float(r['SIP_Priority_Score']):.2f}" if str(r["SIP_Priority_Score"]).strip() else "", ParagraphStyle("score2", parent=right, fontName="Helvetica-Bold")),
+                Paragraph(str(r["Why_Flagged"]), base),
+                Paragraph(score_val, score_right),
             ])
 
-        # Wider "Why Flagged", fixed score column
         col_widths = [1.55*inch, 0.65*inch, 0.95*inch, 1.05*inch, 2.05*inch, 0.70*inch]
         sip_tbl = Table(rows, colWidths=col_widths, repeatRows=1)
 
-        # Build styles, including row-by-row backgrounds
         ts = [
             ("BOX", (0,0), (-1,-1), 0.6, BORDER),
             ("INNERGRID", (0,0), (-1,-1), 0.4, BORDER),
@@ -369,7 +405,6 @@ def build_osil_pdf_report(results: Dict[str, Any]) -> bytes:
 
     # Render
     def on_page(canvas, doc_):
-        # choose subtitle by page number
         page = canvas.getPageNumber()
         if page == 1:
             sub = "Operational Stability Intelligence Report"
