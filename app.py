@@ -4,6 +4,7 @@ import numpy as np
 import plotly.express as px
 
 from osil_engine import run_osil
+from report_generator import build_osil_pdf_report
 
 APP_TITLE = "OSIL by Xentrixus"
 
@@ -23,6 +24,7 @@ def posture_from_bvsi(bvsi: float) -> str:
         return "Controlled but Exposed"
     return "High Confidence Operations"
 
+
 def posture_exec_meaning(posture: str) -> str:
     meanings = {
         "Reactive Instability": "Operational performance is unpredictable. Executive confidence and customer trust are exposed during disruption events.",
@@ -32,8 +34,8 @@ def posture_exec_meaning(posture: str) -> str:
     }
     return meanings.get(posture, "")
 
+
 def bvsi_legend_markdown(bvsi: float) -> str:
-    # Simple indicator line to make the scale intuitive
     return f"""
 **BVSI Scale (Business Value Stability Index)**  
 - **80–100:** High Confidence Operations  
@@ -44,9 +46,10 @@ def bvsi_legend_markdown(bvsi: float) -> str:
 **Current BVSI:** **{bvsi:.1f}**
 """
 
+
 def recommended_actions(overall: dict) -> list[str]:
     """
-    Generates 3 exec-ready actions based on lowest-scoring domain.
+    Generates 3 exec-ready actions based on weakest overall domain.
     """
     domain_map = {
         "Overall Service Resilience": "Service Resilience",
@@ -61,7 +64,6 @@ def recommended_actions(overall: dict) -> list[str]:
     weakest_key = min(candidates, key=candidates.get) if candidates else "Overall Structural Risk Debt"
     weakest = domain_map.get(weakest_key, "Structural Risk Debt™")
 
-    # Action sets
     if weakest == "Change Governance":
         return [
             "Launch a 30-day SIP on Tier 1 services with high change-induced instability (tighten risk checks and deployment discipline).",
@@ -72,7 +74,7 @@ def recommended_actions(overall: dict) -> list[str]:
         return [
             "Launch a Tier 1 resilience SIP: reduce MTTR drivers via runbooks, alert quality, and ownership clarity.",
             "Cut reopen churn by strengthening closure quality (verification steps, defect linkage, and prevention tasks).",
-            "Stabilize the highest-volume failure theme (e.g., performance/login) with targeted engineering fixes and monitoring."
+            "Stabilize the highest-impact failure theme (e.g., performance/login) with targeted engineering fixes and monitoring."
         ]
     if weakest == "Reliability Momentum":
         return [
@@ -80,12 +82,14 @@ def recommended_actions(overall: dict) -> list[str]:
             "Prioritize prevention over speed: address the top recurrence drivers behind repeat incidents and reopens.",
             "Create visible stability commitments (top SIPs, owners, due dates) to restore executive confidence through predictability."
         ]
+
     # Default: Structural Risk Debt™
     return [
         "Launch SIPs against recurring instability clusters in Tier 1 services (reduce repeat incidents and reopen churn).",
-        "Strengthen problem-to-prevention flow: convert repeat incident themes into corrective actions with owners and deadlines.",
-        "Improve change discipline for high-risk services to reduce instability introduced by releases and configuration shifts."
+        "Strengthen closure-to-prevention flow: convert repeat themes into corrective actions with owners, due dates, and verification steps.",
+        "Tighten change discipline for high-impact services to reduce instability introduced by releases and configuration shifts."
     ]
+
 
 # ---------------------------
 # Data Safety Note
@@ -117,8 +121,8 @@ with st.expander("CSV Template (Required Columns)", expanded=False):
 # Demo loader
 # ---------------------------
 def load_demo():
-    # Uses your repo demo file
     return pd.read_csv("data/demo_incidents.csv")
+
 
 # ---------------------------
 # Render Results
@@ -141,8 +145,8 @@ def render_results(results: dict):
     # Executive Interpretation
     st.subheader("Executive Interpretation")
     st.write(
-        "Your organization demonstrates operational stability measured across resilience, governance, structural risk, and momentum. "
-        "The stability posture reflects how consistently services deliver outcomes with minimal disruption to customers and internal teams."
+        "Your organization’s stability posture reflects how consistently services deliver outcomes without disruption. "
+        "BVSI consolidates stability performance across resilience, change governance, structural risk exposure, and reliability momentum."
     )
 
     # Recommended next actions (auto)
@@ -170,6 +174,20 @@ def render_results(results: dict):
     # SIP candidates
     st.subheader("Top SIP Candidates (Next 30 Days)")
     st.dataframe(results["sip_table"], use_container_width=True)
+
+    # Executive Report download (PDF)
+    st.subheader("Executive Report")
+    st.caption("Download a consulting-style stability report for leadership review.")
+    try:
+        pdf_bytes = build_osil_pdf_report(results)
+        st.download_button(
+            label="Download Executive Report (PDF)",
+            data=pdf_bytes,
+            file_name=f"OSIL_Executive_Report_{results.get('as_of','')}.pdf",
+            mime="application/pdf",
+        )
+    except Exception as e:
+        st.error(f"Report generation failed: {e}")
 
     # Analyst view
     with st.expander("Analyst View (Service Table)", expanded=False):
