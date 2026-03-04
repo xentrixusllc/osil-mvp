@@ -15,7 +15,6 @@ st.set_page_config(
 APP_TITLE = "Xentrixus OSIL™ — Stability Intelligence MVP"
 APP_SUB = "Upload ITSM exports → get BVSI™, Structural Risk Debt™, SIP priorities, and executive interpretation."
 
-
 DEMO_CSV_PATH = "data/demo_incidents.csv"  # demo file in your repo
 
 
@@ -26,7 +25,6 @@ def _required_template_text() -> str:
 
 
 def _find_column_case_insensitive(df: pd.DataFrame, target: str):
-    """Return actual column name if found ignoring case/spaces, else None."""
     norm_target = target.strip().lower()
     for c in df.columns:
         if str(c).strip().lower() == norm_target:
@@ -35,13 +33,9 @@ def _find_column_case_insensitive(df: pd.DataFrame, target: str):
 
 
 def _ensure_required_columns_for_demo(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Demo datasets are allowed to be imperfect.
-    We auto-add any missing REQUIRED_COLUMNS with safe defaults so the demo always runs.
-    """
     d = df.copy()
 
-    # If demo columns have wrong case, normalize them by renaming to required names
+    # rename case-insensitive matches
     rename_map = {}
     for req in REQUIRED_COLUMNS:
         found = _find_column_case_insensitive(d, req)
@@ -50,7 +44,7 @@ def _ensure_required_columns_for_demo(df: pd.DataFrame) -> pd.DataFrame:
     if rename_map:
         d = d.rename(columns=rename_map)
 
-    # Add missing required columns with safe defaults
+    # add missing required cols with safe defaults
     for req in REQUIRED_COLUMNS:
         if req not in d.columns:
             if req in ["Reopened_Flag", "Change_Related_Flag"]:
@@ -62,12 +56,10 @@ def _ensure_required_columns_for_demo(df: pd.DataFrame) -> pd.DataFrame:
             elif req == "Category":
                 d[req] = "General"
             elif req in ["Opened_Date", "Closed_Date"]:
-                # If dates are missing (rare), create plausible placeholders
                 d[req] = pd.Timestamp("2026-01-01")
             else:
                 d[req] = "Unknown"
 
-    # Force correct ordering (not required, but nice)
     d = d[REQUIRED_COLUMNS + [c for c in d.columns if c not in REQUIRED_COLUMNS]]
     return d
 
@@ -89,8 +81,7 @@ def _render_heatmap(service_risk_df: pd.DataFrame) -> None:
     metric_cols = ["Recurrence_Risk", "MTTR_Drag_Risk", "Reopen_Churn_Risk", "Change_Collision_Risk"]
     display_cols = ["Service", "Service_Tier"] + metric_cols + ["Total_Service_Risk"]
 
-    show = service_risk_df.copy()
-    show = show[display_cols]
+    show = service_risk_df.copy()[display_cols]
 
     services = show["Service"].tolist()
     tiers = show["Service_Tier"].tolist()
@@ -132,6 +123,14 @@ def _render_heatmap(service_risk_df: pd.DataFrame) -> None:
 
 
 def main():
+    # ---------- Session state for stable downloads ----------
+    if "osil_results" not in st.session_state:
+        st.session_state.osil_results = None
+    if "pdf_bytes" not in st.session_state:
+        st.session_state.pdf_bytes = None
+    if "pdf_filename" not in st.session_state:
+        st.session_state.pdf_filename = "OSIL_Executive_Report_latest.pdf"
+
     st.title(APP_TITLE)
     st.write(APP_SUB)
 
@@ -151,7 +150,6 @@ def main():
             except Exception as e:
                 st.error(f"Failed to load demo data: {e}")
                 return
-
     else:
         uploaded = st.file_uploader("Upload your ITSM CSV export", type=["csv"])
         if uploaded is not None:
@@ -162,17 +160,22 @@ def main():
                 st.error(f"Could not read CSV: {e}")
                 return
 
-    if df is None:
+    if df is not None:
+        try:
+            results = run_osil(df)
+            st.session_state.osil_results = results
+            # Reset prior PDF if new run occurs (prevents stale download)
+            st.session_state.pdf_bytes = None
+        except Exception as e:
+            st.error(f"Run failed: {e}")
+            return
+
+    # If no results yet
+    if st.session_state.osil_results is None:
         st.info("Choose Demo Data or Upload a CSV to run OSIL.")
         return
 
-    # Run OSIL (strict validation remains in osil_engine for uploaded CSVs)
-    try:
-        results = run_osil(df)
-    except Exception as e:
-        st.error(f"Run failed: {e}")
-        return
-
+    results = st.session_state.osil_results
     overall = results.get("overall", {})
     posture = results.get("posture", "")
     as_of = results.get("as_of", "")
@@ -187,8 +190,8 @@ def main():
 
     st.markdown("---")
 
+    # Radar
     st.subheader("Operational Stability Profile (Radar)")
-
     labels = ["Service Resilience", "Change Governance", "Structural Risk Debt™", "Reliability Momentum"]
     values = [
         float(overall.get("Overall Service Resilience", 0)),
@@ -217,9 +220,11 @@ def main():
 
     st.pyplot(fig)
 
+    # Heatmap
     st.markdown("---")
     _render_heatmap(results.get("service_risk_df"))
 
+    # SIP table
     st.markdown("---")
     st.subheader("Top SIP Candidates (Next 30 Days)")
     sip_df = results.get("sip_table")
@@ -228,24 +233,38 @@ def main():
     else:
         st.dataframe(sip_df, use_container_width=True)
 
+    # Executive interpretation
     st.markdown("---")
     st.subheader("Executive Interpretation")
     st.write(results.get("analyst_review", ""))
 
+    # PDF area
     st.markdown("---")
     st.subheader("Executive Report (PDF)")
-    if st.button("Generate Executive Report (PDF)"):
-        try:
-            pdf_bytes = build_osil_pdf_report(results)
+
+    colA, colB = st.columns([1, 2])
+
+    with colA:
+        if st.button("Generate / Refresh PDF"):
+            try:
+                pdf_bytes = build_osil_pdf_report(results)
+                st.session_state.pdf_bytes = pdf_bytes
+                st.session_state.pdf_filename = f"OSIL_Executive_Report_{as_of or 'latest'}.pdf"
+                st.success("PDF generated. Use the download button on the right.")
+            except Exception as e:
+                st.error(f"Report generation failed: {e}")
+
+    with colB:
+        if st.session_state.pdf_bytes:
             st.download_button(
-                label="Download OSIL Executive Report (PDF)",
-                data=pdf_bytes,
-                file_name=f"OSIL_Executive_Report_{as_of or 'latest'}.pdf",
+                label="⬇️ Download OSIL Executive Report (PDF)",
+                data=st.session_state.pdf_bytes,
+                file_name=st.session_state.pdf_filename,
                 mime="application/pdf",
+                key="download_pdf_btn",
             )
-            st.success("Report generated.")
-        except Exception as e:
-            st.error(f"Report generation failed: {e}")
+        else:
+            st.info("Click **Generate / Refresh PDF** to create the report, then download it here.")
 
 
 if __name__ == "__main__":
