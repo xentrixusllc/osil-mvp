@@ -238,6 +238,19 @@ def build_osil_pdf_report(results: Dict[str, Any]) -> bytes:
         "Targeted Service Improvement Programs (SIPs) in the next 30–60 days can increase executive confidence and preserve customer trust "
         "during disruption events."
     )
+    # Executive Signal (NEW SECTION)
+
+signal_text = (
+    f"Operational stability is currently <b>{posture}</b>, with a BVSI™ score of "
+    f"<b>{bvsi:.1f}</b> indicating that governance mechanisms are functioning but "
+    f"recurring instability patterns remain across Tier-1 services. Focused "
+    f"Service Improvement Programs targeting the highest-impact services will "
+    f"deliver the greatest stability improvement over the next <b>30–60 days</b>."
+)
+
+story.append(Paragraph("Executive Signal", h2))
+story.append(Paragraph(signal_text, base))
+story.append(Spacer(1, 12))
     story.append(Paragraph("Executive Summary", h2))
     story.append(Paragraph(summary_text, base))
     story.append(Spacer(1, 10))
