@@ -2,17 +2,20 @@ import pandas as pd
 import numpy as np
 
 # -----------------------------
-# OSIL Engine (MVP, single CSV)
+# OSIL Engine (v0.6 - SIP by Service + Theme)
 # -----------------------------
-# Expected minimum columns:
+# Minimum required columns:
 #   Service, Service_Tier, Opened_Date, Closed_Date, Priority, Reopened_Flag, Category
 #
-# Optional columns supported:
+# Optional columns:
 #   Resolved_Date            (preferred for MTTR if present)
 #   Change_Related_Flag      (defaults to 0 if missing)
 #
 # Output:
-#   overall scores (tier-weighted), BVSI, posture label, SIP ranking, service table
+#   - overall (tier-weighted domain scores + BVSI)
+#   - posture
+#   - service_table (service-level domain measures)
+#   - sip_table (Service + Theme SIP candidates + why/priority label)
 
 PRIORITY_WEIGHTS = {"P1": 5.0, "P2": 3.0, "P3": 1.0, "P4": 0.5, "P5": 0.2}
 TIER_EMPHASIS = {"Tier 1": 0.50, "Tier 2": 0.30, "Tier 3": 0.20}
@@ -30,6 +33,26 @@ def _norm(series: pd.Series) -> pd.Series:
         return pd.Series(np.zeros(len(series)), index=series.index)
     return (series - mn) / (mx - mn) * 100
 
+def _priority_label(score_0_100: float) -> str:
+    # Simple executive labeling
+    if score_0_100 >= 70:
+        return "Immediate SIP"
+    if score_0_100 >= 40:
+        return "Next SIP"
+    if score_0_100 >= 15:
+        return "Monitor"
+    return "Low"
+
+def _why_flagged(row) -> str:
+    drivers = {
+        "Recurrence/Volume": row.get("M_Recurrence", 0.0),
+        "Change-Induced": row.get("M_Change", 0.0),
+        "Reopen Churn": row.get("M_Reopen", 0.0),
+        "MTTR Drag": row.get("M_MTTR", 0.0),
+    }
+    top = sorted(drivers.items(), key=lambda x: x[1], reverse=True)[:2]
+    return " + ".join([t[0] for t in top])
+
 def run_osil(df: pd.DataFrame) -> dict:
     df = df.copy()
 
@@ -42,7 +65,7 @@ def run_osil(df: pd.DataFrame) -> dict:
         raise ValueError(f"Missing required columns: {missing}")
 
     # -----------------------------
-    # Optional columns defaults
+    # Optional defaults
     # -----------------------------
     if "Change_Related_Flag" not in df.columns:
         df["Change_Related_Flag"] = 0  # MVP default
@@ -75,6 +98,7 @@ def run_osil(df: pd.DataFrame) -> dict:
     df["Priority_Weight"] = df["Priority"].astype(str).str.strip().map(PRIORITY_WEIGHTS).fillna(1.0)
     df["Reopened_Flag"] = pd.to_numeric(df["Reopened_Flag"], errors="coerce").fillna(0).astype(int)
     df["Change_Related_Flag"] = pd.to_numeric(df["Change_Related_Flag"], errors="coerce").fillna(0).astype(int)
+    df["Category"] = df["Category"].astype(str).fillna("Unclassified")
 
     # -----------------------------
     # Rolling 12 months
@@ -84,7 +108,7 @@ def run_osil(df: pd.DataFrame) -> dict:
     df12 = df[df["Opened_Date"] >= start_12m].copy()
 
     # -----------------------------
-    # Service-level metrics
+    # Service-level table (stable foundation)
     # -----------------------------
     svc = df12.groupby(["Service", "Service_Tier"]).agg(
         Incidents=("Service", "count"),
@@ -100,21 +124,14 @@ def run_osil(df: pd.DataFrame) -> dict:
     svc["M_Reopen"] = _norm(svc["Reopen_Rate"])
     svc["M_MTTR"] = _norm(svc["Avg_MTTR"])
 
-    # -----------------------------
     # Domain scores (0-100; higher is better)
-    # -----------------------------
-    # These are "ITIL-inspired" stability dimensions, tool-agnostic.
     svc["Service_Resilience"] = (100 - (0.55 * svc["M_MTTR"] + 0.45 * svc["M_Reopen"])).clip(0, 100)
     svc["Change_Governance"]  = (100 - (0.70 * svc["M_Change"] + 0.30 * svc["M_MTTR"])).clip(0, 100)
-
-    # Structural Risk Debt™ (MVP proxy):
-    # recurring weighted incidents + reopen churn + change-induced ratio
     svc["Structural_Risk_Debt"] = (100 - (0.55 * svc["M_Recurrence"] + 0.30 * svc["M_Reopen"] + 0.15 * svc["M_Change"])).clip(0, 100)
-
     svc["Reliability_Momentum"] = (100 - (0.45 * svc["M_MTTR"] + 0.35 * svc["M_Recurrence"] + 0.20 * svc["M_Reopen"])).clip(0, 100)
 
     # -----------------------------
-    # Tier-weighted aggregation (50/30/20)
+    # Tier-weighted overall
     # -----------------------------
     svc["Tier_Emphasis"] = svc["Service_Tier"].map(_tier_weight)
 
@@ -134,9 +151,7 @@ def run_osil(df: pd.DataFrame) -> dict:
     bvsi = float(np.mean(list(overall.values())))
     overall["BVSI"] = bvsi
 
-    # -----------------------------
-    # BVSI posture thresholds (explainable)
-    # -----------------------------
+    # Posture thresholds
     if bvsi < 40:
         posture = "Reactive Instability"
     elif bvsi < 60:
@@ -147,33 +162,51 @@ def run_osil(df: pd.DataFrame) -> dict:
         posture = "High Confidence Operations"
 
     # -----------------------------
-    # SIP ranking (top candidates)
+    # SIP by Service + Theme (Category)
     # -----------------------------
-    # Prioritize Tier 1 exposure and the combined risk drivers.
-    svc["SIP_Priority_Score"] = svc["Tier_Emphasis"] * (
-        0.40 * svc["M_Recurrence"] +
-        0.25 * svc["M_Change"] +
-        0.20 * svc["M_Reopen"] +
-        0.15 * svc["M_MTTR"]
+    sipg = df12.groupby(["Service", "Service_Tier", "Category"]).agg(
+        Incidents=("Service", "count"),
+        Avg_MTTR=("MTTR_Hours", "mean"),
+        Reopen_Rate=("Reopened_Flag", "mean"),
+        Change_Induced_Ratio=("Change_Related_Flag", "mean"),
+        PriorityWeighted=("Priority_Weight", "sum"),
+    ).reset_index()
+
+    # Normalize risks across Service+Theme rows
+    sipg["M_Change"] = _norm(sipg["Change_Induced_Ratio"])
+    sipg["M_Recurrence"] = _norm(sipg["PriorityWeighted"])
+    sipg["M_Reopen"] = _norm(sipg["Reopen_Rate"])
+    sipg["M_MTTR"] = _norm(sipg["Avg_MTTR"])
+    sipg["Tier_Emphasis"] = sipg["Service_Tier"].map(_tier_weight)
+
+    # SIP Priority Score (higher = more urgent)
+    sipg["SIP_Priority_Score"] = sipg["Tier_Emphasis"] * (
+        0.40 * sipg["M_Recurrence"] +
+        0.25 * sipg["M_Change"] +
+        0.20 * sipg["M_Reopen"] +
+        0.15 * sipg["M_MTTR"]
     )
 
-    sip = svc.sort_values("SIP_Priority_Score", ascending=False).head(8)[
-        ["Service", "Service_Tier", "SIP_Priority_Score"]
-    ].copy()
+    # Convert score to 0..100 for executive labeling
+    sipg["SIP_Score_0_100"] = _norm(sipg["SIP_Priority_Score"])
 
-    # Suggested theme: most frequent incident category by service
-    theme = df12.groupby("Service")["Category"].agg(lambda x: x.value_counts().index[0]).reset_index()
-    sip = sip.merge(theme, on="Service", how="left").rename(columns={"Category": "Suggested_Theme"})
+    sipg["Priority_Label"] = sipg["SIP_Score_0_100"].apply(_priority_label)
+    sipg["Why_Flagged"] = sipg.apply(_why_flagged, axis=1)
+
+    sip_table = sipg.sort_values("SIP_Priority_Score", ascending=False).head(12)[
+        ["Service", "Service_Tier", "Category", "SIP_Priority_Score", "Priority_Label", "Why_Flagged"]
+    ].rename(columns={"Category": "Suggested_Theme"}).copy()
 
     return {
         "as_of": str(as_of.date()),
         "posture": posture,
         "overall": overall,
         "service_table": svc,
-        "sip_table": sip,
+        "sip_table": sip_table,
         "notes": {
             "mttr_units": "MTTR is computed in hours.",
             "mttr_logic": mttr_note,
-            "change_note": "Change_Related_Flag is used when present; otherwise defaulted to 0 for MVP."
+            "change_note": "Change_Related_Flag is used when present; otherwise defaulted to 0 for MVP.",
+            "sip_note": "SIP candidates are prioritized by Service + Theme (Category) with Tier weighting."
         }
     }
