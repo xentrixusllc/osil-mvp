@@ -10,16 +10,14 @@ import pandas as pd
 from reportlab.lib.pagesizes import LETTER
 from reportlab.pdfgen import canvas
 from reportlab.lib.units import inch
+from reportlab.lib.utils import ImageReader  # <-- FIX
 
 # Chart image
 import matplotlib.pyplot as plt
 
 
 def _wrap_text(c: canvas.Canvas, text: str, x: float, y: float, max_width: float, leading: float = 14):
-    """
-    Simple text wrapping for ReportLab canvas.
-    Returns the new y after drawing.
-    """
+    """Simple text wrapping for ReportLab canvas. Returns the new y after drawing."""
     words = (text or "").split()
     line = ""
     for w in words:
@@ -39,11 +37,7 @@ def _wrap_text(c: canvas.Canvas, text: str, x: float, y: float, max_width: float
 def _radar_png(domain_scores: Dict[str, float]) -> BytesIO:
     """
     Creates a static radar chart PNG in memory using matplotlib.
-    domain_scores expects keys:
-      - Overall Service Resilience
-      - Overall Change Governance
-      - Overall Structural Risk Debt
-      - Overall Reliability Momentum
+    Returns BytesIO buffer.
     """
     labels = ["Service Resilience", "Change Governance", "Structural Risk Debt™", "Reliability Momentum"]
     values = [
@@ -107,18 +101,19 @@ def build_osil_pdf_report(results: Dict[str, Any]) -> bytes:
     bvsi = float(overall["BVSI"])
     posture = results.get("posture", "")
 
+    # SIP table
     sip_table = results.get("sip_table")
     if isinstance(sip_table, pd.DataFrame):
         sip_df = sip_table.copy()
     else:
         sip_df = pd.DataFrame(sip_table) if sip_table is not None else pd.DataFrame()
 
-    # Keep top 10 rows for PDF readability
     if not sip_df.empty:
         sip_df = sip_df.head(10)
 
-    # Prepare radar image
-    radar_img = _radar_png(overall)
+    # Radar image -> ImageReader (FIX)
+    radar_buf = _radar_png(overall)
+    radar_reader = ImageReader(radar_buf)
 
     # Create PDF
     out = BytesIO()
@@ -143,14 +138,12 @@ def build_osil_pdf_report(results: Dict[str, Any]) -> bytes:
     c.drawString(margin_x, y, f"As-of Date: {results.get('as_of','')}")
     y -= 18
 
-    # Key metrics
     c.setFont("Helvetica-Bold", 12)
     c.drawString(margin_x, y, f"BVSI: {bvsi:.1f}")
     y -= 14
     c.drawString(margin_x, y, f"Operating Posture: {posture}")
     y -= 18
 
-    # BVSI scale block
     c.setFont("Helvetica", 10)
     for line in _bvsi_scale_block(bvsi):
         c.drawString(margin_x, y, line)
@@ -169,14 +162,18 @@ def build_osil_pdf_report(results: Dict[str, Any]) -> bytes:
     )
     y = _wrap_text(c, interpretation, margin_x, y, max_w, leading=14)
 
-    # Radar chart placement
+    # Draw radar (FIX: use ImageReader)
     y -= 8
     img_x = margin_x
     img_y = max(1.3 * inch, y - 3.3 * inch)
-    c.drawImage(radar_img, img_x, img_y, width=6.6 * inch, height=3.2 * inch, mask="auto")
+    c.drawImage(radar_reader, img_x, img_y, width=6.6 * inch, height=3.2 * inch, mask="auto")
 
     c.setFont("Helvetica-Oblique", 9)
-    c.drawString(margin_x, img_y - 12, "How to read: a balanced shape suggests aligned governance; a collapsed axis indicates a concentrated stability gap.")
+    c.drawString(
+        margin_x,
+        img_y - 12,
+        "How to read: a balanced shape suggests aligned governance; a collapsed axis indicates a concentrated stability gap."
+    )
     c.showPage()
 
     # -------------------------
@@ -195,7 +192,6 @@ def build_osil_pdf_report(results: Dict[str, Any]) -> bytes:
     y = _wrap_text(c, diag_text, margin_x, y, max_w, leading=14)
     y -= 10
 
-    # Domain score table (simple)
     domains = [
         ("Service Resilience", float(overall.get("Overall Service Resilience", 0))),
         ("Change Governance", float(overall.get("Overall Change Governance", 0))),
@@ -207,19 +203,16 @@ def build_osil_pdf_report(results: Dict[str, Any]) -> bytes:
     c.drawString(margin_x, y, "Domain Scores")
     y -= 14
 
-    c.setFont("Helvetica", 11)
-    col1 = margin_x
-    col2 = margin_x + 4.7 * inch
     c.setFont("Helvetica-Bold", 10)
-    c.drawString(col1, y, "Domain")
-    c.drawString(col2, y, "Score (0–100)")
+    c.drawString(margin_x, y, "Domain")
+    c.drawRightString(margin_x + max_w, y, "Score (0–100)")
     y -= 10
     c.setFont("Helvetica", 10)
     c.line(margin_x, y, margin_x + max_w, y)
     y -= 12
 
     for name, score in domains:
-        c.drawString(col1, y, name)
+        c.drawString(margin_x, y, name)
         c.drawRightString(margin_x + max_w, y, f"{score:.1f}")
         y -= 14
 
@@ -229,7 +222,6 @@ def build_osil_pdf_report(results: Dict[str, Any]) -> bytes:
     y -= 16
     c.setFont("Helvetica", 11)
 
-    # Use posture to keep actions exec-friendly and stable
     actions = [
         "Launch SIPs against recurring instability clusters in Tier 1 services (reduce repeat incidents and reopen churn).",
         "Strengthen closure-to-prevention: convert repeat themes into corrective actions with owners, due dates, and verification steps.",
@@ -260,17 +252,20 @@ def build_osil_pdf_report(results: Dict[str, Any]) -> bytes:
         c.setFont("Helvetica-Oblique", 11)
         c.drawString(margin_x, y, "No SIP candidates available from the current dataset.")
     else:
-        # Choose columns safely (works for both Phase 6 and earlier)
-        desired_cols = ["Service", "Service_Tier", "Suggested_Theme", "Priority_Label", "Why_Flagged", "SIP_Priority_Score"]
-        cols = [cname for cname in desired_cols if cname in sip_df.columns]
+        # Safe columns (Phase 6 compatible)
+        cols = ["Service", "Service_Tier", "Suggested_Theme", "Priority_Label", "Why_Flagged", "SIP_Priority_Score"]
+        cols = [col for col in cols if col in sip_df.columns]
         table = sip_df[cols].copy()
 
-        # Header
         c.setFont("Helvetica-Bold", 9)
-        x_positions = [margin_x, margin_x + 1.9*inch, margin_x + 2.8*inch, margin_x + 3.9*inch, margin_x + 5.1*inch]
-        # dynamic columns: we'll print up to 5 columns + score on the right
-        # layout:
-        # Service | Tier | Theme | Priority | Why | Score
+        x_positions = [
+            margin_x,               # Service
+            margin_x + 1.9 * inch,  # Tier
+            margin_x + 2.8 * inch,  # Theme
+            margin_x + 3.9 * inch,  # Priority
+            margin_x + 5.1 * inch,  # Why
+        ]
+
         c.drawString(x_positions[0], y, "Service")
         c.drawString(x_positions[1], y, "Tier")
         c.drawString(x_positions[2], y, "Theme")
@@ -278,6 +273,7 @@ def build_osil_pdf_report(results: Dict[str, Any]) -> bytes:
         c.drawString(x_positions[4], y, "Why Flagged")
         c.drawRightString(margin_x + max_w, y, "Score")
         y -= 10
+
         c.setFont("Helvetica", 9)
         c.line(margin_x, y, margin_x + max_w, y)
         y -= 12
