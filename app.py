@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-from io import BytesIO
 
 from osil_engine import run_osil, REQUIRED_COLUMNS
 from report_generator import build_osil_pdf_report
@@ -13,21 +12,70 @@ st.set_page_config(
     layout="wide",
 )
 
-
 APP_TITLE = "Xentrixus OSIL™ — Stability Intelligence MVP"
 APP_SUB = "Upload ITSM exports → get BVSI™, Structural Risk Debt™, SIP priorities, and executive interpretation."
 
 
-def _load_demo_csv() -> pd.DataFrame:
-    # Demo incidents data path in repo
-    # If you later add other demo files, we can extend this.
-    return pd.read_csv("data/demo_incidents.csv")
+DEMO_CSV_PATH = "data/demo_incidents.csv"  # demo file in your repo
 
 
 def _required_template_text() -> str:
     cols = ",".join(REQUIRED_COLUMNS)
     example = "Customer Portal,Tier 1,2026-01-05,2026-01-06,P2,0,1,Performance"
     return f"{cols}\n{example}"
+
+
+def _find_column_case_insensitive(df: pd.DataFrame, target: str):
+    """Return actual column name if found ignoring case/spaces, else None."""
+    norm_target = target.strip().lower()
+    for c in df.columns:
+        if str(c).strip().lower() == norm_target:
+            return c
+    return None
+
+
+def _ensure_required_columns_for_demo(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Demo datasets are allowed to be imperfect.
+    We auto-add any missing REQUIRED_COLUMNS with safe defaults so the demo always runs.
+    """
+    d = df.copy()
+
+    # If demo columns have wrong case, normalize them by renaming to required names
+    rename_map = {}
+    for req in REQUIRED_COLUMNS:
+        found = _find_column_case_insensitive(d, req)
+        if found and found != req:
+            rename_map[found] = req
+    if rename_map:
+        d = d.rename(columns=rename_map)
+
+    # Add missing required columns with safe defaults
+    for req in REQUIRED_COLUMNS:
+        if req not in d.columns:
+            if req in ["Reopened_Flag", "Change_Related_Flag"]:
+                d[req] = 0
+            elif req == "Priority":
+                d[req] = "P3"
+            elif req == "Service_Tier":
+                d[req] = "Tier 3"
+            elif req == "Category":
+                d[req] = "General"
+            elif req in ["Opened_Date", "Closed_Date"]:
+                # If dates are missing (rare), create plausible placeholders
+                d[req] = pd.Timestamp("2026-01-01")
+            else:
+                d[req] = "Unknown"
+
+    # Force correct ordering (not required, but nice)
+    d = d[REQUIRED_COLUMNS + [c for c in d.columns if c not in REQUIRED_COLUMNS]]
+    return d
+
+
+def _load_demo_csv() -> pd.DataFrame:
+    df = pd.read_csv(DEMO_CSV_PATH)
+    df = _ensure_required_columns_for_demo(df)
+    return df
 
 
 def _render_heatmap(service_risk_df: pd.DataFrame) -> None:
@@ -38,24 +86,19 @@ def _render_heatmap(service_risk_df: pd.DataFrame) -> None:
         st.info("No service risk data available yet.")
         return
 
-    # Heatmap matrix
     metric_cols = ["Recurrence_Risk", "MTTR_Drag_Risk", "Reopen_Churn_Risk", "Change_Collision_Risk"]
     display_cols = ["Service", "Service_Tier"] + metric_cols + ["Total_Service_Risk"]
 
     show = service_risk_df.copy()
     show = show[display_cols]
 
-    # Prepare matrix values
     services = show["Service"].tolist()
     tiers = show["Service_Tier"].tolist()
-
     matrix = show[metric_cols].to_numpy(dtype=float)
 
-    # Plot
     fig = plt.figure(figsize=(10, 5), dpi=160)
     ax = plt.gca()
 
-    # Use a built-in colormap; values 0-100
     im = ax.imshow(matrix, aspect="auto", vmin=0, vmax=100)
 
     ax.set_xticks(np.arange(len(metric_cols)))
@@ -66,7 +109,6 @@ def _render_heatmap(service_risk_df: pd.DataFrame) -> None:
 
     ax.set_title("Service × Stability Risk (0–100)")
 
-    # Annotate values
     for i in range(matrix.shape[0]):
         for j in range(matrix.shape[1]):
             ax.text(j, i, f"{matrix[i, j]:.0f}", ha="center", va="center", fontsize=9)
@@ -77,11 +119,9 @@ def _render_heatmap(service_risk_df: pd.DataFrame) -> None:
     plt.tight_layout()
     st.pyplot(fig)
 
-    # Show the table under the heatmap
     st.markdown("**Top 10 Services — Risk Breakdown**")
     st.dataframe(show, use_container_width=True)
 
-    # Download CSV
     csv_bytes = show.to_csv(index=False).encode("utf-8")
     st.download_button(
         label="Download Service Risk Table (CSV)",
@@ -122,12 +162,11 @@ def main():
                 st.error(f"Could not read CSV: {e}")
                 return
 
-    # Run only if df is present
     if df is None:
         st.info("Choose Demo Data or Upload a CSV to run OSIL.")
         return
 
-    # Run OSIL
+    # Run OSIL (strict validation remains in osil_engine for uploaded CSVs)
     try:
         results = run_osil(df)
     except Exception as e:
@@ -138,24 +177,18 @@ def main():
     posture = results.get("posture", "")
     as_of = results.get("as_of", "")
 
-    # KPI Row
     c1, c2, c3 = st.columns([1, 2, 1])
-
     with c1:
         st.metric("BVSI™", f"{overall.get('BVSI', 0):.1f}" if "BVSI" in overall else "—")
-
     with c2:
         st.metric("Operating Posture", posture if posture else "—")
-
     with c3:
         st.metric("As-of Date", as_of if as_of else "—")
 
     st.markdown("---")
 
-    # Radar + Domains
     st.subheader("Operational Stability Profile (Radar)")
 
-    # Build a simple radar in-app as well (optional but useful)
     labels = ["Service Resilience", "Change Governance", "Structural Risk Debt™", "Reliability Momentum"]
     values = [
         float(overall.get("Overall Service Resilience", 0)),
@@ -184,11 +217,9 @@ def main():
 
     st.pyplot(fig)
 
-    # NEW: Service Stability Heatmap (Option 1: Top 10)
     st.markdown("---")
     _render_heatmap(results.get("service_risk_df"))
 
-    # SIP Candidates
     st.markdown("---")
     st.subheader("Top SIP Candidates (Next 30 Days)")
     sip_df = results.get("sip_table")
@@ -197,12 +228,10 @@ def main():
     else:
         st.dataframe(sip_df, use_container_width=True)
 
-    # Analyst Review
     st.markdown("---")
     st.subheader("Executive Interpretation")
     st.write(results.get("analyst_review", ""))
 
-    # Report Download
     st.markdown("---")
     st.subheader("Executive Report (PDF)")
     if st.button("Generate Executive Report (PDF)"):
