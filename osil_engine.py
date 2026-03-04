@@ -21,7 +21,11 @@ def run_osil(df: pd.DataFrame) -> dict:
 
     # Validate minimum columns
     required = ["Service","Service_Tier","Opened_Date","Closed_Date","Priority",
-                "Reopened_Flag","Change_Related_Flag","Category"]
+            "Reopened_Flag","Category"]
+# Optional column: Change_Related_Flag (default to 0 if missing)
+if "Change_Related_Flag" not in df.columns:
+    df["Change_Related_Flag"] = 0
+    
     missing = [c for c in required if c not in df.columns]
     if missing:
         raise ValueError(f"Missing required columns: {missing}")
