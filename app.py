@@ -58,7 +58,6 @@ def _ensure_required_columns_for_demo(df: pd.DataFrame) -> pd.DataFrame:
             else:
                 d[req] = "Unknown"
 
-    # keep required columns first
     d = d[REQUIRED_COLUMNS + [c for c in d.columns if c not in REQUIRED_COLUMNS]]
     return d
 
@@ -76,33 +75,28 @@ def build_operational_snapshot(results: dict) -> dict:
     posture = results.get("posture", "Unknown")
     bvsi = float(overall.get("BVSI", 0))
 
-    # Use analyst review as the short narrative (already executive-toned)
     interpretation_html = results.get("analyst_review", "")
 
-    # Build top risks and recommended actions from SIP table (preferred)
     sip_df = results.get("sip_table")
     top_risks = []
     actions = []
 
     if sip_df is not None and isinstance(sip_df, pd.DataFrame) and not sip_df.empty:
-        # We will use the columns that actually exist in your SIP output
-        # (Service, Service_Tier, Suggested_Theme, Why_Flagged, Priority_Label)
         for _, row in sip_df.head(3).iterrows():
             svc = str(row.get("Service", "Unknown Service"))
             tier = str(row.get("Service_Tier", ""))
             why = str(row.get("Why_Flagged", "Operational instability pattern"))
             theme = str(row.get("Suggested_Theme", ""))
-            tier_txt = f" ({tier})" if tier else ""
+            tier_txt = f" ({tier})" if tier and tier != "nan" else ""
             theme_txt = f" — {theme}" if theme and theme != "nan" else ""
             top_risks.append(f"{svc}{tier_txt}{theme_txt} — {why}")
 
-        # Actions map directly to SIP initiation
         for _, row in sip_df.head(3).iterrows():
             svc = str(row.get("Service", "that service"))
-            actions.append(f"Launch a Service Improvement Program (SIP) for {svc} with an accountable owner and 30-day outcomes.")
-
+            actions.append(
+                f"Launch a Service Improvement Program (SIP) for {svc} with an accountable owner and 30-day outcomes."
+            )
     else:
-        # fallback if SIP is empty
         top_risks = ["No SIP candidates generated from this dataset yet."]
         actions = ["Run OSIL on a larger rolling window (e.g., 6–12 months) to strengthen signal quality."]
 
@@ -148,7 +142,7 @@ def _render_snapshot_box(snapshot: dict):
 
 
 # -----------------------------
-# Heatmap
+# Heatmap (scaled for dashboard)
 # -----------------------------
 def _render_heatmap(service_risk_df: pd.DataFrame) -> None:
     st.subheader("Service Stability Heatmap (Top 10 Services by Risk)")
@@ -167,29 +161,28 @@ def _render_heatmap(service_risk_df: pd.DataFrame) -> None:
     tiers = show["Service_Tier"].tolist()
     matrix = show[metric_cols].to_numpy(dtype=float)
 
+    # Smaller dashboard-friendly sizing
     fig = plt.figure(figsize=(7, 3.8), dpi=140)
     ax = plt.gca()
 
     im = ax.imshow(matrix, aspect="auto", vmin=0, vmax=100)
 
     ax.set_xticks(np.arange(len(metric_cols)))
-    ax.set_xticklabels(["Recurrence", "MTTR Drag", "Reopen Churn", "Change Collision"], rotation=0)
+    ax.set_xticklabels(["Recurrence", "MTTR Drag", "Reopen Churn", "Change Collision"], rotation=0, fontsize=9)
 
     ax.set_yticks(np.arange(len(services)))
-    ax.set_yticklabels([f"{s} ({t})" for s, t in zip(services, tiers)])
+    ax.set_yticklabels([f"{s} ({t})" for s, t in zip(services, tiers)], fontsize=9)
 
-    ax.set_title("Service × Stability Risk (0–100)")
+    ax.set_title("Service × Stability Risk (0–100)", fontsize=11)
 
     for i in range(matrix.shape[0]):
         for j in range(matrix.shape[1]):
-            ax.text(j, i, f"{matrix[i, j]:.0f}", ha="center", va="center", fontsize=9)
+            ax.text(j, i, f"{matrix[i, j]:.0f}", ha="center", va="center", fontsize=8)
 
-    cbar = plt.colorbar(im, ax=ax, fraction=0.025, pad=0.02)
-    cbar.set_label("Risk Score (0–100)")
+    cbar = plt.colorbar(im, ax=ax, fraction=0.03, pad=0.02)
+    cbar.set_label("Risk Score (0–100)", fontsize=9)
 
     plt.tight_layout()
-    c1, c2, c3 = st.columns([1,2,1])
-with c2:
     st.pyplot(fig)
 
     st.markdown("**Top 10 Services — Risk Breakdown**")
@@ -208,7 +201,6 @@ with c2:
 # Main App
 # -----------------------------
 def main():
-    # Stable state (prevents rerun problems for downloads)
     if "osil_results" not in st.session_state:
         st.session_state.osil_results = None
     if "pdf_bytes" not in st.session_state:
@@ -246,7 +238,7 @@ def main():
         try:
             results = run_osil(df)
             st.session_state.osil_results = results
-            st.session_state.pdf_bytes = None  # reset report when new run occurs
+            st.session_state.pdf_bytes = None
         except Exception as e:
             st.error(f"Run failed: {e}")
             return
@@ -260,7 +252,7 @@ def main():
     posture = results.get("posture", "")
     as_of = results.get("as_of", "")
 
-    # Snapshot first (Signal → Meaning → Risk → Action)
+    # Snapshot first
     st.markdown("---")
     snapshot = build_operational_snapshot(results)
     _render_snapshot_box(snapshot)
@@ -275,7 +267,7 @@ def main():
     with c3:
         st.metric("As-of Date", as_of if as_of else "—")
 
-    # Radar
+    # Radar (scaled + centered correctly)
     st.markdown("---")
     st.subheader("Operational Stability Profile (Radar)")
 
@@ -297,16 +289,19 @@ def main():
     ax.set_theta_direction(-1)
 
     ax.set_xticks(angles)
-    ax.set_xticklabels(labels, fontsize=10)
+    ax.set_xticklabels(labels, fontsize=9)
     ax.set_yticks([20, 40, 60, 80, 100])
-    ax.set_yticklabels(["20", "40", "60", "80", "100"], fontsize=9)
+    ax.set_yticklabels(["20", "40", "60", "80", "100"], fontsize=8)
     ax.set_ylim(0, 100)
 
     ax.plot(angles_loop, values_loop, linewidth=2)
     ax.fill(angles_loop, values_loop, alpha=0.10)
 
     plt.tight_layout()
-    st.pyplot(fig)
+
+    cc1, cc2, cc3 = st.columns([1, 2, 1])
+    with cc2:
+        st.pyplot(fig)
 
     # Heatmap
     st.markdown("---")
