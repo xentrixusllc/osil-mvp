@@ -113,6 +113,45 @@ def _utc_now_iso() -> str:
 
 
 # -----------------------------
+# Admin guard (A + B)
+# -----------------------------
+def _get_admin_passcode() -> str:
+    """
+    Best practice: store in Streamlit Secrets:
+    OSIL_ADMIN_PASSCODE = "your-passcode"
+    """
+    try:
+        return str(st.secrets.get("OSIL_ADMIN_PASSCODE", "")).strip()
+    except Exception:
+        return ""
+
+
+def _admin_mode_panel() -> bool:
+    """
+    Returns True if admin mode is enabled for this session.
+    """
+    st.sidebar.markdown("### Admin Mode")
+    if "admin_ok" not in st.session_state:
+        st.session_state.admin_ok = False
+
+    admin_pass = _get_admin_passcode()
+    if not admin_pass:
+        st.sidebar.info("Admin passcode not configured in Secrets.")
+        return False
+
+    with st.sidebar.expander("Unlock Admin Mode"):
+        entered = st.text_input("Admin Passcode", type="password", key="admin_pass_input")
+        if st.button("Unlock", key="admin_unlock_btn"):
+            if entered.strip() == admin_pass:
+                st.session_state.admin_ok = True
+                st.success("Admin Mode enabled for this session.")
+            else:
+                st.session_state.admin_ok = False
+                st.error("Invalid passcode.")
+    return bool(st.session_state.admin_ok)
+
+
+# -----------------------------
 # Momentum helper (Option A arrows)
 # -----------------------------
 def _momentum_arrow(series: pd.Series) -> str:
@@ -257,9 +296,9 @@ def _render_snapshot_box(snapshot: dict):
 
 
 # -----------------------------
-# Trend Engine (now backed by SQLite)
+# Trend Engine (SQLite-backed) + Admin Reset (A + B)
 # -----------------------------
-def _render_bvsi_trend():
+def _render_bvsi_trend(admin_enabled: bool):
     st.subheader("BVSI Trend (Saved Runs)")
     trend_df = _db_read_runs(limit=500)
 
@@ -271,18 +310,26 @@ def _render_bvsi_trend():
     arrow = _momentum_arrow(view["bvsi"])
     label = _momentum_label(arrow)
 
-    c1, c2, c3, c4 = st.columns([1, 1, 2, 1])
+    c1, c2, c3 = st.columns([1, 1, 3])
     with c1:
         st.metric("Momentum", f"{arrow} {label}")
     with c2:
         st.metric("Latest BVSI™", f"{float(view['bvsi'].iloc[-1]):.1f}")
     with c3:
         st.write("Trend is based on saved OSIL runs (SQLite-backed).")
-    with c4:
-        if st.button("Clear History (demo reset)"):
-            _db_clear_runs()
-            st.success("History cleared.")
-            st.rerun()
+
+    # Admin-only reset with typed confirmation
+    if admin_enabled:
+        with st.expander("Admin Controls (Protected)"):
+            st.warning("Reset permanently deletes saved run history. This impacts BVSI trends.")
+            confirm = st.text_input("Type RESET to confirm", key="reset_confirm_text")
+            if st.button("Clear History Now", key="reset_clear_btn"):
+                if confirm.strip().upper() == "RESET":
+                    _db_clear_runs()
+                    st.success("History cleared.")
+                    st.rerun()
+                else:
+                    st.error("Confirmation not valid. Type RESET exactly to proceed.")
 
     fig = plt.figure(figsize=(7, 3.2), dpi=140)
     ax = plt.gca()
@@ -380,6 +427,9 @@ def main():
     if "pdf_filename" not in st.session_state:
         st.session_state.pdf_filename = "OSIL_Executive_Report_latest.pdf"
 
+    # Admin mode (protected)
+    admin_enabled = _admin_mode_panel()
+
     st.title(APP_TITLE)
     st.caption(APP_SUB)
 
@@ -439,9 +489,9 @@ def main():
     snapshot = build_operational_snapshot(results)
     _render_snapshot_box(snapshot)
 
-    # Trend (SQLite-backed)
+    # Trend (SQLite-backed, admin reset protected)
     st.markdown("---")
-    _render_bvsi_trend()
+    _render_bvsi_trend(admin_enabled=admin_enabled)
 
     # KPI row
     st.markdown("---")
