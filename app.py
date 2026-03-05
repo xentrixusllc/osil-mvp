@@ -41,7 +41,7 @@ def _db_conn():
 def _db_has_column(conn, table: str, col: str) -> bool:
     cur = conn.cursor()
     cur.execute(f"PRAGMA table_info({table})")
-    cols = [r[1] for r in cur.fetchall()]  # (cid, name, type, notnull, dflt_value, pk)
+    cols = [r[1] for r in cur.fetchall()]
     return col in cols
 
 
@@ -194,6 +194,7 @@ def _admin_mode_panel() -> bool:
 def _tenant_selector() -> str:
     st.sidebar.markdown("### Organization")
     tenants = _db_list_tenants()
+
     if "tenant_name" not in st.session_state:
         st.session_state.tenant_name = tenants[0] if tenants else "Default"
 
@@ -201,7 +202,8 @@ def _tenant_selector() -> str:
 
     if mode == "Select existing":
         options = tenants if tenants else ["Default"]
-        sel = st.sidebar.selectbox("Organization", options=options, index=options.index(st.session_state.tenant_name) if st.session_state.tenant_name in options else 0)
+        idx = options.index(st.session_state.tenant_name) if st.session_state.tenant_name in options else 0
+        sel = st.sidebar.selectbox("Organization", options=options, index=idx)
         st.session_state.tenant_name = sel
     else:
         typed = st.sidebar.text_input("Organization Name", value=st.session_state.tenant_name)
@@ -477,6 +479,70 @@ def _render_heatmap(service_risk_df: pd.DataFrame) -> None:
 
 
 # -----------------------------
+# Phase 9: Service Instability Leaders (Top 5 narrative cards)
+# -----------------------------
+def render_service_instability_leaders(service_risk_df: pd.DataFrame) -> None:
+    st.subheader("Service Instability Leaders (Top 5)")
+    st.caption("Executive narrative view: services currently driving the highest operational instability risk.")
+
+    if service_risk_df is None or service_risk_df.empty:
+        st.info("No service instability signals available.")
+        return
+
+    df = service_risk_df.sort_values("Total_Service_Risk", ascending=False).head(5).copy()
+
+    for rank, (_, row) in enumerate(df.iterrows(), start=1):
+        service = str(row.get("Service", "Unknown Service"))
+        tier = str(row.get("Service_Tier", "Unknown Tier"))
+        score = float(row.get("Total_Service_Risk", 0))
+
+        risks = {
+            "Recurrence": float(row.get("Recurrence_Risk", 0)),
+            "MTTR Drag": float(row.get("MTTR_Drag_Risk", 0)),
+            "Reopen Churn": float(row.get("Reopen_Churn_Risk", 0)),
+            "Change Collision": float(row.get("Change_Collision_Risk", 0)),
+        }
+        primary_driver = max(risks, key=risks.get)
+        driver_score = risks.get(primary_driver, 0)
+
+        if primary_driver == "Recurrence":
+            meaning = "Recurring incidents suggest unresolved structural issues and repeat operational friction."
+            action = "Start a SIP focused on recurrence elimination: problem statements, root cause pathways, and preventive controls."
+
+        elif primary_driver == "MTTR Drag":
+            meaning = "Recovery times are longer than expected, indicating response coordination gaps, unclear ownership, or weak runbooks."
+            action = "Start a SIP focused on operational recovery: response playbooks, escalation pathways, and automation to reduce recovery time."
+
+        elif primary_driver == "Reopen Churn":
+            meaning = "High reopen rates suggest incomplete resolution or unstable fixes that do not hold under real operational load."
+            action = "Start a SIP focused on fix quality: tighten closure criteria, improve validation, and drive problem investigations for recurring issues."
+
+        else:  # Change Collision
+            meaning = "Instability patterns often occur near change windows, suggesting governance gaps or insufficient pre-release validation."
+            action = "Start a SIP focused on change governance: strengthen controls on Tier-1 changes, expand validation, and monitor post-change outcomes."
+
+        st.markdown(
+            f"""
+<div style="border:1px solid #D1D5DB;background:#F5F7FA;padding:14px 16px;border-radius:10px;margin-bottom:10px;">
+  <div style="font-size:16px;"><b>#{rank} {service}</b></div>
+  <div style="margin-top:6px;">
+    <b>Tier:</b> {tier} &nbsp; | &nbsp; <b>Total Risk Score:</b> {score:.1f}
+  </div>
+  <div style="margin-top:10px;">
+    <b>Primary Instability Driver:</b> {primary_driver} ({driver_score:.0f}/100)<br/>
+    {meaning}
+  </div>
+  <div style="margin-top:10px;">
+    <b>Recommended Action:</b><br/>
+    {action}
+  </div>
+</div>
+""",
+            unsafe_allow_html=True,
+        )
+
+
+# -----------------------------
 # Main App
 # -----------------------------
 def main():
@@ -601,6 +667,9 @@ def main():
     _render_heatmap(results.get("service_risk_df"))
 
     st.markdown("---")
+    render_service_instability_leaders(results.get("service_risk_df"))
+
+    st.markdown("---")
     st.subheader("Top SIP Candidates (Next 30 Days)")
     sip_df = results.get("sip_table")
     if sip_df is None or sip_df.empty:
@@ -618,7 +687,9 @@ def main():
             try:
                 pdf_bytes = build_osil_pdf_report(results)
                 st.session_state.pdf_bytes = pdf_bytes
-                st.session_state.pdf_filename = f"OSIL_Executive_Report_{as_of or 'latest'}_{tenant_name}.pdf".replace(" ", "_")
+                st.session_state.pdf_filename = (
+                    f"OSIL_Executive_Report_{as_of or 'latest'}_{tenant_name}.pdf".replace(" ", "_")
+                )
                 st.success("PDF generated. Use the download button on the right.")
             except Exception as e:
                 st.error(f"Report generation failed: {e}")
