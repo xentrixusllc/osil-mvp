@@ -1,5 +1,6 @@
 import os
 import json
+import sqlite3
 from datetime import datetime, timezone
 
 import streamlit as st
@@ -11,64 +12,110 @@ from osil_engine import run_osil, REQUIRED_COLUMNS
 from report_generator import build_osil_pdf_report
 
 
+# -----------------------------
+# App config
+# -----------------------------
 st.set_page_config(page_title="OSIL™ by Xentrixus", layout="wide")
 
 APP_TITLE = "OSIL™ by Xentrixus"
 APP_SUB = "Operational Stability Intelligence"
 
 DEMO_CSV_PATH = "data/demo_incidents.csv"
-RUN_LOG_PATH = "data/osil_run_log.jsonl"  # persisted in repo folder (works best locally; ok for MVP demo)
+SQLITE_PATH = "data/osil.db"
 
 
 # -----------------------------
-# Utilities
+# SQLite (Phase 7)
 # -----------------------------
-def _utc_now_iso() -> str:
-    return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
-
-
-def _safe_mkdir(path: str) -> None:
+def _safe_mkdir_for_file(path: str) -> None:
     folder = os.path.dirname(path)
     if folder and not os.path.exists(folder):
         os.makedirs(folder, exist_ok=True)
 
 
-def _append_run_log(record: dict) -> None:
-    _safe_mkdir(RUN_LOG_PATH)
-    with open(RUN_LOG_PATH, "a", encoding="utf-8") as f:
-        f.write(json.dumps(record) + "\n")
+def _db_conn():
+    _safe_mkdir_for_file(SQLITE_PATH)
+    conn = sqlite3.connect(SQLITE_PATH, check_same_thread=False)
+    return conn
 
 
-def _read_run_log() -> pd.DataFrame:
-    if not os.path.exists(RUN_LOG_PATH):
+def _db_init():
+    conn = _db_conn()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS osil_runs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            run_ts TEXT NOT NULL,
+            bvsi REAL NOT NULL,
+            posture TEXT,
+            top_services_json TEXT
+        )
+        """
+    )
+    conn.commit()
+    conn.close()
+
+
+def _db_insert_run(run_ts: str, bvsi: float, posture: str, top_services: list):
+    conn = _db_conn()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        INSERT INTO osil_runs (run_ts, bvsi, posture, top_services_json)
+        VALUES (?, ?, ?, ?)
+        """,
+        (run_ts, float(bvsi), posture or "", json.dumps(top_services or [])),
+    )
+    conn.commit()
+    conn.close()
+
+
+def _db_read_runs(limit: int = 200) -> pd.DataFrame:
+    _db_init()
+    conn = _db_conn()
+    df = pd.read_sql_query(
+        """
+        SELECT run_ts, bvsi, posture, top_services_json
+        FROM osil_runs
+        ORDER BY datetime(run_ts) ASC
+        LIMIT ?
+        """,
+        conn,
+        params=(limit,),
+    )
+    conn.close()
+
+    if df.empty:
         return pd.DataFrame(columns=["run_ts", "bvsi", "posture", "top_services"])
-    rows = []
-    with open(RUN_LOG_PATH, "r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                rows.append(json.loads(line))
-            except Exception:
-                continue
-    if not rows:
-        return pd.DataFrame(columns=["run_ts", "bvsi", "posture", "top_services"])
-    df = pd.DataFrame(rows)
-    # Normalize
-    if "run_ts" in df.columns:
-        df["run_ts"] = pd.to_datetime(df["run_ts"], errors="coerce")
-    if "bvsi" in df.columns:
-        df["bvsi"] = pd.to_numeric(df["bvsi"], errors="coerce")
+
+    df["run_ts"] = pd.to_datetime(df["run_ts"], errors="coerce")
+    df["bvsi"] = pd.to_numeric(df["bvsi"], errors="coerce")
+    df["top_services"] = df["top_services_json"].apply(
+        lambda x: json.loads(x) if isinstance(x, str) and x.strip() else []
+    )
+    df = df.drop(columns=["top_services_json"], errors="ignore")
     df = df.sort_values("run_ts")
     return df
 
 
+def _db_clear_runs():
+    _db_init()
+    conn = _db_conn()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM osil_runs")
+    conn.commit()
+    conn.close()
+
+
+def _utc_now_iso() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+
+
+# -----------------------------
+# Momentum helper (Option A arrows)
+# -----------------------------
 def _momentum_arrow(series: pd.Series) -> str:
-    """
-    Simple MVP momentum:
-    compare last 2 BVSI values
-    """
     s = series.dropna()
     if len(s) < 2:
         return "→"
@@ -132,7 +179,7 @@ def _load_demo_csv() -> pd.DataFrame:
 
 
 # -----------------------------
-# Executive Snapshot (Phase 7)
+# Snapshot builder
 # -----------------------------
 def build_operational_snapshot(results: dict) -> dict:
     overall = results.get("overall", {})
@@ -149,6 +196,7 @@ def build_operational_snapshot(results: dict) -> dict:
         for _, row in sip_df.head(3).iterrows():
             svc = str(row.get("Service", "Unknown Service"))
             top_services.append(svc)
+
             tier = str(row.get("Service_Tier", ""))
             why = str(row.get("Why_Flagged", "Operational instability pattern"))
             theme = str(row.get("Suggested_Theme", ""))
@@ -209,28 +257,32 @@ def _render_snapshot_box(snapshot: dict):
 
 
 # -----------------------------
-# Trend Engine (Phase 8)
+# Trend Engine (now backed by SQLite)
 # -----------------------------
 def _render_bvsi_trend():
-    st.subheader("BVSI Trend (Historical Runs)")
-    trend_df = _read_run_log()
+    st.subheader("BVSI Trend (Saved Runs)")
+    trend_df = _db_read_runs(limit=500)
 
     if trend_df.empty or trend_df["bvsi"].dropna().empty:
-        st.info("No historical runs recorded yet. Run OSIL once to start trend tracking.")
+        st.info("No saved runs yet. Run OSIL once to begin trend tracking.")
         return
 
-    # Use last 12 runs for dashboard display
     view = trend_df.dropna(subset=["run_ts", "bvsi"]).tail(12).copy()
     arrow = _momentum_arrow(view["bvsi"])
     label = _momentum_label(arrow)
 
-    c1, c2, c3 = st.columns([1, 1, 2])
+    c1, c2, c3, c4 = st.columns([1, 1, 2, 1])
     with c1:
         st.metric("Momentum", f"{arrow} {label}")
     with c2:
         st.metric("Latest BVSI™", f"{float(view['bvsi'].iloc[-1]):.1f}")
     with c3:
-        st.write("Trend is based on your last OSIL runs (MVP approach).")
+        st.write("Trend is based on saved OSIL runs (SQLite-backed).")
+    with c4:
+        if st.button("Clear History (demo reset)"):
+            _db_clear_runs()
+            st.success("History cleared.")
+            st.rerun()
 
     fig = plt.figure(figsize=(7, 3.2), dpi=140)
     ax = plt.gca()
@@ -246,7 +298,6 @@ def _render_bvsi_trend():
     with tc2:
         st.pyplot(fig)
 
-    # Download trend CSV
     export = trend_df.copy()
     export["run_ts"] = export["run_ts"].astype(str)
     csv_bytes = export.to_csv(index=False).encode("utf-8")
@@ -320,6 +371,8 @@ def _render_heatmap(service_risk_df: pd.DataFrame) -> None:
 # Main App
 # -----------------------------
 def main():
+    _db_init()
+
     if "osil_results" not in st.session_state:
         st.session_state.osil_results = None
     if "pdf_bytes" not in st.session_state:
@@ -359,15 +412,14 @@ def main():
             st.session_state.osil_results = results
             st.session_state.pdf_bytes = None
 
-            # --- record run history (Phase 8) ---
+            # Save run summary into SQLite
             snapshot = build_operational_snapshot(results)
-            record = {
-                "run_ts": _utc_now_iso(),
-                "bvsi": float(snapshot["bvsi"]),
-                "posture": snapshot["posture"],
-                "top_services": snapshot.get("top_services", []),
-            }
-            _append_run_log(record)
+            _db_insert_run(
+                run_ts=_utc_now_iso(),
+                bvsi=float(snapshot["bvsi"]),
+                posture=str(snapshot["posture"]),
+                top_services=snapshot.get("top_services", []),
+            )
 
         except Exception as e:
             st.error(f"Run failed: {e}")
@@ -382,12 +434,12 @@ def main():
     posture = results.get("posture", "")
     as_of = results.get("as_of", "")
 
-    # Snapshot first
+    # Snapshot
     st.markdown("---")
     snapshot = build_operational_snapshot(results)
     _render_snapshot_box(snapshot)
 
-    # BVSI Trend (Phase 8)
+    # Trend (SQLite-backed)
     st.markdown("---")
     _render_bvsi_trend()
 
@@ -401,7 +453,7 @@ def main():
     with c3:
         st.metric("As-of Date", as_of if as_of else "—")
 
-    # Radar (scaled + centered)
+    # Radar (centered)
     st.markdown("---")
     st.subheader("Operational Stability Profile (Radar)")
 
@@ -432,7 +484,6 @@ def main():
     ax.fill(angles_loop, values_loop, alpha=0.10)
 
     plt.tight_layout()
-
     rc1, rc2, rc3 = st.columns([1, 2, 1])
     with rc2:
         st.pyplot(fig)
