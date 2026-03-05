@@ -11,6 +11,10 @@ import matplotlib.pyplot as plt
 from osil_engine import run_osil, REQUIRED_COLUMNS
 from report_generator import build_osil_pdf_report
 
+from data_classifier import detect_practice_type
+from data_classifier import normalize_service_anchor
+from data_classifier import calculate_data_readiness
+
 
 # -----------------------------
 # App config
