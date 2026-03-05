@@ -122,6 +122,35 @@ def _render_heatmap(service_risk_df: pd.DataFrame) -> None:
     )
 
 
+def _render_exec_interpretation(html_text: str) -> None:
+    """
+    Consulting-style callout box.
+    Expects HTML (e.g., <b>...</b>), so we render with unsafe_allow_html.
+    """
+    if not html_text:
+        st.info("No executive interpretation available.")
+        return
+
+    st.subheader("Executive Interpretation")
+
+    st.markdown(
+        f"""
+<div style="
+    border: 1px solid #D1D5DB;
+    background: #F5F7FA;
+    padding: 14px 16px;
+    border-radius: 10px;
+    line-height: 1.55;
+    color: #111827;
+    font-size: 16px;
+">
+{html_text}
+</div>
+""",
+        unsafe_allow_html=True,
+    )
+
+
 def main():
     # ---------- Session state for stable downloads ----------
     if "osil_results" not in st.session_state:
@@ -233,10 +262,9 @@ def main():
     else:
         st.dataframe(sip_df, use_container_width=True)
 
-    # Executive interpretation
+    # Executive interpretation (NOW styled + HTML rendered)
     st.markdown("---")
-    st.subheader("Executive Interpretation")
-    st.write(results.get("analyst_review", ""))
+    _render_exec_interpretation(results.get("analyst_review", ""))
 
     # PDF area
     st.markdown("---")
