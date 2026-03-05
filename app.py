@@ -1,3 +1,7 @@
+import os
+import json
+from datetime import datetime, timezone
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -13,6 +17,72 @@ APP_TITLE = "OSIL™ by Xentrixus"
 APP_SUB = "Operational Stability Intelligence"
 
 DEMO_CSV_PATH = "data/demo_incidents.csv"
+RUN_LOG_PATH = "data/osil_run_log.jsonl"  # persisted in repo folder (works best locally; ok for MVP demo)
+
+
+# -----------------------------
+# Utilities
+# -----------------------------
+def _utc_now_iso() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+
+
+def _safe_mkdir(path: str) -> None:
+    folder = os.path.dirname(path)
+    if folder and not os.path.exists(folder):
+        os.makedirs(folder, exist_ok=True)
+
+
+def _append_run_log(record: dict) -> None:
+    _safe_mkdir(RUN_LOG_PATH)
+    with open(RUN_LOG_PATH, "a", encoding="utf-8") as f:
+        f.write(json.dumps(record) + "\n")
+
+
+def _read_run_log() -> pd.DataFrame:
+    if not os.path.exists(RUN_LOG_PATH):
+        return pd.DataFrame(columns=["run_ts", "bvsi", "posture", "top_services"])
+    rows = []
+    with open(RUN_LOG_PATH, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                rows.append(json.loads(line))
+            except Exception:
+                continue
+    if not rows:
+        return pd.DataFrame(columns=["run_ts", "bvsi", "posture", "top_services"])
+    df = pd.DataFrame(rows)
+    # Normalize
+    if "run_ts" in df.columns:
+        df["run_ts"] = pd.to_datetime(df["run_ts"], errors="coerce")
+    if "bvsi" in df.columns:
+        df["bvsi"] = pd.to_numeric(df["bvsi"], errors="coerce")
+    df = df.sort_values("run_ts")
+    return df
+
+
+def _momentum_arrow(series: pd.Series) -> str:
+    """
+    Simple MVP momentum:
+    compare last 2 BVSI values
+    """
+    s = series.dropna()
+    if len(s) < 2:
+        return "→"
+    last = float(s.iloc[-1])
+    prev = float(s.iloc[-2])
+    if last >= prev + 1.0:
+        return "↑"
+    if last <= prev - 1.0:
+        return "↓"
+    return "→"
+
+
+def _momentum_label(arrow: str) -> str:
+    return {"↑": "Improving", "→": "Stable", "↓": "Declining"}.get(arrow, "Stable")
 
 
 # -----------------------------
@@ -27,13 +97,8 @@ def _find_column_case_insensitive(df: pd.DataFrame, target: str):
 
 
 def _ensure_required_columns_for_demo(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Demo datasets are allowed to be imperfect.
-    Auto-add missing REQUIRED_COLUMNS with safe defaults so demo always runs.
-    """
     d = df.copy()
 
-    # Rename case-insensitive matches to the required names
     rename_map = {}
     for req in REQUIRED_COLUMNS:
         found = _find_column_case_insensitive(d, req)
@@ -42,7 +107,6 @@ def _ensure_required_columns_for_demo(df: pd.DataFrame) -> pd.DataFrame:
     if rename_map:
         d = d.rename(columns=rename_map)
 
-    # Add missing required columns
     for req in REQUIRED_COLUMNS:
         if req not in d.columns:
             if req in ["Reopened_Flag", "Change_Related_Flag"]:
@@ -58,7 +122,6 @@ def _ensure_required_columns_for_demo(df: pd.DataFrame) -> pd.DataFrame:
             else:
                 d[req] = "Unknown"
 
-    # Put required columns first
     d = d[REQUIRED_COLUMNS + [c for c in d.columns if c not in REQUIRED_COLUMNS]]
     return d
 
@@ -75,17 +138,17 @@ def build_operational_snapshot(results: dict) -> dict:
     overall = results.get("overall", {})
     posture = results.get("posture", "Unknown")
     bvsi = float(overall.get("BVSI", 0))
-
-    # Analyst review is intentionally written in executive tone
     interpretation_html = results.get("analyst_review", "")
 
     sip_df = results.get("sip_table")
     top_risks = []
     actions = []
+    top_services = []
 
     if sip_df is not None and isinstance(sip_df, pd.DataFrame) and not sip_df.empty:
         for _, row in sip_df.head(3).iterrows():
             svc = str(row.get("Service", "Unknown Service"))
+            top_services.append(svc)
             tier = str(row.get("Service_Tier", ""))
             why = str(row.get("Why_Flagged", "Operational instability pattern"))
             theme = str(row.get("Suggested_Theme", ""))
@@ -109,6 +172,7 @@ def build_operational_snapshot(results: dict) -> dict:
         "interpretation_html": interpretation_html,
         "top_risks": top_risks,
         "actions": actions,
+        "top_services": top_services[:3],
     }
 
 
@@ -145,6 +209,56 @@ def _render_snapshot_box(snapshot: dict):
 
 
 # -----------------------------
+# Trend Engine (Phase 8)
+# -----------------------------
+def _render_bvsi_trend():
+    st.subheader("BVSI Trend (Historical Runs)")
+    trend_df = _read_run_log()
+
+    if trend_df.empty or trend_df["bvsi"].dropna().empty:
+        st.info("No historical runs recorded yet. Run OSIL once to start trend tracking.")
+        return
+
+    # Use last 12 runs for dashboard display
+    view = trend_df.dropna(subset=["run_ts", "bvsi"]).tail(12).copy()
+    arrow = _momentum_arrow(view["bvsi"])
+    label = _momentum_label(arrow)
+
+    c1, c2, c3 = st.columns([1, 1, 2])
+    with c1:
+        st.metric("Momentum", f"{arrow} {label}")
+    with c2:
+        st.metric("Latest BVSI™", f"{float(view['bvsi'].iloc[-1]):.1f}")
+    with c3:
+        st.write("Trend is based on your last OSIL runs (MVP approach).")
+
+    fig = plt.figure(figsize=(7, 3.2), dpi=140)
+    ax = plt.gca()
+    ax.plot(view["run_ts"], view["bvsi"], marker="o")
+    ax.set_ylim(0, 100)
+    ax.set_ylabel("BVSI™ (0–100)")
+    ax.set_xlabel("Run Timestamp (UTC)")
+    ax.set_title("BVSI™ Trend — Last 12 Runs")
+    plt.xticks(rotation=30, ha="right")
+    plt.tight_layout()
+
+    tc1, tc2, tc3 = st.columns([1, 2, 1])
+    with tc2:
+        st.pyplot(fig)
+
+    # Download trend CSV
+    export = trend_df.copy()
+    export["run_ts"] = export["run_ts"].astype(str)
+    csv_bytes = export.to_csv(index=False).encode("utf-8")
+    st.download_button(
+        "Download BVSI Trend History (CSV)",
+        data=csv_bytes,
+        file_name="osil_bvsi_trend_history.csv",
+        mime="text/csv",
+    )
+
+
+# -----------------------------
 # Heatmap (centered + dashboard sized)
 # -----------------------------
 def _render_heatmap(service_risk_df: pd.DataFrame) -> None:
@@ -164,7 +278,6 @@ def _render_heatmap(service_risk_df: pd.DataFrame) -> None:
     tiers = show["Service_Tier"].tolist()
     matrix = show[metric_cols].to_numpy(dtype=float)
 
-    # Dashboard-friendly sizing
     fig = plt.figure(figsize=(7, 3.8), dpi=140)
     ax = plt.gca()
 
@@ -187,7 +300,6 @@ def _render_heatmap(service_risk_df: pd.DataFrame) -> None:
 
     plt.tight_layout()
 
-    # IMPORTANT: center it so Streamlit doesn't stretch it full-width
     hc1, hc2, hc3 = st.columns([1, 2, 1])
     with hc2:
         st.pyplot(fig)
@@ -246,6 +358,17 @@ def main():
             results = run_osil(df)
             st.session_state.osil_results = results
             st.session_state.pdf_bytes = None
+
+            # --- record run history (Phase 8) ---
+            snapshot = build_operational_snapshot(results)
+            record = {
+                "run_ts": _utc_now_iso(),
+                "bvsi": float(snapshot["bvsi"]),
+                "posture": snapshot["posture"],
+                "top_services": snapshot.get("top_services", []),
+            }
+            _append_run_log(record)
+
         except Exception as e:
             st.error(f"Run failed: {e}")
             return
@@ -259,10 +382,14 @@ def main():
     posture = results.get("posture", "")
     as_of = results.get("as_of", "")
 
-    # Snapshot first (Signal → Meaning → Risk → Action)
+    # Snapshot first
     st.markdown("---")
     snapshot = build_operational_snapshot(results)
     _render_snapshot_box(snapshot)
+
+    # BVSI Trend (Phase 8)
+    st.markdown("---")
+    _render_bvsi_trend()
 
     # KPI row
     st.markdown("---")
