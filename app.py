@@ -25,7 +25,7 @@ SQLITE_PATH = "data/osil.db"
 
 
 # -----------------------------
-# SQLite (Phase 7)
+# SQLite helpers
 # -----------------------------
 def _safe_mkdir_for_file(path: str) -> None:
     folder = os.path.dirname(path)
@@ -35,17 +35,28 @@ def _safe_mkdir_for_file(path: str) -> None:
 
 def _db_conn():
     _safe_mkdir_for_file(SQLITE_PATH)
-    conn = sqlite3.connect(SQLITE_PATH, check_same_thread=False)
-    return conn
+    return sqlite3.connect(SQLITE_PATH, check_same_thread=False)
 
 
-def _db_init():
+def _db_has_column(conn, table: str, col: str) -> bool:
+    cur = conn.cursor()
+    cur.execute(f"PRAGMA table_info({table})")
+    cols = [r[1] for r in cur.fetchall()]  # (cid, name, type, notnull, dflt_value, pk)
+    return col in cols
+
+
+def _db_init_and_migrate():
+    """
+    Creates table if not exists and migrates older DBs by adding tenant_name column.
+    """
     conn = _db_conn()
     cur = conn.cursor()
+
     cur.execute(
         """
         CREATE TABLE IF NOT EXISTS osil_runs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            tenant_name TEXT NOT NULL DEFAULT 'Default',
             run_ts TEXT NOT NULL,
             bvsi REAL NOT NULL,
             posture TEXT,
@@ -54,40 +65,71 @@ def _db_init():
         """
     )
     conn.commit()
+
+    # Migration: if older table exists without tenant_name, add it.
+    if not _db_has_column(conn, "osil_runs", "tenant_name"):
+        cur.execute("ALTER TABLE osil_runs ADD COLUMN tenant_name TEXT NOT NULL DEFAULT 'Default'")
+        conn.commit()
+
     conn.close()
 
 
-def _db_insert_run(run_ts: str, bvsi: float, posture: str, top_services: list):
+def _db_insert_run(tenant_name: str, run_ts: str, bvsi: float, posture: str, top_services: list):
+    _db_init_and_migrate()
+    tenant = (tenant_name or "Default").strip()
+
     conn = _db_conn()
     cur = conn.cursor()
     cur.execute(
         """
-        INSERT INTO osil_runs (run_ts, bvsi, posture, top_services_json)
-        VALUES (?, ?, ?, ?)
+        INSERT INTO osil_runs (tenant_name, run_ts, bvsi, posture, top_services_json)
+        VALUES (?, ?, ?, ?, ?)
         """,
-        (run_ts, float(bvsi), posture or "", json.dumps(top_services or [])),
+        (tenant, run_ts, float(bvsi), posture or "", json.dumps(top_services or [])),
     )
     conn.commit()
     conn.close()
 
 
-def _db_read_runs(limit: int = 200) -> pd.DataFrame:
-    _db_init()
+def _db_list_tenants(limit: int = 200) -> list:
+    _db_init_and_migrate()
+    conn = _db_conn()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT DISTINCT tenant_name
+        FROM osil_runs
+        WHERE tenant_name IS NOT NULL AND TRIM(tenant_name) <> ''
+        ORDER BY tenant_name ASC
+        LIMIT ?
+        """,
+        (limit,),
+    )
+    rows = cur.fetchall()
+    conn.close()
+    return [r[0] for r in rows] if rows else []
+
+
+def _db_read_runs_for_tenant(tenant_name: str, limit: int = 500) -> pd.DataFrame:
+    _db_init_and_migrate()
+    tenant = (tenant_name or "Default").strip()
+
     conn = _db_conn()
     df = pd.read_sql_query(
         """
-        SELECT run_ts, bvsi, posture, top_services_json
+        SELECT tenant_name, run_ts, bvsi, posture, top_services_json
         FROM osil_runs
+        WHERE tenant_name = ?
         ORDER BY datetime(run_ts) ASC
         LIMIT ?
         """,
         conn,
-        params=(limit,),
+        params=(tenant, limit),
     )
     conn.close()
 
     if df.empty:
-        return pd.DataFrame(columns=["run_ts", "bvsi", "posture", "top_services"])
+        return pd.DataFrame(columns=["tenant_name", "run_ts", "bvsi", "posture", "top_services"])
 
     df["run_ts"] = pd.to_datetime(df["run_ts"], errors="coerce")
     df["bvsi"] = pd.to_numeric(df["bvsi"], errors="coerce")
@@ -99,11 +141,13 @@ def _db_read_runs(limit: int = 200) -> pd.DataFrame:
     return df
 
 
-def _db_clear_runs():
-    _db_init()
+def _db_clear_runs_for_tenant(tenant_name: str):
+    _db_init_and_migrate()
+    tenant = (tenant_name or "Default").strip()
+
     conn = _db_conn()
     cur = conn.cursor()
-    cur.execute("DELETE FROM osil_runs")
+    cur.execute("DELETE FROM osil_runs WHERE tenant_name = ?", (tenant,))
     conn.commit()
     conn.close()
 
@@ -116,10 +160,6 @@ def _utc_now_iso() -> str:
 # Admin guard (A + B)
 # -----------------------------
 def _get_admin_passcode() -> str:
-    """
-    Best practice: store in Streamlit Secrets:
-    OSIL_ADMIN_PASSCODE = "your-passcode"
-    """
     try:
         return str(st.secrets.get("OSIL_ADMIN_PASSCODE", "")).strip()
     except Exception:
@@ -127,9 +167,6 @@ def _get_admin_passcode() -> str:
 
 
 def _admin_mode_panel() -> bool:
-    """
-    Returns True if admin mode is enabled for this session.
-    """
     st.sidebar.markdown("### Admin Mode")
     if "admin_ok" not in st.session_state:
         st.session_state.admin_ok = False
@@ -152,7 +189,29 @@ def _admin_mode_panel() -> bool:
 
 
 # -----------------------------
-# Momentum helper (Option A arrows)
+# Tenant selector (Phase 8)
+# -----------------------------
+def _tenant_selector() -> str:
+    st.sidebar.markdown("### Organization")
+    tenants = _db_list_tenants()
+    if "tenant_name" not in st.session_state:
+        st.session_state.tenant_name = tenants[0] if tenants else "Default"
+
+    mode = st.sidebar.radio("Choose", ["Select existing", "Enter new"], horizontal=False)
+
+    if mode == "Select existing":
+        options = tenants if tenants else ["Default"]
+        sel = st.sidebar.selectbox("Organization", options=options, index=options.index(st.session_state.tenant_name) if st.session_state.tenant_name in options else 0)
+        st.session_state.tenant_name = sel
+    else:
+        typed = st.sidebar.text_input("Organization Name", value=st.session_state.tenant_name)
+        st.session_state.tenant_name = typed.strip() if typed.strip() else "Default"
+
+    return st.session_state.tenant_name
+
+
+# -----------------------------
+# Momentum helper
 # -----------------------------
 def _momentum_arrow(series: pd.Series) -> str:
     s = series.dropna()
@@ -172,7 +231,7 @@ def _momentum_label(arrow: str) -> str:
 
 
 # -----------------------------
-# Demo helper: tolerate imperfect demo data
+# Demo helper
 # -----------------------------
 def _find_column_case_insensitive(df: pd.DataFrame, target: str):
     norm_target = target.strip().lower()
@@ -263,8 +322,9 @@ def build_operational_snapshot(results: dict) -> dict:
     }
 
 
-def _render_snapshot_box(snapshot: dict):
+def _render_snapshot_box(snapshot: dict, tenant_name: str):
     st.subheader("Operational Stability Snapshot")
+    st.caption(f"Organization: {tenant_name}")
 
     st.markdown(
         f"""
@@ -296,14 +356,14 @@ def _render_snapshot_box(snapshot: dict):
 
 
 # -----------------------------
-# Trend Engine (SQLite-backed) + Admin Reset (A + B)
+# Trend Engine (Tenant-filtered)
 # -----------------------------
-def _render_bvsi_trend(admin_enabled: bool):
+def _render_bvsi_trend(tenant_name: str, admin_enabled: bool):
     st.subheader("BVSI Trend (Saved Runs)")
-    trend_df = _db_read_runs(limit=500)
+    trend_df = _db_read_runs_for_tenant(tenant_name, limit=500)
 
     if trend_df.empty or trend_df["bvsi"].dropna().empty:
-        st.info("No saved runs yet. Run OSIL once to begin trend tracking.")
+        st.info("No saved runs yet for this organization. Run OSIL once to begin trend tracking.")
         return
 
     view = trend_df.dropna(subset=["run_ts", "bvsi"]).tail(12).copy()
@@ -316,17 +376,19 @@ def _render_bvsi_trend(admin_enabled: bool):
     with c2:
         st.metric("Latest BVSI™", f"{float(view['bvsi'].iloc[-1]):.1f}")
     with c3:
-        st.write("Trend is based on saved OSIL runs (SQLite-backed).")
+        st.write(f"Trend is filtered to **{tenant_name}** (SQLite-backed).")
 
-    # Admin-only reset with typed confirmation
+    # Admin-only reset with typed confirmation (scoped to tenant)
     if admin_enabled:
         with st.expander("Admin Controls (Protected)"):
-            st.warning("Reset permanently deletes saved run history. This impacts BVSI trends.")
+            st.warning(
+                f"Reset permanently deletes saved run history for **{tenant_name}**. This impacts BVSI trends."
+            )
             confirm = st.text_input("Type RESET to confirm", key="reset_confirm_text")
-            if st.button("Clear History Now", key="reset_clear_btn"):
+            if st.button(f"Clear History for {tenant_name}", key="reset_clear_btn"):
                 if confirm.strip().upper() == "RESET":
-                    _db_clear_runs()
-                    st.success("History cleared.")
+                    _db_clear_runs_for_tenant(tenant_name)
+                    st.success(f"History cleared for {tenant_name}.")
                     st.rerun()
                 else:
                     st.error("Confirmation not valid. Type RESET exactly to proceed.")
@@ -337,7 +399,7 @@ def _render_bvsi_trend(admin_enabled: bool):
     ax.set_ylim(0, 100)
     ax.set_ylabel("BVSI™ (0–100)")
     ax.set_xlabel("Run Timestamp (UTC)")
-    ax.set_title("BVSI™ Trend — Last 12 Runs")
+    ax.set_title(f"BVSI™ Trend — Last 12 Runs ({tenant_name})")
     plt.xticks(rotation=30, ha="right")
     plt.tight_layout()
 
@@ -351,13 +413,13 @@ def _render_bvsi_trend(admin_enabled: bool):
     st.download_button(
         "Download BVSI Trend History (CSV)",
         data=csv_bytes,
-        file_name="osil_bvsi_trend_history.csv",
+        file_name=f"osil_bvsi_trend_history_{tenant_name}.csv".replace(" ", "_"),
         mime="text/csv",
     )
 
 
 # -----------------------------
-# Heatmap (centered + dashboard sized)
+# Heatmap
 # -----------------------------
 def _render_heatmap(service_risk_df: pd.DataFrame) -> None:
     st.subheader("Service Stability Heatmap (Top 10 Services by Risk)")
@@ -382,7 +444,7 @@ def _render_heatmap(service_risk_df: pd.DataFrame) -> None:
     im = ax.imshow(matrix, aspect="auto", vmin=0, vmax=100)
 
     ax.set_xticks(np.arange(len(metric_cols)))
-    ax.set_xticklabels(["Recurrence", "MTTR Drag", "Reopen Churn", "Change Collision"], rotation=0, fontsize=9)
+    ax.set_xticklabels(["Recurrence", "MTTR Drag", "Reopen Churn", "Change Collision"], fontsize=9)
 
     ax.set_yticks(np.arange(len(services)))
     ax.set_yticklabels([f"{s} ({t})" for s, t in zip(services, tiers)], fontsize=9)
@@ -418,7 +480,7 @@ def _render_heatmap(service_risk_df: pd.DataFrame) -> None:
 # Main App
 # -----------------------------
 def main():
-    _db_init()
+    _db_init_and_migrate()
 
     if "osil_results" not in st.session_state:
         st.session_state.osil_results = None
@@ -427,8 +489,8 @@ def main():
     if "pdf_filename" not in st.session_state:
         st.session_state.pdf_filename = "OSIL_Executive_Report_latest.pdf"
 
-    # Admin mode (protected)
     admin_enabled = _admin_mode_panel()
+    tenant_name = _tenant_selector()
 
     st.title(APP_TITLE)
     st.caption(APP_SUB)
@@ -462,9 +524,10 @@ def main():
             st.session_state.osil_results = results
             st.session_state.pdf_bytes = None
 
-            # Save run summary into SQLite
             snapshot = build_operational_snapshot(results)
+
             _db_insert_run(
+                tenant_name=tenant_name,
                 run_ts=_utc_now_iso(),
                 bvsi=float(snapshot["bvsi"]),
                 posture=str(snapshot["posture"]),
@@ -484,16 +547,13 @@ def main():
     posture = results.get("posture", "")
     as_of = results.get("as_of", "")
 
-    # Snapshot
     st.markdown("---")
     snapshot = build_operational_snapshot(results)
-    _render_snapshot_box(snapshot)
+    _render_snapshot_box(snapshot, tenant_name=tenant_name)
 
-    # Trend (SQLite-backed, admin reset protected)
     st.markdown("---")
-    _render_bvsi_trend(admin_enabled=admin_enabled)
+    _render_bvsi_trend(tenant_name=tenant_name, admin_enabled=admin_enabled)
 
-    # KPI row
     st.markdown("---")
     c1, c2, c3 = st.columns([1, 2, 1])
     with c1:
@@ -503,7 +563,6 @@ def main():
     with c3:
         st.metric("As-of Date", as_of if as_of else "—")
 
-    # Radar (centered)
     st.markdown("---")
     st.subheader("Operational Stability Profile (Radar)")
 
@@ -538,11 +597,9 @@ def main():
     with rc2:
         st.pyplot(fig)
 
-    # Heatmap (centered)
     st.markdown("---")
     _render_heatmap(results.get("service_risk_df"))
 
-    # SIPs
     st.markdown("---")
     st.subheader("Top SIP Candidates (Next 30 Days)")
     sip_df = results.get("sip_table")
@@ -551,7 +608,6 @@ def main():
     else:
         st.dataframe(sip_df, use_container_width=True)
 
-    # PDF
     st.markdown("---")
     st.subheader("Executive Report (PDF)")
 
@@ -562,7 +618,7 @@ def main():
             try:
                 pdf_bytes = build_osil_pdf_report(results)
                 st.session_state.pdf_bytes = pdf_bytes
-                st.session_state.pdf_filename = f"OSIL_Executive_Report_{as_of or 'latest'}.pdf"
+                st.session_state.pdf_filename = f"OSIL_Executive_Report_{as_of or 'latest'}_{tenant_name}.pdf".replace(" ", "_")
                 st.success("PDF generated. Use the download button on the right.")
             except Exception as e:
                 st.error(f"Report generation failed: {e}")
