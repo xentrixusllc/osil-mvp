@@ -33,7 +33,7 @@ def _ensure_required_columns_for_demo(df: pd.DataFrame) -> pd.DataFrame:
     """
     d = df.copy()
 
-    # rename case-insensitive matches to the required names
+    # Rename case-insensitive matches to the required names
     rename_map = {}
     for req in REQUIRED_COLUMNS:
         found = _find_column_case_insensitive(d, req)
@@ -42,7 +42,7 @@ def _ensure_required_columns_for_demo(df: pd.DataFrame) -> pd.DataFrame:
     if rename_map:
         d = d.rename(columns=rename_map)
 
-    # add missing required columns
+    # Add missing required columns
     for req in REQUIRED_COLUMNS:
         if req not in d.columns:
             if req in ["Reopened_Flag", "Change_Related_Flag"]:
@@ -58,6 +58,7 @@ def _ensure_required_columns_for_demo(df: pd.DataFrame) -> pd.DataFrame:
             else:
                 d[req] = "Unknown"
 
+    # Put required columns first
     d = d[REQUIRED_COLUMNS + [c for c in d.columns if c not in REQUIRED_COLUMNS]]
     return d
 
@@ -75,6 +76,7 @@ def build_operational_snapshot(results: dict) -> dict:
     posture = results.get("posture", "Unknown")
     bvsi = float(overall.get("BVSI", 0))
 
+    # Analyst review is intentionally written in executive tone
     interpretation_html = results.get("analyst_review", "")
 
     sip_df = results.get("sip_table")
@@ -87,6 +89,7 @@ def build_operational_snapshot(results: dict) -> dict:
             tier = str(row.get("Service_Tier", ""))
             why = str(row.get("Why_Flagged", "Operational instability pattern"))
             theme = str(row.get("Suggested_Theme", ""))
+
             tier_txt = f" ({tier})" if tier and tier != "nan" else ""
             theme_txt = f" — {theme}" if theme and theme != "nan" else ""
             top_risks.append(f"{svc}{tier_txt}{theme_txt} — {why}")
@@ -142,7 +145,7 @@ def _render_snapshot_box(snapshot: dict):
 
 
 # -----------------------------
-# Heatmap (scaled for dashboard)
+# Heatmap (centered + dashboard sized)
 # -----------------------------
 def _render_heatmap(service_risk_df: pd.DataFrame) -> None:
     st.subheader("Service Stability Heatmap (Top 10 Services by Risk)")
@@ -161,7 +164,7 @@ def _render_heatmap(service_risk_df: pd.DataFrame) -> None:
     tiers = show["Service_Tier"].tolist()
     matrix = show[metric_cols].to_numpy(dtype=float)
 
-    # Smaller dashboard-friendly sizing
+    # Dashboard-friendly sizing
     fig = plt.figure(figsize=(7, 3.8), dpi=140)
     ax = plt.gca()
 
@@ -183,7 +186,11 @@ def _render_heatmap(service_risk_df: pd.DataFrame) -> None:
     cbar.set_label("Risk Score (0–100)", fontsize=9)
 
     plt.tight_layout()
-    st.pyplot(fig)
+
+    # IMPORTANT: center it so Streamlit doesn't stretch it full-width
+    hc1, hc2, hc3 = st.columns([1, 2, 1])
+    with hc2:
+        st.pyplot(fig)
 
     st.markdown("**Top 10 Services — Risk Breakdown**")
     st.dataframe(show, use_container_width=True)
@@ -252,7 +259,7 @@ def main():
     posture = results.get("posture", "")
     as_of = results.get("as_of", "")
 
-    # Snapshot first
+    # Snapshot first (Signal → Meaning → Risk → Action)
     st.markdown("---")
     snapshot = build_operational_snapshot(results)
     _render_snapshot_box(snapshot)
@@ -267,7 +274,7 @@ def main():
     with c3:
         st.metric("As-of Date", as_of if as_of else "—")
 
-    # Radar (scaled + centered correctly)
+    # Radar (scaled + centered)
     st.markdown("---")
     st.subheader("Operational Stability Profile (Radar)")
 
@@ -299,11 +306,11 @@ def main():
 
     plt.tight_layout()
 
-    cc1, cc2, cc3 = st.columns([1, 2, 1])
-    with cc2:
+    rc1, rc2, rc3 = st.columns([1, 2, 1])
+    with rc2:
         st.pyplot(fig)
 
-    # Heatmap
+    # Heatmap (centered)
     st.markdown("---")
     _render_heatmap(results.get("service_risk_df"))
 
