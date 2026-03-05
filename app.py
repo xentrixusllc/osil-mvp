@@ -12,287 +12,283 @@ st.set_page_config(
     layout="wide",
 )
 
-APP_TITLE = "Xentrixus OSIL™ — Stability Intelligence MVP"
-APP_SUB = "Upload ITSM exports → get BVSI™, Structural Risk Debt™, SIP priorities, and executive interpretation."
-
-DEMO_CSV_PATH = "data/demo_incidents.csv"  # demo file in your repo
+APP_TITLE = "OSIL™ by Xentrixus"
+APP_SUB = "Operational Stability Intelligence"
 
 
-def _required_template_text() -> str:
-    cols = ",".join(REQUIRED_COLUMNS)
-    example = "Customer Portal,Tier 1,2026-01-05,2026-01-06,P2,0,1,Performance"
-    return f"{cols}\n{example}"
+DEMO_CSV_PATH = "data/demo_incidents.csv"
 
 
-def _find_column_case_insensitive(df: pd.DataFrame, target: str):
-    norm_target = target.strip().lower()
-    for c in df.columns:
-        if str(c).strip().lower() == norm_target:
-            return c
-    return None
+# --------------------------------------------------
+# EXECUTIVE SNAPSHOT GENERATOR
+# --------------------------------------------------
+
+def build_operational_snapshot(results):
+
+    overall = results.get("overall", {})
+    sip_df = results.get("sip_table")
+
+    bvsi = overall.get("BVSI", 0)
+    posture = results.get("posture", "Unknown")
+
+    interpretation = results.get("analyst_review", "")
+
+    top_risks = []
+    if sip_df is not None and len(sip_df) > 0:
+        for _, row in sip_df.head(3).iterrows():
+            svc = row.get("Service", "Unknown Service")
+            reason = row.get("Reason", "Operational instability")
+            top_risks.append(f"{svc} — {reason}")
+
+    actions = []
+    if sip_df is not None and len(sip_df) > 0:
+        for _, row in sip_df.head(3).iterrows():
+            svc = row.get("Service", "Service")
+            actions.append(f"Launch Service Improvement Program for {svc}")
+
+    return {
+        "bvsi": bvsi,
+        "posture": posture,
+        "interpretation": interpretation,
+        "risks": top_risks,
+        "actions": actions
+    }
 
 
-def _ensure_required_columns_for_demo(df: pd.DataFrame) -> pd.DataFrame:
-    d = df.copy()
+# --------------------------------------------------
+# HEATMAP
+# --------------------------------------------------
 
-    # rename case-insensitive matches
-    rename_map = {}
-    for req in REQUIRED_COLUMNS:
-        found = _find_column_case_insensitive(d, req)
-        if found and found != req:
-            rename_map[found] = req
-    if rename_map:
-        d = d.rename(columns=rename_map)
-
-    # add missing required cols with safe defaults
-    for req in REQUIRED_COLUMNS:
-        if req not in d.columns:
-            if req in ["Reopened_Flag", "Change_Related_Flag"]:
-                d[req] = 0
-            elif req == "Priority":
-                d[req] = "P3"
-            elif req == "Service_Tier":
-                d[req] = "Tier 3"
-            elif req == "Category":
-                d[req] = "General"
-            elif req in ["Opened_Date", "Closed_Date"]:
-                d[req] = pd.Timestamp("2026-01-01")
-            else:
-                d[req] = "Unknown"
-
-    d = d[REQUIRED_COLUMNS + [c for c in d.columns if c not in REQUIRED_COLUMNS]]
-    return d
-
-
-def _load_demo_csv() -> pd.DataFrame:
-    df = pd.read_csv(DEMO_CSV_PATH)
-    df = _ensure_required_columns_for_demo(df)
-    return df
-
-
-def _render_heatmap(service_risk_df: pd.DataFrame) -> None:
-    st.subheader("Service Stability Heatmap (Top 10 Services by Risk)")
-    st.caption("Executive view: Service × Stability Risk (Recurrence, MTTR Drag, Reopen Churn, Change Collision).")
+def render_heatmap(service_risk_df):
 
     if service_risk_df is None or service_risk_df.empty:
-        st.info("No service risk data available yet.")
         return
 
-    metric_cols = ["Recurrence_Risk", "MTTR_Drag_Risk", "Reopen_Churn_Risk", "Change_Collision_Risk"]
-    display_cols = ["Service", "Service_Tier"] + metric_cols + ["Total_Service_Risk"]
+    metric_cols = [
+        "Recurrence_Risk",
+        "MTTR_Drag_Risk",
+        "Reopen_Churn_Risk",
+        "Change_Collision_Risk"
+    ]
 
-    show = service_risk_df.copy()[display_cols]
+    show = service_risk_df.head(10)
 
     services = show["Service"].tolist()
     tiers = show["Service_Tier"].tolist()
     matrix = show[metric_cols].to_numpy(dtype=float)
 
-    fig = plt.figure(figsize=(10, 5), dpi=160)
+    fig = plt.figure(figsize=(10,5), dpi=160)
     ax = plt.gca()
 
     im = ax.imshow(matrix, aspect="auto", vmin=0, vmax=100)
 
     ax.set_xticks(np.arange(len(metric_cols)))
-    ax.set_xticklabels(["Recurrence", "MTTR Drag", "Reopen Churn", "Change Collision"], rotation=0)
+    ax.set_xticklabels(
+        ["Recurrence","MTTR Drag","Reopen Churn","Change Collision"]
+    )
 
     ax.set_yticks(np.arange(len(services)))
-    ax.set_yticklabels([f"{s} ({t})" for s, t in zip(services, tiers)])
-
-    ax.set_title("Service × Stability Risk (0–100)")
+    ax.set_yticklabels(
+        [f"{s} ({t})" for s,t in zip(services,tiers)]
+    )
 
     for i in range(matrix.shape[0]):
         for j in range(matrix.shape[1]):
-            ax.text(j, i, f"{matrix[i, j]:.0f}", ha="center", va="center", fontsize=9)
-
-    cbar = plt.colorbar(im, ax=ax, fraction=0.025, pad=0.02)
-    cbar.set_label("Risk Score (0–100)")
+            ax.text(j,i,f"{matrix[i,j]:.0f}",
+                    ha="center",va="center",fontsize=9)
 
     plt.tight_layout()
+
     st.pyplot(fig)
 
-    st.markdown("**Top 10 Services — Risk Breakdown**")
-    st.dataframe(show, use_container_width=True)
 
-    csv_bytes = show.to_csv(index=False).encode("utf-8")
-    st.download_button(
-        label="Download Service Risk Table (CSV)",
-        data=csv_bytes,
-        file_name="osil_service_risk_top10.csv",
-        mime="text/csv",
-    )
-
-
-def _render_exec_interpretation(html_text: str) -> None:
-    """
-    Consulting-style callout box.
-    Expects HTML (e.g., <b>...</b>), so we render with unsafe_allow_html.
-    """
-    if not html_text:
-        st.info("No executive interpretation available.")
-        return
-
-    st.subheader("Executive Interpretation")
-
-    st.markdown(
-        f"""
-<div style="
-    border: 1px solid #D1D5DB;
-    background: #F5F7FA;
-    padding: 14px 16px;
-    border-radius: 10px;
-    line-height: 1.55;
-    color: #111827;
-    font-size: 16px;
-">
-{html_text}
-</div>
-""",
-        unsafe_allow_html=True,
-    )
-
+# --------------------------------------------------
+# APP
+# --------------------------------------------------
 
 def main():
-    # ---------- Session state for stable downloads ----------
-    if "osil_results" not in st.session_state:
-        st.session_state.osil_results = None
-    if "pdf_bytes" not in st.session_state:
-        st.session_state.pdf_bytes = None
-    if "pdf_filename" not in st.session_state:
-        st.session_state.pdf_filename = "OSIL_Executive_Report_latest.pdf"
+
+    if "results" not in st.session_state:
+        st.session_state.results = None
+
+    if "pdf" not in st.session_state:
+        st.session_state.pdf = None
+
 
     st.title(APP_TITLE)
-    st.write(APP_SUB)
+    st.caption(APP_SUB)
 
-    with st.expander("CSV Template (Required Columns)", expanded=False):
-        st.code(_required_template_text())
-
-    st.markdown("### Run Options")
-    mode = st.radio("Choose a run mode", ["Run with Demo Data", "Upload a CSV"], horizontal=True)
+    mode = st.radio(
+        "Choose data source",
+        ["Run Demo Data","Upload CSV"]
+    )
 
     df = None
 
-    if mode == "Run with Demo Data":
-        if st.button("Run with Demo Data"):
-            try:
-                df = _load_demo_csv()
-                st.success("Demo data loaded. Running OSIL…")
-            except Exception as e:
-                st.error(f"Failed to load demo data: {e}")
-                return
+    if mode == "Run Demo Data":
+
+        if st.button("Run Demo"):
+
+            df = pd.read_csv(DEMO_CSV_PATH)
+
     else:
-        uploaded = st.file_uploader("Upload your ITSM CSV export", type=["csv"])
-        if uploaded is not None:
-            try:
-                df = pd.read_csv(uploaded)
-                st.success("Upload received. Running OSIL…")
-            except Exception as e:
-                st.error(f"Could not read CSV: {e}")
-                return
+
+        uploaded = st.file_uploader("Upload CSV")
+
+        if uploaded:
+            df = pd.read_csv(uploaded)
+
 
     if df is not None:
+
         try:
             results = run_osil(df)
-            st.session_state.osil_results = results
-            # Reset prior PDF if new run occurs (prevents stale download)
-            st.session_state.pdf_bytes = None
+            st.session_state.results = results
         except Exception as e:
-            st.error(f"Run failed: {e}")
-            return
+            st.error(e)
 
-    # If no results yet
-    if st.session_state.osil_results is None:
-        st.info("Choose Demo Data or Upload a CSV to run OSIL.")
+
+    results = st.session_state.results
+
+    if results is None:
         return
 
-    results = st.session_state.osil_results
-    overall = results.get("overall", {})
-    posture = results.get("posture", "")
-    as_of = results.get("as_of", "")
 
-    c1, c2, c3 = st.columns([1, 2, 1])
-    with c1:
-        st.metric("BVSI™", f"{overall.get('BVSI', 0):.1f}" if "BVSI" in overall else "—")
-    with c2:
-        st.metric("Operating Posture", posture if posture else "—")
-    with c3:
-        st.metric("As-of Date", as_of if as_of else "—")
+    # --------------------------------------------------
+    # SNAPSHOT
+    # --------------------------------------------------
+
+    snapshot = build_operational_snapshot(results)
 
     st.markdown("---")
 
-    # Radar
-    st.subheader("Operational Stability Profile (Radar)")
-    labels = ["Service Resilience", "Change Governance", "Structural Risk Debt™", "Reliability Momentum"]
-    values = [
-        float(overall.get("Overall Service Resilience", 0)),
-        float(overall.get("Overall Change Governance", 0)),
-        float(overall.get("Overall Structural Risk Debt", 0)),
-        float(overall.get("Overall Reliability Momentum", 0)),
+    st.subheader("Operational Stability Snapshot")
+
+    st.markdown(
+        f"""
+BVSI™: **{snapshot['bvsi']:.1f}**
+
+Operating Posture: **{snapshot['posture']}**
+"""
+    )
+
+    st.markdown("**What This Means**")
+
+    st.markdown(snapshot["interpretation"], unsafe_allow_html=True)
+
+    if snapshot["risks"]:
+
+        st.markdown("**Top Stability Risks**")
+
+        for r in snapshot["risks"]:
+            st.markdown(f"• {r}")
+
+    if snapshot["actions"]:
+
+        st.markdown("**Recommended Actions**")
+
+        for a in snapshot["actions"]:
+            st.markdown(f"• {a}")
+
+
+    # --------------------------------------------------
+    # METRICS
+    # --------------------------------------------------
+
+    overall = results.get("overall", {})
+
+    col1,col2,col3 = st.columns(3)
+
+    col1.metric("BVSI™", f"{overall.get('BVSI',0):.1f}")
+    col2.metric("Operating Posture", results.get("posture",""))
+    col3.metric("As of", results.get("as_of",""))
+
+
+    # --------------------------------------------------
+    # RADAR
+    # --------------------------------------------------
+
+    st.markdown("---")
+
+    st.subheader("Operational Stability Profile")
+
+    labels = [
+        "Service Resilience",
+        "Change Governance",
+        "Structural Risk Debt",
+        "Reliability Momentum"
     ]
 
-    angles = np.linspace(0, 2 * np.pi, len(labels), endpoint=False).tolist()
+    values = [
+        float(overall.get("Overall Service Resilience",0)),
+        float(overall.get("Overall Change Governance",0)),
+        float(overall.get("Overall Structural Risk Debt",0)),
+        float(overall.get("Overall Reliability Momentum",0))
+    ]
+
+    angles = np.linspace(0,2*np.pi,len(labels),endpoint=False).tolist()
     values_loop = values + values[:1]
     angles_loop = angles + angles[:1]
 
-    fig = plt.figure(figsize=(6.8, 5), dpi=160)
-    ax = plt.subplot(111, polar=True)
-    ax.set_theta_offset(np.pi / 2)
-    ax.set_theta_direction(-1)
+    fig = plt.figure(figsize=(6,5),dpi=160)
+    ax = plt.subplot(111,polar=True)
+
+    ax.plot(angles_loop,values_loop,linewidth=2)
+    ax.fill(angles_loop,values_loop,alpha=0.1)
 
     ax.set_xticks(angles)
-    ax.set_xticklabels(labels, fontsize=10)
-    ax.set_yticks([20, 40, 60, 80, 100])
-    ax.set_yticklabels(["20", "40", "60", "80", "100"], fontsize=9)
-    ax.set_ylim(0, 100)
+    ax.set_xticklabels(labels)
 
-    ax.plot(angles_loop, values_loop, linewidth=2)
-    ax.fill(angles_loop, values_loop, alpha=0.10)
+    ax.set_ylim(0,100)
 
     st.pyplot(fig)
 
-    # Heatmap
-    st.markdown("---")
-    _render_heatmap(results.get("service_risk_df"))
 
-    # SIP table
+    # --------------------------------------------------
+    # HEATMAP
+    # --------------------------------------------------
+
     st.markdown("---")
-    st.subheader("Top SIP Candidates (Next 30 Days)")
+
+    st.subheader("Service Stability Heatmap")
+
+    render_heatmap(results.get("service_risk_df"))
+
+
+    # --------------------------------------------------
+    # SIP TABLE
+    # --------------------------------------------------
+
+    st.markdown("---")
+
+    st.subheader("Top SIP Candidates")
+
     sip_df = results.get("sip_table")
-    if sip_df is None or len(sip_df) == 0:
-        st.info("No SIP candidates generated.")
-    else:
-        st.dataframe(sip_df, use_container_width=True)
 
-    # Executive interpretation (NOW styled + HTML rendered)
+    if sip_df is not None:
+        st.dataframe(sip_df)
+
+
+    # --------------------------------------------------
+    # PDF
+    # --------------------------------------------------
+
     st.markdown("---")
-    _render_exec_interpretation(results.get("analyst_review", ""))
 
-    # PDF area
-    st.markdown("---")
-    st.subheader("Executive Report (PDF)")
+    if st.button("Generate Executive Report PDF"):
 
-    colA, colB = st.columns([1, 2])
+        pdf = build_osil_pdf_report(results)
 
-    with colA:
-        if st.button("Generate / Refresh PDF"):
-            try:
-                pdf_bytes = build_osil_pdf_report(results)
-                st.session_state.pdf_bytes = pdf_bytes
-                st.session_state.pdf_filename = f"OSIL_Executive_Report_{as_of or 'latest'}.pdf"
-                st.success("PDF generated. Use the download button on the right.")
-            except Exception as e:
-                st.error(f"Report generation failed: {e}")
+        st.session_state.pdf = pdf
 
-    with colB:
-        if st.session_state.pdf_bytes:
-            st.download_button(
-                label="⬇️ Download OSIL Executive Report (PDF)",
-                data=st.session_state.pdf_bytes,
-                file_name=st.session_state.pdf_filename,
-                mime="application/pdf",
-                key="download_pdf_btn",
-            )
-        else:
-            st.info("Click **Generate / Refresh PDF** to create the report, then download it here.")
+
+    if st.session_state.pdf:
+
+        st.download_button(
+            "Download OSIL Executive Report",
+            st.session_state.pdf,
+            "OSIL_Executive_Report.pdf"
+        )
 
 
 if __name__ == "__main__":
