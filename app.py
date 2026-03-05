@@ -583,6 +583,15 @@ def main():
         if uploaded is not None:
             try:
                 df = pd.read_csv(uploaded)
+                practice_type = detect_practice_type(df)
+
+df, anchor_used = normalize_service_anchor(df)
+
+readiness_score = calculate_data_readiness(df)
+
+st.info(f"Detected dataset: {practice_type.upper()}")
+st.info(f"Service Anchor used: {anchor_used}")
+st.info(f"Data Readiness Score: {readiness_score}%")
                 st.success("Upload received. Running OSIL…")
             except Exception as e:
                 st.error(f"Could not read CSV: {e}")
