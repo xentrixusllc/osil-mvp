@@ -167,7 +167,7 @@ def _render_heatmap(service_risk_df: pd.DataFrame) -> None:
     tiers = show["Service_Tier"].tolist()
     matrix = show[metric_cols].to_numpy(dtype=float)
 
-    fig = plt.figure(figsize=(10, 5), dpi=160)
+    fig = plt.figure(figsize=(7, 3.8), dpi=140)
     ax = plt.gca()
 
     im = ax.imshow(matrix, aspect="auto", vmin=0, vmax=100)
@@ -188,6 +188,8 @@ def _render_heatmap(service_risk_df: pd.DataFrame) -> None:
     cbar.set_label("Risk Score (0–100)")
 
     plt.tight_layout()
+    c1, c2, c3 = st.columns([1,2,1])
+with c2:
     st.pyplot(fig)
 
     st.markdown("**Top 10 Services — Risk Breakdown**")
@@ -289,7 +291,7 @@ def main():
     values_loop = values + values[:1]
     angles_loop = angles + angles[:1]
 
-    fig = plt.figure(figsize=(6.8, 5), dpi=160)
+    fig = plt.figure(figsize=(4.5, 4), dpi=140)
     ax = plt.subplot(111, polar=True)
     ax.set_theta_offset(np.pi / 2)
     ax.set_theta_direction(-1)
@@ -303,6 +305,7 @@ def main():
     ax.plot(angles_loop, values_loop, linewidth=2)
     ax.fill(angles_loop, values_loop, alpha=0.10)
 
+    plt.tight_layout()
     st.pyplot(fig)
 
     # Heatmap
