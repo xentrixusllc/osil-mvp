@@ -1,5 +1,6 @@
 import io
-from typing import Any, Dict
+import re
+from typing import Any, Dict, List
 
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -36,6 +37,35 @@ def _safe_df(val: Any) -> pd.DataFrame:
     if isinstance(val, pd.DataFrame):
         return val.copy()
     return pd.DataFrame()
+
+
+def _clean_text(text: Any) -> str:
+    """
+    Clean markdown / simple HTML artifacts so they render nicely in ReportLab Paragraphs.
+    """
+    if text is None:
+        return ""
+    s = str(text)
+
+    # Convert markdown bold **x** -> <b>x</b>
+    s = re.sub(r"\*\*(.*?)\*\*", r"<b>\1</b>", s)
+
+    # Normalize <br/> tags
+    s = s.replace("<br>", "<br/>").replace("<br />", "<br/>")
+
+    # Strip unsupported HTML tags except a small safe set
+    allowed = {"b", "i", "u", "br"}
+    # Replace tags not in allowed
+    def repl_tag(match):
+        full = match.group(0)
+        tag = match.group(1).lower().replace("/", "")
+        if tag in allowed:
+            return full
+        return ""
+
+    s = re.sub(r"</?([a-zA-Z0-9]+).*?>", repl_tag, s)
+
+    return s
 
 
 def _styles():
@@ -83,8 +113,8 @@ def _styles():
             name="OSIL_Body",
             parent=styles["BodyText"],
             fontName="Helvetica",
-            fontSize=10,
-            leading=14,
+            fontSize=9.5,
+            leading=13,
             textColor=colors.HexColor("#222222"),
         )
     )
@@ -102,13 +132,23 @@ def _styles():
 
     styles.add(
         ParagraphStyle(
-            name="OSIL_BannerText",
+            name="OSIL_Table",
+            parent=styles["BodyText"],
+            fontName="Helvetica",
+            fontSize=7.8,
+            leading=9.4,
+            textColor=colors.HexColor("#222222"),
+        )
+    )
+
+    styles.add(
+        ParagraphStyle(
+            name="OSIL_TableHeader",
             parent=styles["BodyText"],
             fontName="Helvetica-Bold",
-            fontSize=11,
-            leading=13,
-            textColor=colors.white,
-            alignment=1,
+            fontSize=8,
+            leading=10,
+            textColor=colors.black,
         )
     )
 
@@ -187,20 +227,16 @@ def _kpi_box(label: str, value: str, width: float = 2.35 * inch) -> Table:
     return t
 
 
-def _signal_box(title: str, body: str, width: float = 7.35 * inch) -> Table:
-    t = Table([[title], [body]], colWidths=[width])
+def _signal_box(title: str, body: str, width: float = 7.35 * inch, styles=None) -> Table:
+    body_para = Paragraph(_clean_text(body), styles["OSIL_Body"])
+    title_para = Paragraph(_clean_text(title), styles["OSIL_TableHeader"])
+    t = Table([[title_para], [body_para]], colWidths=[width])
     t.setStyle(
         TableStyle(
             [
                 ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#EAF4FF")),
                 ("BACKGROUND", (0, 1), (-1, 1), colors.HexColor("#F8FBFF")),
                 ("BOX", (0, 0), (-1, -1), 0.6, colors.HexColor("#B8D6F2")),
-                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-                ("FONTNAME", (0, 1), (-1, 1), "Helvetica"),
-                ("FONTSIZE", (0, 0), (-1, 0), 10),
-                ("FONTSIZE", (0, 1), (-1, 1), 10),
-                ("TEXTCOLOR", (0, 0), (-1, 0), colors.HexColor("#0A192F")),
-                ("TEXTCOLOR", (0, 1), (-1, 1), colors.HexColor("#222222")),
                 ("LEFTPADDING", (0, 0), (-1, -1), 10),
                 ("RIGHTPADDING", (0, 0), (-1, -1), 10),
                 ("TOPPADDING", (0, 0), (-1, 0), 8),
@@ -213,35 +249,45 @@ def _signal_box(title: str, body: str, width: float = 7.35 * inch) -> Table:
     return t
 
 
-def _simple_table(df: pd.DataFrame, font_size: int = 8, header_bg: str = "#E9EDF3") -> Table:
+def _paragraph_table(
+    df: pd.DataFrame,
+    col_widths: List[float],
+    styles,
+    header_bg: str = "#E9EDF3",
+) -> Table:
     df = _safe_df(df)
+
     if df.empty:
-        data = [["No data available"]]
-        tbl = Table(data)
+        data = [[Paragraph("No data available", styles["OSIL_Table"])]]
+        tbl = Table(data, colWidths=[sum(col_widths)])
         tbl.setStyle(
             TableStyle(
                 [
-                    ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
-                    ("FONTNAME", (0, 0), (-1, -1), "Helvetica"),
-                    ("FONTSIZE", (0, 0), (-1, -1), font_size),
+                    ("GRID", (0, 0), (-1, -1), 0.4, colors.grey),
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 5),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+                    ("TOPPADDING", (0, 0), (-1, -1), 4),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
                 ]
             )
         )
         return tbl
 
-    data = [list(df.columns)] + [[str(x) for x in row] for row in df.values.tolist()]
-    tbl = Table(data, repeatRows=1)
+    header = [Paragraph(_clean_text(c), styles["OSIL_TableHeader"]) for c in df.columns]
+    rows = []
+    for row in df.values.tolist():
+        rows.append([Paragraph(_clean_text(x), styles["OSIL_Table"]) for x in row])
+
+    data = [header] + rows
+    tbl = Table(data, colWidths=col_widths, repeatRows=1)
     tbl.setStyle(
         TableStyle(
             [
                 ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor(header_bg)),
-                ("TEXTCOLOR", (0, 0), (-1, 0), colors.black),
-                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-                ("FONTNAME", (0, 1), (-1, -1), "Helvetica"),
-                ("FONTSIZE", (0, 0), (-1, -1), font_size),
-                ("GRID", (0, 0), (-1, -1), 0.4, colors.grey),
-                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#F8FAFC")]),
+                ("GRID", (0, 0), (-1, -1), 0.35, colors.grey),
                 ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#F8FAFC")]),
                 ("LEFTPADDING", (0, 0), (-1, -1), 5),
                 ("RIGHTPADDING", (0, 0), (-1, -1), 5),
                 ("TOPPADDING", (0, 0), (-1, -1), 4),
@@ -357,7 +403,7 @@ def _posture_signal_text(bvsi: float, posture: str) -> str:
     return f"Operational stability is currently <b>{posture}</b>, with a BVSI™ score of {bvsi:.1f}. Immediate executive attention is warranted to contain structural instability and protect business performance."
 
 
-def _bvsi_scale_table() -> Table:
+def _bvsi_scale_table(styles) -> Table:
     df = pd.DataFrame(
         [
             ["85–100", "High Confidence Operations", "Technology stability supports business growth and executive confidence."],
@@ -368,10 +414,10 @@ def _bvsi_scale_table() -> Table:
         ],
         columns=["BVSI™ Range", "Operating Condition", "Executive Meaning"],
     )
-    return _simple_table(df, font_size=8)
+    return _paragraph_table(df, [1.0 * inch, 2.0 * inch, 4.35 * inch], styles)
 
 
-def _domain_definitions_table(domain_scores: Dict[str, float]) -> Table:
+def _domain_definitions_table(domain_scores: Dict[str, float], styles) -> Table:
     rows = [
         [
             "Service Resilience",
@@ -395,7 +441,7 @@ def _domain_definitions_table(domain_scores: Dict[str, float]) -> Table:
         ],
     ]
     df = pd.DataFrame(rows, columns=["Domain", "Score", "What It Means"])
-    return _simple_table(df, font_size=8)
+    return _paragraph_table(df, [2.0 * inch, 0.7 * inch, 4.65 * inch], styles)
 
 
 def _top_three_briefs(sip_candidates: pd.DataFrame) -> pd.DataFrame:
@@ -418,7 +464,7 @@ def _top_three_briefs(sip_candidates: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(brief_rows)
 
 
-def _action_roadmap(domain_scores: Dict[str, float]) -> pd.DataFrame:
+def _action_roadmap(domain_scores: Dict[str, float], styles) -> Table:
     weakest = min(domain_scores.items(), key=lambda x: x[1])[0] if domain_scores else "Service Resilience"
 
     if weakest == "Change Governance":
@@ -446,7 +492,7 @@ def _action_roadmap(domain_scores: Dict[str, float]) -> pd.DataFrame:
         ],
         columns=["Time Horizon", "Leadership Action"],
     )
-    return _simple_table(df, font_size=8)
+    return _paragraph_table(df, [1.7 * inch, 5.65 * inch], styles)
 
 
 # =========================================================
@@ -469,7 +515,7 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
     as_of = str(payload.get("as_of", ""))
     bvsi = _safe_float(payload.get("bvsi", 0.0))
     posture = str(payload.get("posture", "Unknown"))
-    executive_interpretation = str(payload.get("executive_interpretation", ""))
+    executive_interpretation = _clean_text(payload.get("executive_interpretation", ""))
 
     domain_scores = payload.get("domain_scores", {}) or {}
     service_risk_top10 = _safe_df(payload.get("service_risk_top10"))
@@ -481,9 +527,7 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
 
     story = []
 
-    # -----------------------------------------------------
-    # PAGE 1 - Executive Stability Brief
-    # -----------------------------------------------------
+    # PAGE 1
     story.append(Paragraph("Operational Stability Intelligence (OSIL™)", styles["OSIL_Title"]))
     story.append(Paragraph(f"Executive Report — {tenant_name}", styles["OSIL_Subtitle"]))
     story.append(Paragraph(f"As of {as_of}", styles["OSIL_Small"]))
@@ -506,10 +550,10 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
 
     story.append(Spacer(1, 10))
     story.append(Paragraph("BVSI™ Scale", styles["OSIL_Section"]))
-    story.append(_bvsi_scale_table())
+    story.append(_bvsi_scale_table(styles))
 
     story.append(Spacer(1, 10))
-    story.append(_signal_box("Executive Signal", _posture_signal_text(bvsi, posture)))
+    story.append(_signal_box("Executive Signal", _posture_signal_text(bvsi, posture), styles=styles))
 
     story.append(Spacer(1, 10))
     story.append(Paragraph("Executive Interpretation", styles["OSIL_Section"]))
@@ -517,35 +561,17 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
 
     story.append(Spacer(1, 10))
     story.append(Paragraph("Assessment Context", styles["OSIL_Section"]))
-    context_tbl = Table(
+    context_df = pd.DataFrame(
         [
             ["Detected Dataset", detected_dataset],
             ["Service Anchor Used", service_anchor_used],
             ["Organization", tenant_name],
         ],
-        colWidths=[2.2 * inch, 5.0 * inch],
+        columns=["Field", "Value"],
     )
-    context_tbl.setStyle(
-        TableStyle(
-            [
-                ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#F8FAFC")),
-                ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#D1D5DB")),
-                ("GRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#E5E7EB")),
-                ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
-                ("FONTNAME", (1, 0), (1, -1), "Helvetica"),
-                ("FONTSIZE", (0, 0), (-1, -1), 9),
-                ("LEFTPADDING", (0, 0), (-1, -1), 8),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 8),
-                ("TOPPADDING", (0, 0), (-1, -1), 6),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
-            ]
-        )
-    )
-    story.append(context_tbl)
+    story.append(_paragraph_table(context_df, [2.2 * inch, 5.0 * inch], styles))
 
-    # -----------------------------------------------------
-    # PAGE 2 - Diagnostics
-    # -----------------------------------------------------
+    # PAGE 2
     story.append(PageBreak())
     story.append(_header_band("Operational Stability Diagnostics"))
     story.append(_accent_rule())
@@ -556,7 +582,7 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
     story.append(Spacer(1, 10))
 
     story.append(Paragraph("Domain Definitions and Scores", styles["OSIL_Section"]))
-    story.append(_domain_definitions_table(domain_scores))
+    story.append(_domain_definitions_table(domain_scores, styles))
 
     story.append(Spacer(1, 8))
     story.append(
@@ -567,9 +593,7 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
         )
     )
 
-    # -----------------------------------------------------
-    # PAGE 3 - Service Improvement Programs
-    # -----------------------------------------------------
+    # PAGE 3
     story.append(PageBreak())
     story.append(_header_band("Service Improvement Programs (SIPs)"))
     story.append(_accent_rule())
@@ -585,15 +609,20 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
     story.append(Spacer(1, 10))
 
     story.append(Paragraph("Top 3 Initiatives to Brief Leadership", styles["OSIL_Section"]))
-    story.append(_simple_table(_top_three_briefs(sip_candidates), font_size=8))
+    story.append(_paragraph_table(_top_three_briefs(sip_candidates), [3.2 * inch, 4.0 * inch], styles))
 
     story.append(Spacer(1, 12))
     story.append(Paragraph("Detailed SIP Candidates", styles["OSIL_Section"]))
-    story.append(_simple_table(sip_candidates.head(10), font_size=8))
+    detailed = sip_candidates.head(10).copy()
+    story.append(
+        _paragraph_table(
+            detailed,
+            [1.35 * inch, 0.8 * inch, 1.15 * inch, 0.85 * inch, 0.8 * inch, 2.05 * inch],
+            styles,
+        )
+    )
 
-    # -----------------------------------------------------
-    # PAGE 4 - Heatmap
-    # -----------------------------------------------------
+    # PAGE 4
     story.append(PageBreak())
     story.append(_header_band("Service Stability Heatmap"))
     story.append(_accent_rule())
@@ -614,9 +643,7 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
     else:
         story.append(Paragraph("No service risk data available.", styles["OSIL_Body"]))
 
-    # -----------------------------------------------------
-    # PAGE 5 - Leadership Actions
-    # -----------------------------------------------------
+    # PAGE 5
     story.append(PageBreak())
     story.append(_header_band("Recommended Leadership Actions"))
     story.append(_accent_rule())
@@ -630,7 +657,7 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
         )
     )
     story.append(Spacer(1, 10))
-    story.append(_action_roadmap(domain_scores))
+    story.append(_action_roadmap(domain_scores, styles))
 
     doc.build(story, onFirstPage=_footer, onLaterPages=_footer)
     out.seek(0)
