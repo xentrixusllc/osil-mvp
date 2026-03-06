@@ -9,12 +9,6 @@ import pandas as pd
 import streamlit as st
 import matplotlib.pyplot as plt
 
-from data_classifier import (
-    detect_practice_type,
-    normalize_service_anchor,
-    calculate_data_readiness,
-)
-
 # Optional external report generator
 try:
     from report_generator import build_osil_pdf_report as external_build_osil_pdf_report
@@ -226,7 +220,118 @@ def _tenant_selector() -> str:
 
 
 # ============================================================
-# Data helpers
+# Practice Detection / Service Anchor / Readiness
+# ============================================================
+def _lower_cols(df: pd.DataFrame) -> list[str]:
+    return [str(c).strip().lower() for c in df.columns]
+
+
+def detect_practice_type(df: pd.DataFrame) -> str:
+    cols = _lower_cols(df)
+    joined = " | ".join(cols)
+
+    incident_signals = [
+        "incident", "inc number", "opened", "priority", "reopened", "incident state"
+    ]
+    change_signals = [
+        "change", "planned start", "planned end", "actual start", "actual end", "change type", "risk"
+    ]
+    problem_signals = [
+        "problem", "root cause", "contributing cause", "known error"
+    ]
+    request_signals = [
+        "request", "requested for", "fulfillment", "catalog item"
+    ]
+    telemetry_signals = [
+        "alert", "event", "latency", "cpu", "memory", "availability", "threshold"
+    ]
+
+    def has_any(signals: list[str]) -> bool:
+        return any(s in joined for s in signals)
+
+    if has_any(change_signals):
+        return "change"
+    if has_any(problem_signals):
+        return "problem"
+    if has_any(request_signals):
+        return "request"
+    if has_any(telemetry_signals):
+        return "telemetry"
+    if has_any(incident_signals):
+        return "incident"
+
+    return "unknown"
+
+
+def normalize_service_anchor(df: pd.DataFrame) -> tuple[pd.DataFrame, str]:
+    out = df.copy()
+
+    preferred_order = [
+        "Business_Service",
+        "Business Service",
+        "Service_Offering",
+        "Service Offering",
+        "Service",
+        "Service_Name",
+        "Service Name",
+        "Application",
+        "Application_Name",
+        "Application Name",
+        "Product",
+        "Product_Name",
+        "Product Name",
+        "CI",
+        "CI_Name",
+        "CI Name",
+        "Configuration_Item",
+        "Configuration Item",
+        "Configuration Item (CI)",
+        "Assignment_Group",
+        "Assignment Group",
+        "Category",
+    ]
+
+    cols_actual = list(out.columns)
+    cols_norm = {str(c).strip().lower(): c for c in cols_actual}
+
+    for candidate in preferred_order:
+        norm = candidate.strip().lower()
+        if norm in cols_norm:
+            actual_col = cols_norm[norm]
+            out["Service_Anchor"] = out[actual_col].astype(str).replace({"nan": "Unknown", "": "Unknown"}).fillna("Unknown")
+            return out, actual_col
+
+    out["Service_Anchor"] = "Unknown"
+    return out, "None"
+
+
+def calculate_data_readiness(df: pd.DataFrame) -> float:
+    cols_norm = {str(c).strip().lower() for c in df.columns}
+
+    checks = {
+        "opened": any(c in cols_norm for c in {
+            "opened_date", "opened_at", "opened", "created", "created_at", "open_date"
+        }),
+        "closed": any(c in cols_norm for c in {
+            "closed_date", "closed_at", "closed", "resolved", "resolved_at", "updated"
+        }),
+        "priority": "priority" in cols_norm,
+        "service_anchor": "service_anchor" in cols_norm or any(c in cols_norm for c in {
+            "business_service", "business service", "service", "application", "application_name",
+            "configuration item", "configuration_item", "ci", "ci_name"
+        }),
+        "reopened": any(c in cols_norm for c in {"reopened_flag", "reopened", "reopen_count"}),
+        "tier": any(c in cols_norm for c in {"service_tier", "tier", "criticality"}),
+        "change_flag": any(c in cols_norm for c in {
+            "change_related_flag", "change related flag", "rfc", "request for change (rfc) that caused problem"
+        }),
+    }
+
+    return round((sum(checks.values()) / len(checks)) * 100, 1)
+
+
+# ============================================================
+# Analysis helpers
 # ============================================================
 def _safe_parse_datetime(series: pd.Series) -> pd.Series:
     return pd.to_datetime(series, errors="coerce")
@@ -456,7 +561,7 @@ def heatmap_chart(heatmap_df: pd.DataFrame):
 
 
 # ============================================================
-# Narrative cards / trend
+# Narrative / Trend
 # ============================================================
 def render_service_instability_leaders(service_risk_df: pd.DataFrame) -> None:
     st.subheader("Service Instability Leaders (Top 5)")
@@ -602,8 +707,7 @@ def _internal_build_pdf(payload: dict) -> bytes:
     styles = getSampleStyleSheet()
     story = []
 
-    title = Paragraph("OSIL™ Executive Report", styles["Title"])
-    story.append(title)
+    story.append(Paragraph("OSIL™ Executive Report", styles["Title"]))
     story.append(Spacer(1, 12))
 
     summary_lines = [
@@ -674,7 +778,6 @@ def _internal_build_pdf(payload: dict) -> bytes:
 
 
 def generate_pdf_bytes(payload: dict) -> bytes:
-    # Prefer external generator if available
     if EXTERNAL_REPORT_GENERATOR_AVAILABLE:
         try:
             pdf_obj = external_build_osil_pdf_report(payload)
@@ -688,7 +791,6 @@ def generate_pdf_bytes(payload: dict) -> bytes:
         except Exception:
             pass
 
-    # Fallback internal generator
     return _internal_build_pdf(payload)
 
 
@@ -702,6 +804,8 @@ def main():
         st.session_state.pdf_bytes = None
     if "pdf_filename" not in st.session_state:
         st.session_state.pdf_filename = "OSIL_Executive_Report_latest.pdf"
+    if "analysis_results" not in st.session_state:
+        st.session_state.analysis_results = None
     if "last_run_signature" not in st.session_state:
         st.session_state.last_run_signature = None
 
@@ -743,74 +847,129 @@ def main():
                     st.error(f"Upload load failed: {e}")
                     return
 
-    if not run_requested:
+    if run_requested:
+        st.success(f"Loaded: {source_label}")
+
+        practice_type = detect_practice_type(df)
+        df, anchor_used = normalize_service_anchor(df)
+        df = ensure_minimum_columns(df)
+        readiness_score = calculate_data_readiness(df)
+
+        open_col, close_col = infer_open_close_columns(df)
+        df["__mttr_hours"] = compute_mttr_hours(df, open_col, close_col)
+
+        roll = df.groupby("Service_Anchor", dropna=False).agg(
+            recurrence=("Service_Anchor", "count"),
+            reopen_rate=("Reopened_Flag", "mean"),
+            change_collision_rate=("Change_Related_Flag", "mean"),
+            mttr_hours=("__mttr_hours", "mean"),
+            tier=("Service_Tier", lambda x: x.value_counts().index[0] if len(x) else "Tier 3"),
+            category=("Category", lambda x: x.value_counts().index[0] if len(x) else "General"),
+        ).reset_index()
+
+        domain_scores = build_domain_scores(roll)
+        bvsi = compute_bvsi(domain_scores)
+        posture = operating_posture(bvsi)
+        gap = dominant_gap(domain_scores)
+        as_of = date.today().isoformat()
+        exec_text = executive_interpretation(bvsi, posture, gap)
+
+        service_risk_df = build_service_risk_df(roll)
+        top10 = service_risk_df.head(10).copy()
+
+        hm = top10.set_index(top10["Service"] + " (" + top10["Service_Tier"] + ")")[
+            ["Recurrence_Risk", "MTTR_Drag_Risk", "Reopen_Churn_Risk", "Change_Collision_Risk"]
+        ].rename(columns={
+            "Recurrence_Risk": "Recurrence",
+            "MTTR_Drag_Risk": "MTTR Drag",
+            "Reopen_Churn_Risk": "Reopen Churn",
+            "Change_Collision_Risk": "Change Collision"
+        }).apply(pd.to_numeric, errors="coerce").replace([np.inf, -np.inf], np.nan)
+
+        sip = service_risk_df.copy()
+        sip["SIP_Priority_Score"] = (
+            0.45 * sip["Recurrence_Risk"] +
+            0.25 * sip["MTTR_Drag_Risk"] +
+            0.20 * sip["Reopen_Churn_Risk"] +
+            0.10 * sip["Change_Collision_Risk"]
+        ).round(1)
+
+        def label_sip(score: float) -> str:
+            if score >= 70:
+                return "Next SIP"
+            if score >= 45:
+                return "Monitor"
+            return "Backlog"
+
+        sip["Priority_Label"] = sip["SIP_Priority_Score"].apply(label_sip)
+        sip["Suggested_Theme"] = "Stability Improvement"
+        sip["Why_Flagged"] = "Tier exposure + recurrence/MTTR/reopen/change risk"
+
+        sip_view = sip.head(5)[
+            ["Service", "Service_Tier", "Suggested_Theme", "SIP_Priority_Score", "Priority_Label", "Why_Flagged"]
+        ]
+
+        results = {
+            "source_label": source_label,
+            "practice_type": practice_type,
+            "anchor_used": anchor_used,
+            "readiness_score": readiness_score,
+            "bvsi": bvsi,
+            "posture": posture,
+            "gap": gap,
+            "as_of": as_of,
+            "exec_text": exec_text,
+            "domain_scores": domain_scores,
+            "service_risk_df": service_risk_df,
+            "top10": top10,
+            "heatmap_df": hm,
+            "sip_view": sip_view,
+            "tenant_name": tenant_name,
+            "preview_df": df.head(20),
+        }
+        st.session_state.analysis_results = results
+
+        if run_signature != st.session_state.last_run_signature:
+            top_services = roll["Service_Anchor"].astype(str).head(3).tolist()
+            _db_insert_run(
+                tenant_name=tenant_name,
+                run_ts=_utc_now_iso(),
+                bvsi=bvsi,
+                posture=posture,
+                top_services=top_services,
+            )
+            st.session_state.last_run_signature = run_signature
+
+    results = st.session_state.analysis_results
+
+    if results is None:
         st.info("Choose a mode, provide a file if needed, and click the run button.")
         return
 
-    st.success(f"Loaded: {source_label}")
-
-    # Diagnostics
-    practice_type = detect_practice_type(df)
-    df, anchor_used = normalize_service_anchor(df)
-    df = ensure_minimum_columns(df)
-    readiness_score = calculate_data_readiness(df)
-
+    # render results
     st.markdown("### Data Diagnostics")
     d1, d2, d3 = st.columns(3)
-    d1.metric("Detected Dataset", practice_type.upper())
-    d2.metric("Service Anchor Used", anchor_used)
-    d3.metric("Data Readiness Score", f"{readiness_score:.1f}%")
+    d1.metric("Detected Dataset", results["practice_type"].upper())
+    d2.metric("Service Anchor Used", results["anchor_used"])
+    d3.metric("Data Readiness Score", f'{results["readiness_score"]:.1f}%')
 
     with st.expander("Preview (first 20 rows)"):
-        st.dataframe(df.head(20), use_container_width=True)
-
-    # Analysis
-    open_col, close_col = infer_open_close_columns(df)
-    df["__mttr_hours"] = compute_mttr_hours(df, open_col, close_col)
-
-    roll = df.groupby("Service_Anchor", dropna=False).agg(
-        recurrence=("Service_Anchor", "count"),
-        reopen_rate=("Reopened_Flag", "mean"),
-        change_collision_rate=("Change_Related_Flag", "mean"),
-        mttr_hours=("__mttr_hours", "mean"),
-        tier=("Service_Tier", lambda x: x.value_counts().index[0] if len(x) else "Tier 3"),
-        category=("Category", lambda x: x.value_counts().index[0] if len(x) else "General"),
-    ).reset_index()
-
-    domain_scores = build_domain_scores(roll)
-    bvsi = compute_bvsi(domain_scores)
-    posture = operating_posture(bvsi)
-    gap = dominant_gap(domain_scores)
-    as_of = date.today().isoformat()
-    exec_text = executive_interpretation(bvsi, posture, gap)
-
-    # Save history only once per explicit run
-    if run_signature != st.session_state.last_run_signature:
-        top_services = roll["Service_Anchor"].astype(str).head(3).tolist()
-        _db_insert_run(
-            tenant_name=tenant_name,
-            run_ts=_utc_now_iso(),
-            bvsi=bvsi,
-            posture=posture,
-            top_services=top_services,
-        )
-        st.session_state.last_run_signature = run_signature
+        st.dataframe(results["preview_df"], use_container_width=True)
 
     st.divider()
 
-    # Executive snapshot
     st.subheader("Operational Stability Snapshot")
-    st.caption(f"Organization: {tenant_name}")
+    st.caption(f'Organization: {results["tenant_name"]}')
     st.markdown(
         f"""
 <div style="border:1px solid #D1D5DB;background:#F5F7FA;padding:14px 16px;border-radius:10px;line-height:1.55;">
   <div style="font-size:18px;">
-    <b>BVSI™:</b> {bvsi:.1f}<br/>
-    <b>Operating Posture:</b> {posture}
+    <b>BVSI™:</b> {results["bvsi"]:.1f}<br/>
+    <b>Operating Posture:</b> {results["posture"]}
   </div>
   <div style="margin-top:10px;">
     <b>What This Means</b><br/>
-    {exec_text}
+    {results["exec_text"]}
   </div>
 </div>
 """,
@@ -818,95 +977,60 @@ def main():
     )
 
     st.divider()
-    _render_bvsi_trend(tenant_name=tenant_name, admin_enabled=admin_enabled)
+    _render_bvsi_trend(tenant_name=results["tenant_name"], admin_enabled=admin_enabled)
 
     st.divider()
     m1, m2, m3 = st.columns([1, 2, 1])
-    m1.metric("BVSI™", f"{bvsi:.1f}")
-    m2.metric("Operating Posture", posture)
-    m3.metric("As-of Date", as_of)
+    m1.metric("BVSI™", f'{results["bvsi"]:.1f}')
+    m2.metric("Operating Posture", results["posture"])
+    m3.metric("As-of Date", results["as_of"])
 
     st.divider()
 
     st.markdown("### Operational Stability Profile (Radar)")
-    rad_fig = radar_chart(domain_scores)
+    rad_fig = radar_chart(results["domain_scores"])
     rc1, rc2, rc3 = st.columns([1, 2, 1])
     with rc2:
         st.pyplot(rad_fig, use_container_width=False)
 
     st.markdown("### Stability Domain Scores (0–100)")
     st.dataframe(
-        pd.DataFrame({"Domain": list(domain_scores.keys()), "Score": list(domain_scores.values())}),
-        use_container_width=True
+        pd.DataFrame({"Domain": list(results["domain_scores"].keys()), "Score": list(results["domain_scores"].values())}),
+        use_container_width=True,
     )
 
     st.divider()
 
-    service_risk_df = build_service_risk_df(roll)
-    top10 = service_risk_df.head(10).copy()
-
-    hm = top10.set_index(top10["Service"] + " (" + top10["Service_Tier"] + ")")[
-        ["Recurrence_Risk", "MTTR_Drag_Risk", "Reopen_Churn_Risk", "Change_Collision_Risk"]
-    ].rename(columns={
-        "Recurrence_Risk": "Recurrence",
-        "MTTR_Drag_Risk": "MTTR Drag",
-        "Reopen_Churn_Risk": "Reopen Churn",
-        "Change_Collision_Risk": "Change Collision"
-    })
-    hm = hm.apply(pd.to_numeric, errors="coerce").replace([np.inf, -np.inf], np.nan)
-
     st.markdown("### Service Stability Heatmap (Top 10 Services by Risk)")
-    hm_fig = heatmap_chart(hm)
+    hm_fig = heatmap_chart(results["heatmap_df"])
     hc1, hc2, hc3 = st.columns([1, 2, 1])
     with hc2:
         st.pyplot(hm_fig, use_container_width=False)
 
     st.markdown("**Top 10 Services — Risk Breakdown**")
-    st.dataframe(top10, use_container_width=True)
+    st.dataframe(results["top10"], use_container_width=True)
 
-    risk_csv = top10.to_csv(index=False).encode("utf-8")
+    risk_csv = results["top10"].to_csv(index=False).encode("utf-8")
     st.download_button(
         label="Download Service Risk Table (CSV)",
         data=risk_csv,
-        file_name=f"osil_service_risk_top10_{tenant_name}.csv".replace(" ", "_"),
+        file_name=f'osil_service_risk_top10_{results["tenant_name"]}.csv'.replace(" ", "_"),
         mime="text/csv",
     )
 
     st.divider()
-    render_service_instability_leaders(service_risk_df)
+    render_service_instability_leaders(results["service_risk_df"])
 
     st.divider()
 
     st.markdown("### Top SIP Candidates (Next 30 Days)")
-    sip = service_risk_df.copy()
-    sip["SIP_Priority_Score"] = (
-        0.45 * sip["Recurrence_Risk"] +
-        0.25 * sip["MTTR_Drag_Risk"] +
-        0.20 * sip["Reopen_Churn_Risk"] +
-        0.10 * sip["Change_Collision_Risk"]
-    ).round(1)
+    st.dataframe(results["sip_view"], use_container_width=True)
 
-    def label_sip(score: float) -> str:
-        if score >= 70:
-            return "Next SIP"
-        if score >= 45:
-            return "Monitor"
-        return "Backlog"
-
-    sip["Priority_Label"] = sip["SIP_Priority_Score"].apply(label_sip)
-    sip["Suggested_Theme"] = "Stability Improvement"
-    sip["Why_Flagged"] = "Tier exposure + recurrence/MTTR/reopen/change risk"
-
-    sip_view = sip.head(5)[
-        ["Service", "Service_Tier", "Suggested_Theme", "SIP_Priority_Score", "Priority_Label", "Why_Flagged"]
-    ]
-    st.dataframe(sip_view, use_container_width=True)
-
-    sip_csv = sip_view.to_csv(index=False).encode("utf-8")
+    sip_csv = results["sip_view"].to_csv(index=False).encode("utf-8")
     st.download_button(
         label="Download SIP Candidates (CSV)",
         data=sip_csv,
-        file_name=f"osil_sip_candidates_{tenant_name}.csv".replace(" ", "_"),
+        file_name=f'osil_sip_candidates_{results["tenant_name"]}.csv'.replace(" ", "_"),
         mime="text/csv",
     )
 
@@ -915,17 +1039,17 @@ def main():
     st.markdown("### Executive PDF Report")
 
     payload = {
-        "bvsi": bvsi,
-        "posture": posture,
-        "as_of": as_of,
-        "executive_interpretation": exec_text,
-        "domain_scores": domain_scores,
-        "service_risk_top10": top10,
-        "sip_candidates": sip_view,
-        "data_readiness_score": readiness_score,
-        "service_anchor_used": anchor_used,
-        "detected_dataset": practice_type,
-        "tenant_name": tenant_name,
+        "bvsi": results["bvsi"],
+        "posture": results["posture"],
+        "as_of": results["as_of"],
+        "executive_interpretation": results["exec_text"],
+        "domain_scores": results["domain_scores"],
+        "service_risk_top10": results["top10"],
+        "sip_candidates": results["sip_view"],
+        "data_readiness_score": results["readiness_score"],
+        "service_anchor_used": results["anchor_used"],
+        "detected_dataset": results["practice_type"],
+        "tenant_name": results["tenant_name"],
     }
 
     colA, colB = st.columns([1, 2])
@@ -934,7 +1058,9 @@ def main():
         if st.button("Generate / Refresh PDF", use_container_width=True):
             try:
                 st.session_state.pdf_bytes = generate_pdf_bytes(payload)
-                st.session_state.pdf_filename = f"OSIL_Executive_Report_{as_of}_{tenant_name}.pdf".replace(" ", "_")
+                st.session_state.pdf_filename = (
+                    f'OSIL_Executive_Report_{results["as_of"]}_{results["tenant_name"]}.pdf'.replace(" ", "_")
+                )
                 st.success("PDF generated. Use the download button on the right.")
             except Exception as e:
                 st.error(f"Report generation failed: {e}")
