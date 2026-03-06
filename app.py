@@ -818,58 +818,66 @@ def main():
     st.divider()
 
     # PDF
-    st.markdown("### Executive PDF Report")
-    if not REPORT_GEN_AVAILABLE:
-        st.info("PDF generator not available (report_generator.py import failed). Dashboard is still fully functional.")
-    else:
-        payload = {
-            "bvsi": bvsi,
-            "posture": posture,
-            "as_of": as_of,
-            "executive_interpretation": exec_text,
-            "domain_scores": domain_scores,
-            "service_risk_top10": top10,
-            "sip_candidates": sip_view,
-            "data_readiness_score": readiness_score,
-            "service_anchor_used": anchor_used,
-            "detected_dataset": practice_type,
-            "tenant_name": tenant_name,
-        }
+st.markdown("### Executive PDF Report")
 
-        colA, colB = st.columns([1, 2])
+if "pdf_bytes" not in st.session_state:
+    st.session_state.pdf_bytes = None
+if "pdf_filename" not in st.session_state:
+    st.session_state.pdf_filename = "OSIL_Executive_Report_latest.pdf"
 
-        with colA:
-            if st.button("Generate / Refresh PDF", use_container_width=True):
-                try:
-                    pdf_obj = build_osil_pdf_report(payload)
+if not REPORT_GEN_AVAILABLE:
+    st.info("PDF generator not available (report_generator.py import failed). Dashboard is still fully functional.")
+else:
+    payload = {
+        "bvsi": bvsi,
+        "posture": posture,
+        "as_of": as_of,
+        "executive_interpretation": exec_text,
+        "domain_scores": domain_scores,
+        "service_risk_top10": top10,
+        "sip_candidates": sip_view,
+        "data_readiness_score": readiness_score,
+        "service_anchor_used": anchor_used,
+        "detected_dataset": practice_type,
+        "tenant_name": tenant_name,
+    }
 
-                    if isinstance(pdf_obj, (bytes, bytearray)):
-                        st.session_state.pdf_bytes = bytes(pdf_obj)
-                    elif isinstance(pdf_obj, io.BytesIO):
-                        st.session_state.pdf_bytes = pdf_obj.getvalue()
-                    elif isinstance(pdf_obj, str) and os.path.exists(pdf_obj):
-                        with open(pdf_obj, "rb") as f:
-                            st.session_state.pdf_bytes = f.read()
-                    else:
-                        raise TypeError(f"Unsupported PDF return type: {type(pdf_obj)}")
+    colA, colB = st.columns([1, 2])
 
-                    st.session_state.pdf_filename = f"OSIL_Executive_Report_{as_of}_{tenant_name}.pdf".replace(" ", "_")
-                    st.success("PDF generated.")
-                except Exception as e:
-                    st.error(f"Report generation failed: {e}")
+    with colA:
+        if st.button("Generate / Refresh PDF", use_container_width=True):
+            try:
+                pdf_obj = build_osil_pdf_report(payload)
 
-        with colB:
-            if st.session_state.pdf_bytes:
-                st.download_button(
-                    label="⬇️ Download OSIL™ Executive Report (PDF)",
-                    data=st.session_state.pdf_bytes,
-                    file_name=st.session_state.pdf_filename,
-                    mime="application/pdf",
-                    use_container_width=True,
+                if isinstance(pdf_obj, (bytes, bytearray)):
+                    st.session_state.pdf_bytes = bytes(pdf_obj)
+                elif isinstance(pdf_obj, io.BytesIO):
+                    st.session_state.pdf_bytes = pdf_obj.getvalue()
+                elif isinstance(pdf_obj, str) and os.path.exists(pdf_obj):
+                    with open(pdf_obj, "rb") as f:
+                        st.session_state.pdf_bytes = f.read()
+                else:
+                    raise TypeError(f"Unsupported PDF return type: {type(pdf_obj)}")
+
+                st.session_state.pdf_filename = (
+                    f"OSIL_Executive_Report_{as_of}_{tenant_name}.pdf".replace(" ", "_")
                 )
-            else:
-                st.info("Click **Generate / Refresh PDF** to create the report, then download it here.")
+                st.success("PDF generated. Use the download button on the right.")
+            except Exception as e:
+                st.error(f"Report generation failed: {e}")
 
+    with colB:
+        if st.session_state.pdf_bytes:
+            st.download_button(
+                label="⬇️ Download OSIL™ Executive Report (PDF)",
+                data=st.session_state.pdf_bytes,
+                file_name=st.session_state.pdf_filename,
+                mime="application/pdf",
+                key="download_pdf_btn",
+                use_container_width=True,
+            )
+        else:
+            st.info("Click **Generate / Refresh PDF** first, then download it here.")
 
 if __name__ == "__main__":
     main()
