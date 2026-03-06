@@ -15,17 +15,27 @@ from data_classifier import (
     calculate_data_readiness,
 )
 
-# Optional PDF generator
+# Optional external report generator
 try:
-    from report_generator import build_osil_pdf_report
-    REPORT_GEN_AVAILABLE = True
+    from report_generator import build_osil_pdf_report as external_build_osil_pdf_report
+    EXTERNAL_REPORT_GENERATOR_AVAILABLE = True
 except Exception:
-    REPORT_GEN_AVAILABLE = False
+    EXTERNAL_REPORT_GENERATOR_AVAILABLE = False
+
+# Internal PDF fallback
+try:
+    from reportlab.lib.pagesizes import LETTER
+    from reportlab.lib import colors
+    from reportlab.lib.styles import getSampleStyleSheet
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
+    REPORTLAB_AVAILABLE = True
+except Exception:
+    REPORTLAB_AVAILABLE = False
 
 
-# =========================
-# App Config
-# =========================
+# ============================================================
+# Config
+# ============================================================
 st.set_page_config(page_title="OSIL™ by Xentrixus", page_icon="📊", layout="wide")
 
 APP_TITLE = "OSIL™ by Xentrixus"
@@ -35,9 +45,9 @@ DEMO_CSV_PATH = "data/demo_incidents.csv"
 SQLITE_PATH = "data/osil.db"
 
 
-# =========================
-# SQLite / Tenant / Admin
-# =========================
+# ============================================================
+# DB / Admin / Tenant
+# ============================================================
 def _safe_mkdir_for_file(path: str) -> None:
     folder = os.path.dirname(path)
     if folder and not os.path.exists(folder):
@@ -78,23 +88,6 @@ def _db_init_and_migrate():
         cur.execute("ALTER TABLE osil_runs ADD COLUMN tenant_name TEXT NOT NULL DEFAULT 'Default'")
         conn.commit()
 
-    conn.close()
-
-
-def _db_insert_run(tenant_name: str, run_ts: str, bvsi: float, posture: str, top_services: list):
-    _db_init_and_migrate()
-    tenant = (tenant_name or "Default").strip()
-
-    conn = _db_conn()
-    cur = conn.cursor()
-    cur.execute(
-        """
-        INSERT INTO osil_runs (tenant_name, run_ts, bvsi, posture, top_services_json)
-        VALUES (?, ?, ?, ?, ?)
-        """,
-        (tenant, float(bvsi), float(bvsi) and run_ts, posture or "", json.dumps(top_services or [])),
-    )
-    conn.commit()
     conn.close()
 
 
@@ -218,28 +211,30 @@ def _tenant_selector() -> str:
     if "tenant_name" not in st.session_state:
         st.session_state.tenant_name = tenants[0] if tenants else "Default"
 
-    mode = st.sidebar.radio("Choose", ["Select existing", "Enter new"], horizontal=False)
+    mode = st.sidebar.radio("Choose", ["Select existing", "Enter new"], horizontal=False, key="tenant_mode")
 
     if mode == "Select existing":
         options = tenants if tenants else ["Default"]
         idx = options.index(st.session_state.tenant_name) if st.session_state.tenant_name in options else 0
-        sel = st.sidebar.selectbox("Organization", options=options, index=idx)
+        sel = st.sidebar.selectbox("Organization", options=options, index=idx, key="tenant_select")
         st.session_state.tenant_name = sel
     else:
-        typed = st.sidebar.text_input("Organization Name", value=st.session_state.tenant_name)
+        typed = st.sidebar.text_input("Organization Name", value=st.session_state.tenant_name, key="tenant_input")
         st.session_state.tenant_name = typed.strip() if typed.strip() else "Default"
 
     return st.session_state.tenant_name
 
 
-# =========================
-# Data / analysis helpers
-# =========================
+# ============================================================
+# Data helpers
+# ============================================================
 def _safe_parse_datetime(series: pd.Series) -> pd.Series:
     return pd.to_datetime(series, errors="coerce")
 
 
 def ensure_minimum_columns(df: pd.DataFrame) -> pd.DataFrame:
+    out = df.copy()
+
     defaults = {
         "Service_Tier": "Tier 3",
         "Priority": "P3",
@@ -248,19 +243,25 @@ def ensure_minimum_columns(df: pd.DataFrame) -> pd.DataFrame:
         "Category": "General",
     }
     for col, default_val in defaults.items():
-        if col not in df.columns:
-            df[col] = default_val
+        if col not in out.columns:
+            out[col] = default_val
 
-    df["Service_Tier"] = df["Service_Tier"].astype(str).str.strip().replace({"": "Tier 3", "nan": "Tier 3"})
+    out["Service_Tier"] = out["Service_Tier"].astype(str).str.strip().replace({"": "Tier 3", "nan": "Tier 3"})
     for flag_col in ["Reopened_Flag", "Change_Related_Flag"]:
-        df[flag_col] = pd.to_numeric(df[flag_col], errors="coerce").fillna(0).astype(int)
+        out[flag_col] = pd.to_numeric(out[flag_col], errors="coerce").fillna(0).astype(int)
 
-    return df
+    return out
 
 
 def infer_open_close_columns(df: pd.DataFrame) -> tuple[str | None, str | None]:
-    open_candidates = ["Opened_Date", "Opened_At", "opened_at", "open_date", "created_at", "Created", "Created_At", "Opened"]
-    close_candidates = ["Closed_Date", "Closed_At", "resolved_at", "Resolved_At", "close_date", "closed_at", "Resolved", "Closed", "Updated"]
+    open_candidates = [
+        "Opened_Date", "Opened_At", "opened_at", "open_date",
+        "created_at", "Created", "Created_At", "Opened"
+    ]
+    close_candidates = [
+        "Closed_Date", "Closed_At", "resolved_at", "Resolved_At",
+        "close_date", "closed_at", "Resolved", "Closed", "Updated"
+    ]
 
     open_col = next((c for c in open_candidates if c in df.columns), None)
     close_col = next((c for c in close_candidates if c in df.columns), None)
@@ -270,21 +271,9 @@ def infer_open_close_columns(df: pd.DataFrame) -> tuple[str | None, str | None]:
 def compute_mttr_hours(df: pd.DataFrame, open_col: str | None, close_col: str | None) -> pd.Series:
     if not open_col or not close_col:
         return pd.Series([np.nan] * len(df), index=df.index)
-
     opened = _safe_parse_datetime(df[open_col])
     closed = _safe_parse_datetime(df[close_col])
     return (closed - opened).dt.total_seconds() / 3600.0
-
-
-def tier_weight(tier_val: str) -> float:
-    t = str(tier_val).lower().strip()
-    if "tier 0" in t or t == "0":
-        return 3.5
-    if "tier 1" in t or t == "1":
-        return 3.0
-    if "tier 2" in t or t == "2":
-        return 2.0
-    return 1.0
 
 
 def normalize_0_100(series: pd.Series) -> pd.Series:
@@ -407,9 +396,9 @@ def build_service_risk_df(roll: pd.DataFrame) -> pd.DataFrame:
     return df.sort_values("Total_Service_Risk", ascending=False).reset_index(drop=True)
 
 
-# =========================
+# ============================================================
 # Charts
-# =========================
+# ============================================================
 def radar_chart(domain_scores: dict):
     labels = list(domain_scores.keys())
     values = list(domain_scores.values())
@@ -466,9 +455,9 @@ def heatmap_chart(heatmap_df: pd.DataFrame):
     return fig
 
 
-# =========================
-# Narrative cards
-# =========================
+# ============================================================
+# Narrative cards / trend
+# ============================================================
 def render_service_instability_leaders(service_risk_df: pd.DataFrame) -> None:
     st.subheader("Service Instability Leaders (Top 5)")
     st.caption("Narrative view of the services currently driving the highest operational instability risk.")
@@ -527,9 +516,6 @@ def render_service_instability_leaders(service_risk_df: pd.DataFrame) -> None:
         )
 
 
-# =========================
-# Trend section
-# =========================
 def _momentum_arrow(series: pd.Series) -> str:
     s = series.dropna()
     if len(s) < 2:
@@ -604,9 +590,111 @@ def _render_bvsi_trend(tenant_name: str, admin_enabled: bool):
     )
 
 
-# =========================
+# ============================================================
+# PDF generation
+# ============================================================
+def _internal_build_pdf(payload: dict) -> bytes:
+    if not REPORTLAB_AVAILABLE:
+        raise RuntimeError("ReportLab is not available for internal PDF generation.")
+
+    out = io.BytesIO()
+    doc = SimpleDocTemplate(out, pagesize=LETTER)
+    styles = getSampleStyleSheet()
+    story = []
+
+    title = Paragraph("OSIL™ Executive Report", styles["Title"])
+    story.append(title)
+    story.append(Spacer(1, 12))
+
+    summary_lines = [
+        f"Organization: {payload.get('tenant_name', 'Default')}",
+        f"As-of: {payload.get('as_of', '')}",
+        f"BVSI™: {payload.get('bvsi', 0)}",
+        f"Operating Posture: {payload.get('posture', '')}",
+        f"Detected Dataset: {payload.get('detected_dataset', '')}",
+        f"Service Anchor Used: {payload.get('service_anchor_used', '')}",
+        f"Data Readiness Score: {payload.get('data_readiness_score', 0)}%",
+    ]
+    for line in summary_lines:
+        story.append(Paragraph(line, styles["BodyText"]))
+
+    story.append(Spacer(1, 12))
+    story.append(Paragraph("Executive Interpretation", styles["Heading2"]))
+    story.append(Paragraph(payload.get("executive_interpretation", ""), styles["BodyText"]))
+
+    story.append(Spacer(1, 12))
+    story.append(Paragraph("Domain Scores", styles["Heading2"]))
+    ds = payload.get("domain_scores", {})
+    ds_rows = [["Domain", "Score"]]
+    for k, v in ds.items():
+        ds_rows.append([str(k), str(v)])
+    ds_tbl = Table(ds_rows)
+    ds_tbl.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+    ]))
+    story.append(ds_tbl)
+
+    story.append(Spacer(1, 12))
+    story.append(Paragraph("Top Service Risks", styles["Heading2"]))
+    top10 = payload.get("service_risk_top10")
+    if isinstance(top10, pd.DataFrame) and not top10.empty:
+        rows = [list(top10.columns)]
+        for _, r in top10.head(10).iterrows():
+            rows.append([str(x) for x in r.tolist()])
+        tbl = Table(rows, repeatRows=1)
+        tbl.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
+            ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTSIZE", (0, 0), (-1, -1), 7),
+        ]))
+        story.append(tbl)
+
+    story.append(PageBreak())
+    story.append(Paragraph("Top SIP Candidates", styles["Heading2"]))
+    sip = payload.get("sip_candidates")
+    if isinstance(sip, pd.DataFrame) and not sip.empty:
+        rows = [list(sip.columns)]
+        for _, r in sip.head(10).iterrows():
+            rows.append([str(x) for x in r.tolist()])
+        tbl = Table(rows, repeatRows=1)
+        tbl.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
+            ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTSIZE", (0, 0), (-1, -1), 7),
+        ]))
+        story.append(tbl)
+
+    doc.build(story)
+    out.seek(0)
+    return out.getvalue()
+
+
+def generate_pdf_bytes(payload: dict) -> bytes:
+    # Prefer external generator if available
+    if EXTERNAL_REPORT_GENERATOR_AVAILABLE:
+        try:
+            pdf_obj = external_build_osil_pdf_report(payload)
+            if isinstance(pdf_obj, (bytes, bytearray)):
+                return bytes(pdf_obj)
+            if isinstance(pdf_obj, io.BytesIO):
+                return pdf_obj.getvalue()
+            if isinstance(pdf_obj, str) and os.path.exists(pdf_obj):
+                with open(pdf_obj, "rb") as f:
+                    return f.read()
+        except Exception:
+            pass
+
+    # Fallback internal generator
+    return _internal_build_pdf(payload)
+
+
+# ============================================================
 # Main
-# =========================
+# ============================================================
 def main():
     _db_init_and_migrate()
 
@@ -614,6 +702,8 @@ def main():
         st.session_state.pdf_bytes = None
     if "pdf_filename" not in st.session_state:
         st.session_state.pdf_filename = "OSIL_Executive_Report_latest.pdf"
+    if "last_run_signature" not in st.session_state:
+        st.session_state.last_run_signature = None
 
     admin_enabled = _admin_mode_panel()
     tenant_name = _tenant_selector()
@@ -621,38 +711,40 @@ def main():
     st.title(APP_TITLE)
     st.caption(APP_SUB)
 
-    # Run Options
     st.subheader("Run Options")
-    c1, c2 = st.columns([1, 2])
-
-    with c1:
-        run_demo = st.button("Run with Demo Data", use_container_width=True)
-
-    with c2:
-        uploaded_file = st.file_uploader("Upload operational CSV export (any practice)", type=["csv"])
+    mode = st.radio("Choose a run mode", ["Run with Demo Data", "Upload a CSV"], horizontal=True)
 
     df = None
     source_label = None
+    run_requested = False
+    run_signature = None
 
-    if run_demo:
-        demo_path = DEMO_CSV_PATH if os.path.exists(DEMO_CSV_PATH) else "demo_incidents.csv"
-        try:
-            df = pd.read_csv(demo_path)
-            source_label = f"Demo ({os.path.basename(demo_path)})"
-        except Exception as e:
-            st.error(f"Demo load failed: {e}")
-            return
+    if mode == "Run with Demo Data":
+        if st.button("Run Demo Analysis", use_container_width=True):
+            demo_path = DEMO_CSV_PATH if os.path.exists(DEMO_CSV_PATH) else "demo_incidents.csv"
+            try:
+                df = pd.read_csv(demo_path)
+                source_label = f"Demo ({os.path.basename(demo_path)})"
+                run_requested = True
+                run_signature = f"demo::{demo_path}"
+            except Exception as e:
+                st.error(f"Demo load failed: {e}")
+                return
+    else:
+        uploaded_file = st.file_uploader("Upload operational CSV export (any practice)", type=["csv"])
+        if uploaded_file is not None:
+            if st.button("Run Uploaded Analysis", use_container_width=True):
+                try:
+                    df = pd.read_csv(uploaded_file)
+                    source_label = f"Upload ({uploaded_file.name})"
+                    run_requested = True
+                    run_signature = f"upload::{uploaded_file.name}::{uploaded_file.size}"
+                except Exception as e:
+                    st.error(f"Upload load failed: {e}")
+                    return
 
-    if df is None and uploaded_file is not None:
-        try:
-            df = pd.read_csv(uploaded_file)
-            source_label = f"Upload ({uploaded_file.name})"
-        except Exception as e:
-            st.error(f"Upload load failed: {e}")
-            return
-
-    if df is None:
-        st.info("Upload a CSV or click **Run with Demo Data**.")
+    if not run_requested:
+        st.info("Choose a mode, provide a file if needed, and click the run button.")
         return
 
     st.success(f"Loaded: {source_label}")
@@ -692,22 +784,23 @@ def main():
     as_of = date.today().isoformat()
     exec_text = executive_interpretation(bvsi, posture, gap)
 
-    # Save run into DB
-    top_services = roll["Service_Anchor"].astype(str).head(3).tolist()
-    _db_insert_run(
-        tenant_name=tenant_name,
-        run_ts=_utc_now_iso(),
-        bvsi=bvsi,
-        posture=posture,
-        top_services=top_services,
-    )
+    # Save history only once per explicit run
+    if run_signature != st.session_state.last_run_signature:
+        top_services = roll["Service_Anchor"].astype(str).head(3).tolist()
+        _db_insert_run(
+            tenant_name=tenant_name,
+            run_ts=_utc_now_iso(),
+            bvsi=bvsi,
+            posture=posture,
+            top_services=top_services,
+        )
+        st.session_state.last_run_signature = run_signature
 
     st.divider()
 
     # Executive snapshot
     st.subheader("Operational Stability Snapshot")
     st.caption(f"Organization: {tenant_name}")
-
     st.markdown(
         f"""
 <div style="border:1px solid #D1D5DB;background:#F5F7FA;padding:14px 16px;border-radius:10px;line-height:1.55;">
@@ -725,11 +818,9 @@ def main():
     )
 
     st.divider()
-
     _render_bvsi_trend(tenant_name=tenant_name, admin_enabled=admin_enabled)
 
     st.divider()
-
     m1, m2, m3 = st.columns([1, 2, 1])
     m1.metric("BVSI™", f"{bvsi:.1f}")
     m2.metric("Operating Posture", posture)
@@ -751,7 +842,6 @@ def main():
 
     st.divider()
 
-    # Heatmap
     service_risk_df = build_service_risk_df(roll)
     top10 = service_risk_df.head(10).copy()
 
@@ -763,7 +853,6 @@ def main():
         "Reopen_Churn_Risk": "Reopen Churn",
         "Change_Collision_Risk": "Change Collision"
     })
-
     hm = hm.apply(pd.to_numeric, errors="coerce").replace([np.inf, -np.inf], np.nan)
 
     st.markdown("### Service Stability Heatmap (Top 10 Services by Risk)")
@@ -784,12 +873,10 @@ def main():
     )
 
     st.divider()
-
     render_service_instability_leaders(service_risk_df)
 
     st.divider()
 
-    # SIP candidates
     st.markdown("### Top SIP Candidates (Next 30 Days)")
     sip = service_risk_df.copy()
     sip["SIP_Priority_Score"] = (
@@ -815,19 +902,18 @@ def main():
     ]
     st.dataframe(sip_view, use_container_width=True)
 
+    sip_csv = sip_view.to_csv(index=False).encode("utf-8")
+    st.download_button(
+        label="Download SIP Candidates (CSV)",
+        data=sip_csv,
+        file_name=f"osil_sip_candidates_{tenant_name}.csv".replace(" ", "_"),
+        mime="text/csv",
+    )
+
     st.divider()
 
-    # PDF
-st.markdown("### Executive PDF Report")
+    st.markdown("### Executive PDF Report")
 
-if "pdf_bytes" not in st.session_state:
-    st.session_state.pdf_bytes = None
-if "pdf_filename" not in st.session_state:
-    st.session_state.pdf_filename = "OSIL_Executive_Report_latest.pdf"
-
-if not REPORT_GEN_AVAILABLE:
-    st.info("PDF generator not available (report_generator.py import failed). Dashboard is still fully functional.")
-else:
     payload = {
         "bvsi": bvsi,
         "posture": posture,
@@ -847,21 +933,8 @@ else:
     with colA:
         if st.button("Generate / Refresh PDF", use_container_width=True):
             try:
-                pdf_obj = build_osil_pdf_report(payload)
-
-                if isinstance(pdf_obj, (bytes, bytearray)):
-                    st.session_state.pdf_bytes = bytes(pdf_obj)
-                elif isinstance(pdf_obj, io.BytesIO):
-                    st.session_state.pdf_bytes = pdf_obj.getvalue()
-                elif isinstance(pdf_obj, str) and os.path.exists(pdf_obj):
-                    with open(pdf_obj, "rb") as f:
-                        st.session_state.pdf_bytes = f.read()
-                else:
-                    raise TypeError(f"Unsupported PDF return type: {type(pdf_obj)}")
-
-                st.session_state.pdf_filename = (
-                    f"OSIL_Executive_Report_{as_of}_{tenant_name}.pdf".replace(" ", "_")
-                )
+                st.session_state.pdf_bytes = generate_pdf_bytes(payload)
+                st.session_state.pdf_filename = f"OSIL_Executive_Report_{as_of}_{tenant_name}.pdf".replace(" ", "_")
                 st.success("PDF generated. Use the download button on the right.")
             except Exception as e:
                 st.error(f"Report generation failed: {e}")
@@ -878,6 +951,7 @@ else:
             )
         else:
             st.info("Click **Generate / Refresh PDF** first, then download it here.")
+
 
 if __name__ == "__main__":
     main()
