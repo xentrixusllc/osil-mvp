@@ -1,6 +1,6 @@
 import io
 import re
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -33,10 +33,28 @@ def _safe_float(val: Any, default: float = 0.0) -> float:
         return default
 
 
+def _safe_str(val: Any, default: str = "") -> str:
+    if val is None:
+        return default
+    return str(val)
+
+
 def _safe_df(val: Any) -> pd.DataFrame:
     if isinstance(val, pd.DataFrame):
         return val.copy()
+    if isinstance(val, list):
+        try:
+            return pd.DataFrame(val)
+        except Exception:
+            return pd.DataFrame()
     return pd.DataFrame()
+
+
+def _first_present(payload: Dict[str, Any], keys: List[str], default: Any = None) -> Any:
+    for key in keys:
+        if key in payload and payload.get(key) is not None:
+            return payload.get(key)
+    return default
 
 
 def _clean_text(text: Any) -> str:
@@ -50,12 +68,15 @@ def _clean_text(text: Any) -> str:
     # Convert markdown bold **x** -> <b>x</b>
     s = re.sub(r"\*\*(.*?)\*\*", r"<b>\1</b>", s)
 
-    # Normalize <br/> tags
+    # Normalize line breaks
+    s = s.replace("\r\n", "\n").replace("\r", "\n")
+    s = s.replace("\n\n", "<br/><br/>")
+    s = s.replace("\n", "<br/>")
     s = s.replace("<br>", "<br/>").replace("<br />", "<br/>")
 
-    # Strip unsupported HTML tags except a small safe set
+    # Strip unsupported HTML tags except safe ones
     allowed = {"b", "i", "u", "br"}
-    # Replace tags not in allowed
+
     def repl_tag(match):
         full = match.group(0)
         tag = match.group(1).lower().replace("/", "")
@@ -65,7 +86,7 @@ def _clean_text(text: Any) -> str:
 
     s = re.sub(r"</?([a-zA-Z0-9]+).*?>", repl_tag, s)
 
-    return s
+    return s.strip()
 
 
 def _styles():
@@ -160,7 +181,7 @@ def _footer(canvas, doc):
     canvas.setFont("Helvetica", 8)
     canvas.setFillColor(colors.HexColor("#666666"))
     canvas.drawString(0.55 * inch, 0.35 * inch, "OSIL™ by Xentrixus • Operational Stability Intelligence")
-    canvas.drawRightString(7.95 * inch, 0.35 * inch, "Confidential")
+    canvas.drawRightString(7.95 * inch, 0.35 * inch, f"Page {doc.page}")
     canvas.restoreState()
 
 
@@ -251,7 +272,7 @@ def _signal_box(title: str, body: str, width: float = 7.35 * inch, styles=None) 
 
 def _paragraph_table(
     df: pd.DataFrame,
-    col_widths: List[float],
+    col_widths: Optional[List[float]],
     styles,
     header_bg: str = "#E9EDF3",
 ) -> Table:
@@ -259,7 +280,7 @@ def _paragraph_table(
 
     if df.empty:
         data = [[Paragraph("No data available", styles["OSIL_Table"])]]
-        tbl = Table(data, colWidths=[sum(col_widths)])
+        tbl = Table(data, colWidths=[7.2 * inch])
         tbl.setStyle(
             TableStyle(
                 [
@@ -273,6 +294,10 @@ def _paragraph_table(
             )
         )
         return tbl
+
+    if col_widths is None or len(col_widths) != len(df.columns):
+        total = 7.2 * inch
+        col_widths = [total / max(len(df.columns), 1)] * len(df.columns)
 
     header = [Paragraph(_clean_text(c), styles["OSIL_TableHeader"]) for c in df.columns]
     rows = []
@@ -299,12 +324,15 @@ def _paragraph_table(
 
 
 def _build_radar_image(domain_scores: Dict[str, float]) -> io.BytesIO:
-    labels = list(domain_scores.keys())
-    values = [_safe_float(domain_scores.get(k, 0.0)) for k in labels]
+    expected_order = [
+        "Service Resilience",
+        "Change Governance",
+        "Structural Risk Debt™",
+        "Reliability Momentum",
+    ]
 
-    if not labels:
-        labels = ["Service Resilience", "Change Governance", "Structural Risk Debt™", "Reliability Momentum"]
-        values = [0, 0, 0, 0]
+    labels = [k for k in expected_order if k in domain_scores] or expected_order
+    values = [_safe_float(domain_scores.get(k, 0.0)) for k in labels]
 
     angles = np.linspace(0, 2 * np.pi, len(labels), endpoint=False).tolist()
     angles_loop = angles + [angles[0]]
@@ -333,12 +361,27 @@ def _build_radar_image(domain_scores: Dict[str, float]) -> io.BytesIO:
     return img
 
 
-def _build_heatmap_image(service_risk_top10: pd.DataFrame) -> io.BytesIO | None:
+def _normalize_heatmap_df(service_risk_top10: pd.DataFrame) -> pd.DataFrame:
     df = _safe_df(service_risk_top10)
     if df.empty:
-        return None
+        return pd.DataFrame()
 
-    needed = [
+    aliases = {
+        "Service": ["Service", "service", "Service_Name"],
+        "Service_Tier": ["Service_Tier", "Tier", "service_tier"],
+        "Recurrence_Risk": ["Recurrence_Risk", "recurrence_risk", "Recurrence"],
+        "MTTR_Drag_Risk": ["MTTR_Drag_Risk", "mttr_drag_risk", "MTTR_Drag", "MTTR Drag"],
+        "Reopen_Churn_Risk": ["Reopen_Churn_Risk", "reopen_churn_risk", "Reopen", "Reopen_Risk"],
+        "Change_Collision_Risk": ["Change_Collision_Risk", "change_collision_risk", "Change", "Change_Risk"],
+    }
+
+    out = pd.DataFrame()
+    for target, options in aliases.items():
+        found = next((c for c in options if c in df.columns), None)
+        if found:
+            out[target] = df[found]
+
+    required = [
         "Service",
         "Service_Tier",
         "Recurrence_Risk",
@@ -346,8 +389,15 @@ def _build_heatmap_image(service_risk_top10: pd.DataFrame) -> io.BytesIO | None:
         "Reopen_Churn_Risk",
         "Change_Collision_Risk",
     ]
-    missing = [c for c in needed if c not in df.columns]
-    if missing:
+    if not all(c in out.columns for c in required):
+        return pd.DataFrame()
+
+    return out
+
+
+def _build_heatmap_image(service_risk_top10: pd.DataFrame) -> Optional[io.BytesIO]:
+    df = _normalize_heatmap_df(service_risk_top10)
+    if df.empty:
         return None
 
     hm = df.head(10).copy()
@@ -414,7 +464,7 @@ def _bvsi_scale_table(styles) -> Table:
         ],
         columns=["BVSI™ Range", "Operating Condition", "Executive Meaning"],
     )
-    return _paragraph_table(df, [1.0 * inch, 2.0 * inch, 4.35 * inch], styles)
+    return _paragraph_table(df, [1.0 * inch, 2.0 * inch, 4.2 * inch], styles)
 
 
 def _domain_definitions_table(domain_scores: Dict[str, float], styles) -> Table:
@@ -441,7 +491,7 @@ def _domain_definitions_table(domain_scores: Dict[str, float], styles) -> Table:
         ],
     ]
     df = pd.DataFrame(rows, columns=["Domain", "Score", "What It Means"])
-    return _paragraph_table(df, [2.0 * inch, 0.7 * inch, 4.65 * inch], styles)
+    return _paragraph_table(df, [2.0 * inch, 0.7 * inch, 4.5 * inch], styles)
 
 
 def _top_three_briefs(sip_candidates: pd.DataFrame) -> pd.DataFrame:
@@ -451,10 +501,10 @@ def _top_three_briefs(sip_candidates: pd.DataFrame) -> pd.DataFrame:
 
     brief_rows = []
     for _, row in df.head(3).iterrows():
-        svc = str(row.get("Service", "Unknown Service"))
-        tier = str(row.get("Service_Tier", "Unknown Tier"))
-        theme = str(row.get("Suggested_Theme", "Stability Improvement"))
-        why = str(row.get("Why_Flagged", "Elevated operational instability"))
+        svc = _safe_str(row.get("Service", row.get("Service_Name", "Unknown Service")))
+        tier = _safe_str(row.get("Service_Tier", row.get("Tier", "Unknown Tier")))
+        theme = _safe_str(row.get("Suggested_Theme", row.get("Theme", "Stability Improvement")))
+        why = _safe_str(row.get("Why_Flagged", row.get("Why Leadership Should Care", "Elevated operational instability")))
         brief_rows.append(
             {
                 "Initiative": f"{svc} ({tier}) — {theme}",
@@ -462,6 +512,31 @@ def _top_three_briefs(sip_candidates: pd.DataFrame) -> pd.DataFrame:
             }
         )
     return pd.DataFrame(brief_rows)
+
+
+def _prepare_sip_candidates_table(sip_candidates: pd.DataFrame) -> pd.DataFrame:
+    df = _safe_df(sip_candidates)
+    if df.empty:
+        return pd.DataFrame(columns=["Service", "Tier", "Theme", "Risk", "Priority", "Why Flagged"])
+
+    mappings = [
+        ("Service", ["Service", "Service_Name", "service"]),
+        ("Tier", ["Service_Tier", "Tier", "service_tier"]),
+        ("Theme", ["Suggested_Theme", "Theme", "suggested_theme"]),
+        ("Risk", ["Risk_Score", "Risk", "risk_score", "Score"]),
+        ("Priority", ["Priority", "priority", "Priority_Level"]),
+        ("Why Flagged", ["Why_Flagged", "Why Leadership Should Care", "Reason", "reason"]),
+    ]
+
+    out = pd.DataFrame()
+    for target, options in mappings:
+        found = next((c for c in options if c in df.columns), None)
+        if found:
+            out[target] = df[found]
+        else:
+            out[target] = ""
+
+    return out.head(10)
 
 
 def _action_roadmap(domain_scores: Dict[str, float], styles) -> Table:
@@ -492,7 +567,7 @@ def _action_roadmap(domain_scores: Dict[str, float], styles) -> Table:
         ],
         columns=["Time Horizon", "Leadership Action"],
     )
-    return _paragraph_table(df, [1.7 * inch, 5.65 * inch], styles)
+    return _paragraph_table(df, [1.8 * inch, 5.35 * inch], styles)
 
 
 # =========================================================
@@ -511,26 +586,34 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
         bottomMargin=0.55 * inch,
     )
 
-    tenant_name = str(payload.get("tenant_name", "Default"))
-    as_of = str(payload.get("as_of", ""))
-    bvsi = _safe_float(payload.get("bvsi", 0.0))
-    posture = str(payload.get("posture", "Unknown"))
-    executive_interpretation = _clean_text(payload.get("executive_interpretation", ""))
+    tenant_name = _safe_str(_first_present(payload, ["tenant_name", "organization", "client_name"], "Default"))
+    as_of = _safe_str(_first_present(payload, ["as_of", "report_date", "generated_at"], ""))
+    bvsi = _safe_float(_first_present(payload, ["bvsi", "BVSI", "overall_score"], 0.0))
+    posture = _safe_str(_first_present(payload, ["posture", "operating_posture", "maturity_posture"], "Unknown"))
 
-    domain_scores = payload.get("domain_scores", {}) or {}
-    service_risk_top10 = _safe_df(payload.get("service_risk_top10"))
-    sip_candidates = _safe_df(payload.get("sip_candidates"))
+    executive_interpretation = _clean_text(
+        _first_present(
+            payload,
+            ["executive_interpretation", "executive_summary", "summary", "leadership_summary"],
+            "",
+        )
+    )
 
-    detected_dataset = str(payload.get("detected_dataset", "unknown")).upper()
-    service_anchor_used = str(payload.get("service_anchor_used", "None"))
-    data_readiness_score = _safe_float(payload.get("data_readiness_score", 0.0))
+    domain_scores = _first_present(payload, ["domain_scores", "domains"], {}) or {}
+    service_risk_top10 = _safe_df(_first_present(payload, ["service_risk_top10", "service_risk", "heatmap_data"], pd.DataFrame()))
+    sip_candidates = _safe_df(_first_present(payload, ["sip_candidates", "sips", "sip_table"], pd.DataFrame()))
+
+    detected_dataset = _safe_str(_first_present(payload, ["detected_dataset", "dataset_type"], "unknown")).upper()
+    service_anchor_used = _safe_str(_first_present(payload, ["service_anchor_used", "service_anchor"], "None"))
+    data_readiness_score = _safe_float(_first_present(payload, ["data_readiness_score", "readiness_score"], 0.0))
 
     story = []
 
     # PAGE 1
     story.append(Paragraph("Operational Stability Intelligence (OSIL™)", styles["OSIL_Title"]))
     story.append(Paragraph(f"Executive Report — {tenant_name}", styles["OSIL_Subtitle"]))
-    story.append(Paragraph(f"As of {as_of}", styles["OSIL_Small"]))
+    if as_of:
+        story.append(Paragraph(f"As of {as_of}", styles["OSIL_Small"]))
     story.append(Spacer(1, 6))
 
     story.append(_header_band("Executive Stability Brief"))
@@ -555,9 +638,10 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
     story.append(Spacer(1, 10))
     story.append(_signal_box("Executive Signal", _posture_signal_text(bvsi, posture), styles=styles))
 
-    story.append(Spacer(1, 10))
-    story.append(Paragraph("Executive Interpretation", styles["OSIL_Section"]))
-    story.append(Paragraph(executive_interpretation, styles["OSIL_Body"]))
+    if executive_interpretation:
+        story.append(Spacer(1, 10))
+        story.append(Paragraph("Executive Interpretation", styles["OSIL_Section"]))
+        story.append(Paragraph(executive_interpretation, styles["OSIL_Body"]))
 
     story.append(Spacer(1, 10))
     story.append(Paragraph("Assessment Context", styles["OSIL_Section"]))
@@ -609,15 +693,15 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
     story.append(Spacer(1, 10))
 
     story.append(Paragraph("Top 3 Initiatives to Brief Leadership", styles["OSIL_Section"]))
-    story.append(_paragraph_table(_top_three_briefs(sip_candidates), [3.2 * inch, 4.0 * inch], styles))
+    story.append(_paragraph_table(_top_three_briefs(sip_candidates), [3.1 * inch, 4.1 * inch], styles))
 
     story.append(Spacer(1, 12))
     story.append(Paragraph("Detailed SIP Candidates", styles["OSIL_Section"]))
-    detailed = sip_candidates.head(10).copy()
+    detailed = _prepare_sip_candidates_table(sip_candidates)
     story.append(
         _paragraph_table(
             detailed,
-            [1.35 * inch, 0.8 * inch, 1.15 * inch, 0.85 * inch, 0.8 * inch, 2.05 * inch],
+            [1.5 * inch, 0.7 * inch, 1.45 * inch, 0.7 * inch, 0.75 * inch, 2.1 * inch],
             styles,
         )
     )
