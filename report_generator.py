@@ -238,39 +238,74 @@ def _accent_rule(width: float = CONTENT_WIDTH, color_hex: str = "#64FFDA", heigh
     return t
 
 
-def _kpi_box(label: str, value: str, styles, width: float = 2.45 * inch, is_numeric: bool = False) -> Table:
-    label_para = Paragraph(_clean_text(label), styles["OSIL_TableHeader"])
+def _kpi_row(bvsi: float, posture: str, data_readiness_score: float, styles) -> Table:
+    label_style = ParagraphStyle(
+        name="KPI_Label",
+        parent=styles["OSIL_TableHeader"],
+        fontName="Helvetica-Bold",
+        fontSize=8,
+        leading=10,
+        textColor=MID,
+        wordWrap="LTR",
+    )
 
-    value_style = ParagraphStyle(
-        name=f"KPIValue_{'Num' if is_numeric else 'Text'}",
+    value_num_style = ParagraphStyle(
+        name="KPI_Value_Num",
         parent=styles["OSIL_Body"],
         fontName="Helvetica-Bold",
-        fontSize=17 if is_numeric else 11.5,
-        leading=19 if is_numeric else 13,
+        fontSize=17,
+        leading=19,
         textColor=DARK,
         wordWrap="LTR",
     )
 
-    value_para = Paragraph(_clean_text(value), value_style)
+    value_text_style = ParagraphStyle(
+        name="KPI_Value_Text",
+        parent=styles["OSIL_Body"],
+        fontName="Helvetica-Bold",
+        fontSize=11.5,
+        leading=13,
+        textColor=DARK,
+        wordWrap="LTR",
+    )
 
-    t = Table([[label_para], [value_para]], colWidths=[width])
-    t.setStyle(
+    data = [
+        [
+            Paragraph("BVSI™ Score", label_style),
+            Paragraph("Operating Posture", label_style),
+            Paragraph("Data Readiness", label_style),
+        ],
+        [
+            Paragraph(f"{bvsi:.1f}", value_num_style),
+            Paragraph(_clean_text(posture), value_text_style),
+            Paragraph(f"{data_readiness_score:.1f}%", value_num_style),
+        ],
+    ]
+
+    tbl = Table(
+        data,
+        colWidths=[2.45 * inch, 2.45 * inch, 2.45 * inch],
+        rowHeights=[0.42 * inch, None],
+    )
+
+    tbl.setStyle(
         TableStyle(
             [
                 ("BACKGROUND", (0, 0), (-1, -1), LIGHT),
                 ("BOX", (0, 0), (-1, -1), 0.6, BORDER),
+                ("INNERGRID", (0, 0), (-1, -1), 0.6, BORDER),
                 ("ALIGN", (0, 0), (-1, -1), "LEFT"),
                 ("VALIGN", (0, 0), (-1, -1), "TOP"),
                 ("LEFTPADDING", (0, 0), (-1, -1), 10),
                 ("RIGHTPADDING", (0, 0), (-1, -1), 8),
                 ("TOPPADDING", (0, 0), (-1, 0), 8),
                 ("BOTTOMPADDING", (0, 0), (-1, 0), 4),
-                ("TOPPADDING", (0, 1), (-1, 1), 2),
+                ("TOPPADDING", (0, 1), (-1, 1), 4),
                 ("BOTTOMPADDING", (0, 1), (-1, 1), 10),
             ]
         )
     )
-    return t
+    return tbl
 
 
 def _info_box(title: str, body: str, styles, width: float = CONTENT_WIDTH) -> Table:
@@ -600,24 +635,7 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
     story.append(_accent_rule())
     story.append(Spacer(1, 10))
 
-    metric_row = Table(
-        [[
-            _kpi_box("BVSI™ Score", f"{bvsi:.1f}", styles, is_numeric=True),
-            _kpi_box("Operating Posture", posture, styles, is_numeric=False),
-            _kpi_box("Data Readiness", f"{data_readiness_score:.1f}%", styles, is_numeric=True),
-        ]],
-        colWidths=[2.45 * inch, 2.45 * inch, 2.45 * inch],
-    )
-    metric_row.setStyle(
-        TableStyle(
-            [
-                ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                ("LEFTPADDING", (0, 0), (-1, -1), 0),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 0),
-            ]
-        )
-    )
-    story.append(metric_row)
+    story.append(_kpi_row(bvsi, posture, data_readiness_score, styles))
 
     story.append(Spacer(1, 10))
     story.append(Paragraph("BVSI™ Interpretation", styles["OSIL_Section"]))
