@@ -424,7 +424,7 @@ def _posture_signal_text(bvsi: float, posture: str) -> str:
         )
     return (
         f"Operational stability is currently <b>{posture}</b>, with a BVSI™ score of {bvsi:.1f}. "
-        "Immediate executive attention is warranted to contain structural instability and protect business performance."
+            "Immediate executive attention is warranted to contain structural instability and protect business performance."
     )
 
 
@@ -554,6 +554,86 @@ def _derive_key_takeaways(domain_scores: Dict[str, float], sip_candidates: pd.Da
     return pd.DataFrame(rows)
 
 
+def _normalize_heatmap_df(service_risk_top10: pd.DataFrame) -> pd.DataFrame:
+    df = _safe_df(service_risk_top10)
+    if df.empty:
+        return pd.DataFrame()
+
+    aliases = {
+        "Service": ["Service", "service", "Service_Name"],
+        "Service_Tier": ["Service_Tier", "Tier", "service_tier"],
+        "Recurrence_Risk": ["Recurrence_Risk", "recurrence_risk", "Recurrence"],
+        "MTTR_Drag_Risk": ["MTTR_Drag_Risk", "mttr_drag_risk", "MTTR_Drag", "MTTR Drag"],
+        "Reopen_Churn_Risk": ["Reopen_Churn_Risk", "reopen_churn_risk", "Reopen", "Reopen_Risk"],
+        "Change_Collision_Risk": ["Change_Collision_Risk", "change_collision_risk", "Change", "Change_Risk"],
+    }
+
+    out = pd.DataFrame()
+    for target, options in aliases.items():
+        found = next((c for c in options if c in df.columns), None)
+        if found:
+            out[target] = df[found]
+
+    required = [
+        "Service",
+        "Service_Tier",
+        "Recurrence_Risk",
+        "MTTR_Drag_Risk",
+        "Reopen_Churn_Risk",
+        "Change_Collision_Risk",
+    ]
+    if not all(c in out.columns for c in required):
+        return pd.DataFrame()
+
+    return out
+
+
+def _build_heatmap_image(service_risk_top10: pd.DataFrame) -> Optional[io.BytesIO]:
+    df = _normalize_heatmap_df(service_risk_top10)
+    if df.empty:
+        return None
+
+    hm = df.head(10).copy()
+    hm.index = hm["Service"].astype(str) + " (" + hm["Service_Tier"].astype(str) + ")"
+    hm = hm[
+        ["Recurrence_Risk", "MTTR_Drag_Risk", "Reopen_Churn_Risk", "Change_Collision_Risk"]
+    ].rename(
+        columns={
+            "Recurrence_Risk": "Recurrence",
+            "MTTR_Drag_Risk": "MTTR Drag",
+            "Reopen_Churn_Risk": "Reopen",
+            "Change_Collision_Risk": "Change",
+        }
+    )
+
+    hm = hm.apply(pd.to_numeric, errors="coerce").fillna(0.0)
+
+    fig = plt.figure(figsize=(6.8, 3.9), dpi=180)
+    ax = plt.gca()
+
+    im = ax.imshow(hm.values, aspect="auto", vmin=0, vmax=100)
+    ax.set_xticks(range(len(hm.columns)))
+    ax.set_xticklabels(list(hm.columns), fontsize=8)
+    ax.set_yticks(range(len(hm.index)))
+    ax.set_yticklabels(list(hm.index), fontsize=8)
+    ax.set_title("Service Stability Heatmap", fontsize=11)
+
+    for i in range(hm.shape[0]):
+        for j in range(hm.shape[1]):
+            ax.text(j, i, f"{int(round(float(hm.iat[i, j]), 0))}", ha="center", va="center", fontsize=8)
+
+    cbar = plt.colorbar(im, ax=ax, fraction=0.03, pad=0.02)
+    cbar.set_label("Risk Score", fontsize=8)
+    cbar.ax.tick_params(labelsize=7)
+
+    img = io.BytesIO()
+    plt.tight_layout()
+    plt.savefig(img, format="png", bbox_inches="tight", facecolor="white")
+    plt.close(fig)
+    img.seek(0)
+    return img
+
+
 def _build_radar_image(domain_scores: Dict[str, float]) -> io.BytesIO:
     expected_order = [
         "Service Resilience",
@@ -619,12 +699,16 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
 
     domain_scores = _first_present(payload, ["domain_scores", "domains"], {}) or {}
     sip_candidates = _safe_df(_first_present(payload, ["sip_candidates", "sips", "sip_table"], pd.DataFrame()))
+    service_risk_top10 = _safe_df(
+        _first_present(payload, ["service_risk_top10", "service_risk", "heatmap_data"], pd.DataFrame())
+    )
     detected_dataset = _safe_str(_first_present(payload, ["detected_dataset", "dataset_type"], "unknown")).upper()
     service_anchor_used = _safe_str(_first_present(payload, ["service_anchor_used", "service_anchor"], "None"))
     data_readiness_score = _safe_float(_first_present(payload, ["data_readiness_score", "readiness_score"], 0.0))
 
     story = []
 
+    # PAGE 1
     story.append(Paragraph("OSIL™ by Xentrixus", styles["OSIL_Title"]))
     story.append(Paragraph(f"Operational Stability Intelligence Report — {tenant_name}", styles["OSIL_Subtitle"]))
     if as_of:
@@ -662,6 +746,7 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
     )
     story.append(_full_width_paragraph(context_text, styles, "OSIL_Small"))
 
+    # PAGE 2
     story.append(PageBreak())
     story.append(_header_band("Operational Stability Profile"))
     story.append(_accent_rule())
@@ -695,6 +780,7 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
         )
     )
 
+    # PAGE 3
     story.append(PageBreak())
     story.append(_header_band("Service Improvement Priorities"))
     story.append(_accent_rule())
@@ -721,6 +807,39 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
             detailed,
             [1.45 * inch, 0.72 * inch, 1.3 * inch, 0.9 * inch, 2.3 * inch, 0.73 * inch],
             styles,
+        )
+    )
+
+    # PAGE 4
+    story.append(PageBreak())
+    story.append(_header_band("Service Stability Heatmap"))
+    story.append(_accent_rule())
+    story.append(Spacer(1, 10))
+
+    story.append(
+        _full_width_paragraph(
+            "This visual highlights where operational instability is concentrated by service across four executive-relevant risk drivers: "
+            "recurrence, MTTR drag, reopen churn, and change collision. Higher scores indicate greater stability risk.",
+            styles,
+            "OSIL_Body",
+        )
+    )
+    story.append(Spacer(1, 10))
+
+    hm_img = _build_heatmap_image(service_risk_top10)
+    if hm_img is not None:
+        story.append(Image(hm_img, width=6.8 * inch, height=4.2 * inch))
+    else:
+        story.append(_full_width_paragraph("No service risk data available.", styles, "OSIL_Body"))
+
+    story.append(Spacer(1, 12))
+    story.append(
+        _full_width_paragraph(
+            "How to read this heatmap: each row represents a service and each column represents a specific instability driver. "
+            "Scores closer to 100 indicate higher risk concentration. Use this view to identify where service-level exposure is accumulating "
+            "and where leadership attention or SIP intervention may be warranted first.",
+            styles,
+            "OSIL_Note",
         )
     )
 
