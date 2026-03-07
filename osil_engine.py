@@ -335,6 +335,10 @@ def _prepare_changes(changes_df: Optional[pd.DataFrame]) -> pd.DataFrame:
     if "Change_Start" not in df.columns:
         raise ValueError("Missing required change column after alias mapping: Change_Start")
 
+    # Create synthetic Change_ID if source file does not provide one
+    if "Change_ID" not in df.columns:
+        df["Change_ID"] = [f"CHG-{i+1}" for i in range(len(df))]
+
     if "Change_End" not in df.columns or not df["Change_End"].notna().any():
         df["Change_End"] = df["Change_Start"] + pd.Timedelta(hours=4)
 
