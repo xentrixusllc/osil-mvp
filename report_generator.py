@@ -1,6 +1,6 @@
 import io
 import re
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -25,7 +25,7 @@ from reportlab.platypus import (
 # Brand / Layout Constants
 # =========================================================
 PAGE_WIDTH, PAGE_HEIGHT = LETTER
-CONTENT_WIDTH = 7.2 * inch
+CONTENT_WIDTH = 7.4 * inch
 
 NAVY = colors.HexColor("#0A192F")
 TEAL = colors.HexColor("#64FFDA")
@@ -79,16 +79,13 @@ def _clean_text(text: Any) -> str:
 
     s = str(text)
 
-    # Convert markdown bold
     s = re.sub(r"\*\*(.*?)\*\*", r"<b>\1</b>", s)
 
-    # Normalize line breaks
     s = s.replace("\r\n", "\n").replace("\r", "\n")
     s = s.replace("\n\n", "<br/><br/>")
     s = s.replace("\n", "<br/>")
     s = s.replace("<br>", "<br/>").replace("<br />", "<br/>")
 
-    # Only keep a very small safe set of tags
     allowed = {"b", "i", "u", "br"}
 
     def repl_tag(match):
@@ -148,6 +145,7 @@ def _styles():
             fontSize=9.2,
             leading=12.5,
             textColor=DARK,
+            wordWrap="LTR",
         )
     )
 
@@ -159,6 +157,7 @@ def _styles():
             fontSize=8,
             leading=10,
             textColor=MID,
+            wordWrap="LTR",
         )
     )
 
@@ -170,6 +169,7 @@ def _styles():
             fontSize=7.8,
             leading=9.3,
             textColor=DARK,
+            wordWrap="CJK",
         )
     )
 
@@ -181,6 +181,7 @@ def _styles():
             fontSize=8,
             leading=10,
             textColor=DARK,
+            wordWrap="LTR",
         )
     )
 
@@ -192,6 +193,7 @@ def _styles():
             fontSize=8,
             leading=10,
             textColor=MID,
+            wordWrap="LTR",
         )
     )
 
@@ -244,7 +246,7 @@ def _accent_rule(width: float = CONTENT_WIDTH, color_hex: str = "#64FFDA", heigh
     return t
 
 
-def _kpi_box(label: str, value: str, width: float = 2.35 * inch) -> Table:
+def _kpi_box(label: str, value: str, width: float = 2.45 * inch) -> Table:
     t = Table([[label], [value]], colWidths=[width])
     t.setStyle(
         TableStyle(
@@ -293,6 +295,23 @@ def _info_box(title: str, body: str, styles, width: float = CONTENT_WIDTH) -> Ta
     return t
 
 
+def _full_width_paragraph(text: str, styles, style_name: str = "OSIL_Body") -> Table:
+    para = Paragraph(_clean_text(text), styles[style_name])
+    tbl = Table([[para]], colWidths=[CONTENT_WIDTH])
+    tbl.setStyle(
+        TableStyle(
+            [
+                ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                ("TOPPADDING", (0, 0), (-1, -1), 0),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ]
+        )
+    )
+    return tbl
+
+
 def _paragraph_table(
     df: pd.DataFrame,
     col_widths: Optional[List[float]],
@@ -339,6 +358,8 @@ def _paragraph_table(
                 ("RIGHTPADDING", (0, 0), (-1, -1), 5),
                 ("TOPPADDING", (0, 0), (-1, -1), 4),
                 ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+                ("WORDWRAP", (0, 0), (-1, -1), True),
+                ("SPLITBYROW", (0, 0), (-1, -1), True),
             ]
         )
     )
@@ -386,7 +407,7 @@ def _bvsi_scale_table(styles) -> Table:
         ],
         columns=["BVSI™ Range", "Operating Condition", "Executive Meaning"],
     )
-    return _paragraph_table(df, [1.0 * inch, 2.0 * inch, 4.2 * inch], styles)
+    return _paragraph_table(df, [1.0 * inch, 2.0 * inch, 4.4 * inch], styles)
 
 
 def _domain_definitions_table(domain_scores: Dict[str, float], styles) -> Table:
@@ -413,7 +434,7 @@ def _domain_definitions_table(domain_scores: Dict[str, float], styles) -> Table:
         ],
     ]
     df = pd.DataFrame(rows, columns=["Domain", "Score", "What It Means"])
-    return _paragraph_table(df, [2.0 * inch, 0.7 * inch, 4.5 * inch], styles)
+    return _paragraph_table(df, [2.0 * inch, 0.7 * inch, 4.7 * inch], styles)
 
 
 def _prepare_sip_candidates_table(sip_candidates: pd.DataFrame) -> pd.DataFrame:
@@ -578,9 +599,7 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
 
     story = []
 
-    # =====================================================
     # PAGE 1 — Executive Brief
-    # =====================================================
     story.append(Paragraph("OSIL™ by Xentrixus", styles["OSIL_Title"]))
     story.append(Paragraph(f"Operational Stability Intelligence Report — {tenant_name}", styles["OSIL_Subtitle"]))
     if as_of:
@@ -597,9 +616,17 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
             _kpi_box("Operating Posture", posture),
             _kpi_box("Data Readiness", f"{data_readiness_score:.1f}%"),
         ]],
-        colWidths=[2.4 * inch, 2.4 * inch, 2.4 * inch],
+        colWidths=[2.45 * inch, 2.45 * inch, 2.45 * inch],
     )
-    metric_row.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP")]))
+    metric_row.setStyle(
+        TableStyle(
+            [
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+            ]
+        )
+    )
     story.append(metric_row)
 
     story.append(Spacer(1, 10))
@@ -612,12 +639,12 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
     if executive_interpretation:
         story.append(Spacer(1, 10))
         story.append(Paragraph("Executive Summary", styles["OSIL_Section"]))
-        story.append(Paragraph(executive_interpretation, styles["OSIL_Body"]))
+        story.append(_full_width_paragraph(executive_interpretation, styles, "OSIL_Body"))
 
     story.append(Spacer(1, 10))
     story.append(Paragraph("Key Takeaways", styles["OSIL_Section"]))
     key_takeaways_df = _derive_key_takeaways(domain_scores, sip_candidates)
-    story.append(_paragraph_table(key_takeaways_df, [CONTENT_WIDTH], styles))
+    story.append(_paragraph_table(key_takeaways_df, None, styles))
 
     story.append(Spacer(1, 8))
     context_text = (
@@ -625,11 +652,9 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
         f"Service anchor used: <b>{service_anchor_used}</b> • "
         f"Organization: <b>{tenant_name}</b>"
     )
-    story.append(Paragraph(context_text, styles["OSIL_Small"]))
+    story.append(_full_width_paragraph(context_text, styles, "OSIL_Small"))
 
-    # =====================================================
     # PAGE 2 — Stability Profile
-    # =====================================================
     story.append(PageBreak())
     story.append(_header_band("Operational Stability Profile"))
     story.append(_accent_rule())
@@ -640,10 +665,12 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
     story.append(Spacer(1, 8))
 
     story.append(
-        Paragraph(
+        _full_width_paragraph(
             "How to read this chart: higher scores indicate stronger operational stability. "
-            "The radar shows current performance across service resilience, change governance, structural risk debt, and reliability momentum.",
-            styles["OSIL_Note"],
+            "The radar shows current performance across service resilience, change governance, "
+            "structural risk debt, and reliability momentum.",
+            styles,
+            "OSIL_Note",
         )
     )
 
@@ -653,31 +680,32 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
 
     story.append(Spacer(1, 8))
     story.append(
-        Paragraph(
+        _full_width_paragraph(
             "Score guide: 80–100 = strong maturity; 60–79 = controlled but improving; "
             "40–59 = operational weakness; below 40 = structural instability.",
-            styles["OSIL_Small"],
+            styles,
+            "OSIL_Small",
         )
     )
 
-    # =====================================================
     # PAGE 3 — SIP Priorities
-    # =====================================================
     story.append(PageBreak())
     story.append(_header_band("Service Improvement Priorities"))
     story.append(_accent_rule())
     story.append(Spacer(1, 10))
 
     story.append(
-        Paragraph(
-            "This page highlights the highest-priority Service Improvement Programs (SIPs) based on recurrence, MTTR drag, reopen churn, and change-related instability.",
-            styles["OSIL_Body"],
+        _full_width_paragraph(
+            "This page highlights the highest-priority Service Improvement Programs (SIPs) "
+            "based on recurrence, MTTR drag, reopen churn, and change-related instability.",
+            styles,
+            "OSIL_Body",
         )
     )
     story.append(Spacer(1, 10))
 
     story.append(Paragraph("Top 3 Initiatives to Brief Leadership", styles["OSIL_Section"]))
-    story.append(_paragraph_table(_top_three_briefs(sip_candidates), [3.05 * inch, 4.15 * inch], styles))
+    story.append(_paragraph_table(_top_three_briefs(sip_candidates), [3.1 * inch, 4.3 * inch], styles))
 
     story.append(Spacer(1, 12))
     story.append(Paragraph("Service Improvement Priorities (SIPs)", styles["OSIL_Section"]))
@@ -685,7 +713,7 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
     story.append(
         _paragraph_table(
             detailed,
-            [1.45 * inch, 0.7 * inch, 1.35 * inch, 0.85 * inch, 2.15 * inch, 0.7 * inch],
+            [1.45 * inch, 0.72 * inch, 1.3 * inch, 0.9 * inch, 2.3 * inch, 0.73 * inch],
             styles,
         )
     )
