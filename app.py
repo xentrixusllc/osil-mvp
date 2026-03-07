@@ -1,15 +1,12 @@
 import os
-from typing import Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import streamlit as st
 
-from osil_engine import (
-    INCIDENT_REQUIRED_COLUMNS,
-    run_osil,
-)
+from osil_engine import INCIDENT_REQUIRED_COLUMNS, run_osil
 from report_generator import build_osil_pdf_report
 
 
@@ -19,11 +16,183 @@ st.set_page_config(
 )
 
 APP_TITLE = "Xentrixus OSIL™ — Stability Intelligence MVP"
-APP_SUB = "Upload Incident / Change / Problem exports → get BVSI™, Structural Risk Debt™, SIP priorities, and executive interpretation."
+APP_SUB = (
+    "Upload Incident / Change / Problem exports → get BVSI™, Structural Risk Debt™, "
+    "SIP priorities, and executive interpretation."
+)
 
 DEMO_INCIDENTS = "data/demo_incidents.csv"
 DEMO_CHANGES = "data/demo_changes.csv"
 DEMO_PROBLEMS = "data/demo_problems.csv"
+
+
+# ============================================================
+# Mapping configuration
+# ============================================================
+INCIDENT_MAPPING_SPEC = {
+    "Service": {
+        "label": "Operational Anchor (Service / Application / CI / etc.)",
+        "required": True,
+        "aliases": [
+            "Service", "Business Service", "business_service", "Application", "Application Name",
+            "CI", "Configuration Item", "CI Name", "Affected Service", "Service Offering",
+            "Product", "System", "App", "Application Service"
+        ],
+    },
+    "Service_Tier": {
+        "label": "Service Tier (optional)",
+        "required": False,
+        "aliases": ["Service_Tier", "Tier", "Criticality", "Support Tier"],
+    },
+    "Opened_Date": {
+        "label": "Opened / Created Date",
+        "required": True,
+        "aliases": ["Opened_Date", "Opened", "Created", "Created_At", "Open Date", "Created Date"],
+    },
+    "Resolved_Date": {
+        "label": "Resolved Date (optional)",
+        "required": False,
+        "aliases": ["Resolved_Date", "Resolved", "Resolved_At", "Resolution Date"],
+    },
+    "Closed_Date": {
+        "label": "Closed Date (optional)",
+        "required": False,
+        "aliases": ["Closed_Date", "Closed", "Closed_At", "Close Date"],
+    },
+    "Priority": {
+        "label": "Priority / Severity",
+        "required": True,
+        "aliases": ["Priority", "Severity", "Impact/Priority", "Incident Priority"],
+    },
+    "Reopened_Flag": {
+        "label": "Reopened Flag (optional)",
+        "required": False,
+        "aliases": ["Reopened_Flag", "Reopened", "Reopen_Flag", "Reopened?"],
+    },
+    "Category": {
+        "label": "Category / Type (optional)",
+        "required": False,
+        "aliases": ["Category", "Subcategory", "Type", "Assignment Category"],
+    },
+    "Change_Related_Flag": {
+        "label": "Change-Related Flag (optional)",
+        "required": False,
+        "aliases": ["Change_Related_Flag", "RFC_Flag", "Change Related", "Was Change Related"],
+    },
+    "Problem_ID": {
+        "label": "Problem ID / Link (optional)",
+        "required": False,
+        "aliases": ["Problem_ID", "Problem", "Problem Number", "Linked Problem"],
+    },
+}
+
+CHANGE_MAPPING_SPEC = {
+    "Service": {
+        "label": "Operational Anchor for Changes",
+        "required": True,
+        "aliases": [
+            "Service", "Business Service", "Application", "Application Name", "CI",
+            "Configuration Item", "CI Name", "Service Offering", "Product", "System"
+        ],
+    },
+    "Change_ID": {
+        "label": "Change ID / RFC (optional)",
+        "required": False,
+        "aliases": ["Change_ID", "Change", "RFC", "Change Number"],
+    },
+    "Change_Start": {
+        "label": "Change Start Date",
+        "required": True,
+        "aliases": [
+            "Change_Start", "Change_Start_Date", "Start_Date", "Planned_Start",
+            "Implemented_Date", "Implementation Start", "Start"
+        ],
+    },
+    "Change_End": {
+        "label": "Change End Date (optional)",
+        "required": False,
+        "aliases": [
+            "Change_End", "Change_End_Date", "End_Date", "Planned_End",
+            "Completed_Date", "Implementation End", "End"
+        ],
+    },
+    "Change_Status": {
+        "label": "Change Status (optional)",
+        "required": False,
+        "aliases": ["Change_Status", "Status", "State"],
+    },
+    "Failed_Flag": {
+        "label": "Failure Flag or Success Flag (optional)",
+        "required": False,
+        "aliases": ["Failed_Flag", "Failure_Flag", "Implementation_Success_Flag", "Success_Flag"],
+    },
+    "Risk": {
+        "label": "Risk (optional)",
+        "required": False,
+        "aliases": ["Risk", "Risk_Level", "Risk Level"],
+    },
+    "Category": {
+        "label": "Change Category / Type (optional)",
+        "required": False,
+        "aliases": ["Category", "Type", "Change_Type"],
+    },
+}
+
+PROBLEM_MAPPING_SPEC = {
+    "Service": {
+        "label": "Operational Anchor for Problems",
+        "required": True,
+        "aliases": [
+            "Service", "Business Service", "Application", "Application Name", "CI",
+            "Configuration Item", "CI Name", "Service Offering", "Product", "System"
+        ],
+    },
+    "Problem_ID": {
+        "label": "Problem ID",
+        "required": True,
+        "aliases": ["Problem_ID", "Problem", "Problem Number", "PRB Number"],
+    },
+    "Opened_Date": {
+        "label": "Problem Opened Date (optional)",
+        "required": False,
+        "aliases": ["Opened_Date", "Opened", "Created"],
+    },
+    "Resolved_Date": {
+        "label": "Problem Resolved Date (optional)",
+        "required": False,
+        "aliases": ["Resolved_Date", "Resolved"],
+    },
+    "Closed_Date": {
+        "label": "Problem Closed Date (optional)",
+        "required": False,
+        "aliases": ["Closed_Date", "Closed"],
+    },
+    "State": {
+        "label": "Problem State / Status (optional)",
+        "required": False,
+        "aliases": ["State", "Status"],
+    },
+    "RCA_Completed_Flag": {
+        "label": "RCA Completed Flag (optional)",
+        "required": False,
+        "aliases": ["RCA_Completed_Flag", "RCA_Completed", "RCA Complete"],
+    },
+    "Known_Error_Flag": {
+        "label": "Known Error Flag (optional)",
+        "required": False,
+        "aliases": ["Known_Error_Flag", "Known_Error", "Known Error"],
+    },
+    "Priority": {
+        "label": "Problem Priority (optional)",
+        "required": False,
+        "aliases": ["Priority", "Severity"],
+    },
+    "Category": {
+        "label": "Problem Category (optional)",
+        "required": False,
+        "aliases": ["Category", "Type"],
+    },
+}
 
 
 # ============================================================
@@ -46,6 +215,75 @@ def _required_template_text() -> str:
     cols = ",".join(INCIDENT_REQUIRED_COLUMNS)
     example = "Customer Portal,Tier 1,2026-01-05 08:00,P2"
     return f"{cols}\n{example}"
+
+
+def _normalize_col_name(x: str) -> str:
+    return str(x).strip().lower()
+
+
+def _suggest_column(columns: List[str], aliases: List[str]) -> str:
+    if not columns:
+        return "-- None --"
+
+    norm_map = {_normalize_col_name(c): c for c in columns}
+    for alias in aliases:
+        if _normalize_col_name(alias) in norm_map:
+            return norm_map[_normalize_col_name(alias)]
+
+    # fuzzy-ish contains fallback
+    for alias in aliases:
+        a = _normalize_col_name(alias)
+        for c in columns:
+            cn = _normalize_col_name(c)
+            if a in cn or cn in a:
+                return c
+
+    return "-- None --"
+
+
+def _render_mapping_ui(df: pd.DataFrame, spec: Dict[str, Dict[str, object]], title: str, key_prefix: str) -> Dict[str, Optional[str]]:
+    st.markdown(f"#### {title}")
+    st.caption("Confirm the best available column for each canonical OSIL field. Use the operational anchor that makes the most sense for the organization.")
+
+    columns = list(df.columns)
+    options = ["-- None --"] + columns
+    mapping: Dict[str, Optional[str]] = {}
+
+    for canonical, cfg in spec.items():
+        suggested = _suggest_column(columns, cfg["aliases"]) if columns else "-- None --"
+        if suggested not in options:
+            suggested = "-- None --"
+
+        idx = options.index(suggested) if suggested in options else 0
+        selected = st.selectbox(
+            f"{cfg['label']}{' *' if cfg['required'] else ''}",
+            options=options,
+            index=idx,
+            key=f"{key_prefix}_{canonical}",
+        )
+        mapping[canonical] = None if selected == "-- None --" else selected
+
+    return mapping
+
+
+def _apply_mapping(df: pd.DataFrame, mapping: Dict[str, Optional[str]]) -> pd.DataFrame:
+    out = df.copy()
+    rename_map = {}
+
+    for canonical, selected in mapping.items():
+        if selected and selected in out.columns:
+            rename_map[selected] = canonical
+
+    out = out.rename(columns=rename_map)
+    return out
+
+
+def _validate_mapping(mapping: Dict[str, Optional[str]], spec: Dict[str, Dict[str, object]], dataset_name: str) -> List[str]:
+    missing = []
+    for canonical, cfg in spec.items():
+        if cfg["required"] and not mapping.get(canonical):
+            missing.append(f"{dataset_name}: {canonical}")
+    return missing
 
 
 def heatmap_chart(hm: pd.DataFrame):
@@ -209,16 +447,81 @@ def main():
         with c3:
             prb_file = st.file_uploader("Problem CSV (optional)", type=["csv"], key="prb")
 
-        st.caption("Incidents are required. Changes and Problems are optional but strongly recommended for a fuller OSIL signal.")
+        if inc_file is not None:
+            try:
+                inc_preview = pd.read_csv(inc_file)
+                inc_file.seek(0)
+                st.markdown("### Incident Mapping")
+                inc_mapping = _render_mapping_ui(inc_preview, INCIDENT_MAPPING_SPEC, "Map Incident Columns", "incmap")
+            except Exception as e:
+                st.error(f"Could not read Incident CSV: {e}")
+                return
+        else:
+            inc_preview = None
+            inc_mapping = {}
+
+        if chg_file is not None:
+            try:
+                chg_preview = pd.read_csv(chg_file)
+                chg_file.seek(0)
+                st.markdown("### Change Mapping")
+                chg_mapping = _render_mapping_ui(chg_preview, CHANGE_MAPPING_SPEC, "Map Change Columns", "chgmap")
+            except Exception as e:
+                st.error(f"Could not read Change CSV: {e}")
+                return
+        else:
+            chg_preview = None
+            chg_mapping = {}
+
+        if prb_file is not None:
+            try:
+                prb_preview = pd.read_csv(prb_file)
+                prb_file.seek(0)
+                st.markdown("### Problem Mapping")
+                prb_mapping = _render_mapping_ui(prb_preview, PROBLEM_MAPPING_SPEC, "Map Problem Columns", "prbmap")
+            except Exception as e:
+                st.error(f"Could not read Problem CSV: {e}")
+                return
+        else:
+            prb_preview = None
+            prb_mapping = {}
+
+        st.caption(
+            "Use the best available operational anchor for each dataset. "
+            "That may be a service, application, CI, service offering, product, or another sensible grouping field."
+        )
 
         if st.button("Run Uploaded Analysis", use_container_width=True):
             if inc_file is None:
                 st.error("Please upload an Incident CSV.")
                 return
+
+            missing = _validate_mapping(inc_mapping, INCIDENT_MAPPING_SPEC, "Incident")
+            if chg_file is not None:
+                missing += _validate_mapping(chg_mapping, CHANGE_MAPPING_SPEC, "Change")
+            if prb_file is not None:
+                missing += _validate_mapping(prb_mapping, PROBLEM_MAPPING_SPEC, "Problem")
+
+            if missing:
+                st.error("Missing required mappings: " + " | ".join(missing))
+                return
+
             try:
                 incidents_df = pd.read_csv(inc_file)
-                changes_df = pd.read_csv(chg_file) if chg_file is not None else pd.DataFrame()
-                problems_df = pd.read_csv(prb_file) if prb_file is not None else pd.DataFrame()
+                incidents_df = _apply_mapping(incidents_df, inc_mapping)
+
+                if chg_file is not None:
+                    changes_df = pd.read_csv(chg_file)
+                    changes_df = _apply_mapping(changes_df, chg_mapping)
+                else:
+                    changes_df = pd.DataFrame()
+
+                if prb_file is not None:
+                    problems_df = pd.read_csv(prb_file)
+                    problems_df = _apply_mapping(problems_df, prb_mapping)
+                else:
+                    problems_df = pd.DataFrame()
+
                 source_label = f"Upload ({inc_file.name})"
                 run_requested = True
             except Exception as e:
@@ -229,8 +532,8 @@ def main():
         st.subheader("Required Incident Template")
         st.code(_required_template_text(), language="csv")
         st.info(
-            "Change and Problem files are optional. If provided, OSIL will enrich change governance "
-            "and structural risk debt using those additional operational signals."
+            "Incidents are required. Changes and Problems are optional. "
+            "For customer/org uploads, map the best available operational anchor — service, application, CI, or equivalent."
         )
         return
 
@@ -248,9 +551,7 @@ def main():
         st.error(f"Run failed: {e}")
         return
 
-    # ============================================================
     # Top metrics
-    # ============================================================
     mc1, mc2, mc3 = st.columns(3)
     mc1.metric("BVSI™", f"{results['bvsi']:.1f}")
     mc2.metric("Operating Posture", results["posture"])
@@ -264,17 +565,11 @@ def main():
 
     st.divider()
 
-    # ============================================================
-    # Executive interpretation
-    # ============================================================
     st.subheader("Executive Interpretation")
     st.write(results["exec_text"])
 
     st.divider()
 
-    # ============================================================
-    # Domain scores + radar
-    # ============================================================
     st.subheader("Operational Stability Profile")
     rc1, rc2 = st.columns([1.15, 1.0])
 
@@ -292,9 +587,6 @@ def main():
 
     st.divider()
 
-    # ============================================================
-    # Heatmap + service risks
-    # ============================================================
     service_risk_df = results["service_risk_df"]
     top10 = results["top10"].copy()
 
@@ -327,24 +619,15 @@ def main():
 
     st.divider()
 
-    # ============================================================
-    # Instability leaders
-    # ============================================================
     render_service_instability_leaders(service_risk_df)
 
     st.divider()
 
-    # ============================================================
-    # SIPs
-    # ============================================================
     st.markdown("### Top SIP Candidates (Next 30 Days)")
     st.dataframe(results["sip_view"], use_container_width=True)
 
     st.divider()
 
-    # ============================================================
-    # Data previews
-    # ============================================================
     with st.expander("Preview — Incidents", expanded=False):
         st.dataframe(incidents_df.head(20), use_container_width=True)
 
@@ -358,11 +641,7 @@ def main():
 
     st.divider()
 
-    # ============================================================
-    # PDF
-    # ============================================================
     st.markdown("### Executive PDF Report")
-
     try:
         payload = _build_pdf_payload(results, tenant_name)
         pdf_bytes = build_osil_pdf_report(payload)
