@@ -21,9 +21,6 @@ from reportlab.platypus import (
 )
 
 
-# =========================================================
-# Brand / Layout Constants
-# =========================================================
 PAGE_WIDTH, PAGE_HEIGHT = LETTER
 CONTENT_WIDTH = 7.4 * inch
 
@@ -37,9 +34,6 @@ BORDER = colors.HexColor("#D1D5DB")
 WHITE = colors.white
 
 
-# =========================================================
-# Helpers
-# =========================================================
 def _safe_float(val: Any, default: float = 0.0) -> float:
     try:
         if val is None:
@@ -78,9 +72,7 @@ def _clean_text(text: Any) -> str:
         return ""
 
     s = str(text)
-
     s = re.sub(r"\*\*(.*?)\*\*", r"<b>\1</b>", s)
-
     s = s.replace("\r\n", "\n").replace("\r", "\n")
     s = s.replace("\n\n", "<br/><br/>")
     s = s.replace("\n", "<br/>")
@@ -246,26 +238,34 @@ def _accent_rule(width: float = CONTENT_WIDTH, color_hex: str = "#64FFDA", heigh
     return t
 
 
-def _kpi_box(label: str, value: str, width: float = 2.45 * inch) -> Table:
-    t = Table([[label], [value]], colWidths=[width])
+def _kpi_box(label: str, value: str, styles, width: float = 2.45 * inch, is_numeric: bool = False) -> Table:
+    label_para = Paragraph(_clean_text(label), styles["OSIL_TableHeader"])
+
+    value_style = ParagraphStyle(
+        name=f"KPIValue_{'Num' if is_numeric else 'Text'}",
+        parent=styles["OSIL_Body"],
+        fontName="Helvetica-Bold",
+        fontSize=17 if is_numeric else 11.5,
+        leading=19 if is_numeric else 13,
+        textColor=DARK,
+        wordWrap="LTR",
+    )
+
+    value_para = Paragraph(_clean_text(value), value_style)
+
+    t = Table([[label_para], [value_para]], colWidths=[width])
     t.setStyle(
         TableStyle(
             [
                 ("BACKGROUND", (0, 0), (-1, -1), LIGHT),
                 ("BOX", (0, 0), (-1, -1), 0.6, BORDER),
-                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-                ("FONTNAME", (0, 1), (-1, 1), "Helvetica-Bold"),
-                ("FONTSIZE", (0, 0), (-1, 0), 8),
-                ("FONTSIZE", (0, 1), (-1, 1), 17),
-                ("TEXTCOLOR", (0, 0), (-1, 0), MID),
-                ("TEXTCOLOR", (0, 1), (-1, 1), DARK),
                 ("ALIGN", (0, 0), (-1, -1), "LEFT"),
-                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
                 ("LEFTPADDING", (0, 0), (-1, -1), 10),
                 ("RIGHTPADDING", (0, 0), (-1, -1), 8),
                 ("TOPPADDING", (0, 0), (-1, 0), 8),
-                ("BOTTOMPADDING", (0, 0), (-1, 0), 2),
-                ("TOPPADDING", (0, 1), (-1, 1), 0),
+                ("BOTTOMPADDING", (0, 0), (-1, 0), 4),
+                ("TOPPADDING", (0, 1), (-1, 1), 2),
                 ("BOTTOMPADDING", (0, 1), (-1, 1), 10),
             ]
         )
@@ -366,9 +366,6 @@ def _paragraph_table(
     return tbl
 
 
-# =========================================================
-# Content Helpers
-# =========================================================
 def _posture_signal_text(bvsi: float, posture: str) -> str:
     if bvsi >= 85:
         return (
@@ -522,9 +519,6 @@ def _derive_key_takeaways(domain_scores: Dict[str, float], sip_candidates: pd.Da
     return pd.DataFrame(rows)
 
 
-# =========================================================
-# Chart Helpers
-# =========================================================
 def _build_radar_image(domain_scores: Dict[str, float]) -> io.BytesIO:
     expected_order = [
         "Service Resilience",
@@ -563,9 +557,6 @@ def _build_radar_image(domain_scores: Dict[str, float]) -> io.BytesIO:
     return img
 
 
-# =========================================================
-# Public API expected by app.py
-# =========================================================
 def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
     styles = _styles()
     out = io.BytesIO()
@@ -599,7 +590,6 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
 
     story = []
 
-    # PAGE 1 — Executive Brief
     story.append(Paragraph("OSIL™ by Xentrixus", styles["OSIL_Title"]))
     story.append(Paragraph(f"Operational Stability Intelligence Report — {tenant_name}", styles["OSIL_Subtitle"]))
     if as_of:
@@ -612,9 +602,9 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
 
     metric_row = Table(
         [[
-            _kpi_box("BVSI™ Score", f"{bvsi:.1f}"),
-            _kpi_box("Operating Posture", posture),
-            _kpi_box("Data Readiness", f"{data_readiness_score:.1f}%"),
+            _kpi_box("BVSI™ Score", f"{bvsi:.1f}", styles, is_numeric=True),
+            _kpi_box("Operating Posture", posture, styles, is_numeric=False),
+            _kpi_box("Data Readiness", f"{data_readiness_score:.1f}%", styles, is_numeric=True),
         ]],
         colWidths=[2.45 * inch, 2.45 * inch, 2.45 * inch],
     )
@@ -654,7 +644,6 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
     )
     story.append(_full_width_paragraph(context_text, styles, "OSIL_Small"))
 
-    # PAGE 2 — Stability Profile
     story.append(PageBreak())
     story.append(_header_band("Operational Stability Profile"))
     story.append(_accent_rule())
@@ -688,7 +677,6 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
         )
     )
 
-    # PAGE 3 — SIP Priorities
     story.append(PageBreak())
     story.append(_header_band("Service Improvement Priorities"))
     story.append(_accent_rule())
