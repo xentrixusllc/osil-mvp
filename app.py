@@ -1,3 +1,6 @@
+# Updated app.py with fuzzy anchor mapper + heatmap fix
+# Replace your current app.py with the contents below.
+
 import os
 from difflib import get_close_matches
 from typing import Dict, List, Optional, Tuple
@@ -591,26 +594,46 @@ def main():
     top10 = results["top10"].copy()
 
     if top10 is not None and not top10.empty:
-        hm = top10.set_index(top10["Service"] + " (" + top10["Service_Tier"] + ")")[
-            ["Recurrence_Risk", "MTTR_Drag_Risk", "Reopen_Churn_Risk", "Change_Collision_Risk"]
-        ].rename(columns={
-            "Recurrence_Risk": "Recurrence",
-            "MTTR_Drag_Risk": "MTTR Drag",
-            "Reopen_Churn_Risk": "Reopen Churn",
-            "Change_Collision_Risk": "Change Collision",
-        })
-        hm = hm.apply(pd.to_numeric, errors="coerce").replace([np.inf, -np.inf], np.nan).fillna(0.0)
+        heatmap_df = top10.copy()
 
-        st.markdown("### Service Stability Heatmap (Top 10 Services by Risk)")
-        hm_fig = heatmap_chart(hm)
-        hc1, hc2, hc3 = st.columns([1, 2, 1])
-        with hc2:
-            st.pyplot(hm_fig, use_container_width=False)
+        if "Service" not in heatmap_df.columns:
+            st.warning("Top 10 risk output is missing the Service column, so the heatmap cannot be rendered.")
+        else:
+            if "Service_Tier" not in heatmap_df.columns:
+                heatmap_df["Service_Tier"] = "Unspecified"
 
-        st.caption(
-            "How to read: services with consistently high values across multiple columns usually represent the strongest candidates "
-            "for leadership attention or SIP execution."
-        )
+            required_risk_cols = [
+                "Recurrence_Risk",
+                "MTTR_Drag_Risk",
+                "Reopen_Churn_Risk",
+                "Change_Collision_Risk",
+            ]
+
+            missing_risk_cols = [c for c in required_risk_cols if c not in heatmap_df.columns]
+            for col in missing_risk_cols:
+                heatmap_df[col] = 0.0
+
+            hm = heatmap_df.set_index(
+                heatmap_df["Service"].astype(str) + " (" + heatmap_df["Service_Tier"].astype(str) + ")"
+            )[required_risk_cols].rename(columns={
+                "Recurrence_Risk": "Recurrence",
+                "MTTR_Drag_Risk": "MTTR Drag",
+                "Reopen_Churn_Risk": "Reopen Churn",
+                "Change_Collision_Risk": "Change Collision",
+            })
+
+            hm = hm.apply(pd.to_numeric, errors="coerce").replace([np.inf, -np.inf], np.nan).fillna(0.0)
+
+            st.markdown("### Service Stability Heatmap (Top 10 Services by Risk)")
+            hm_fig = heatmap_chart(hm)
+            hc1, hc2, hc3 = st.columns([1, 2, 1])
+            with hc2:
+                st.pyplot(hm_fig, use_container_width=False)
+
+            st.caption(
+                "How to read: services with consistently high values across multiple columns usually represent the strongest candidates "
+                "for leadership attention or SIP execution."
+            )
 
         st.markdown("**Top 10 Services — Risk Breakdown**")
         st.dataframe(top10, use_container_width=True)
