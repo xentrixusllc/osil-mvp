@@ -1,4 +1,5 @@
 import os
+from difflib import get_close_matches
 from typing import Dict, List, Optional, Tuple
 
 import matplotlib.pyplot as plt
@@ -26,9 +27,6 @@ DEMO_CHANGES = "data/demo_changes.csv"
 DEMO_PROBLEMS = "data/demo_problems.csv"
 
 
-# ============================================================
-# Mapping configuration
-# ============================================================
 INCIDENT_MAPPING_SPEC = {
     "Service": {
         "label": "Operational Anchor (Service / Application / CI / etc.)",
@@ -36,53 +34,53 @@ INCIDENT_MAPPING_SPEC = {
         "aliases": [
             "Service", "Business Service", "business_service", "Application", "Application Name",
             "CI", "Configuration Item", "CI Name", "Affected Service", "Service Offering",
-            "Product", "System", "App", "Application Service"
+            "Product", "System", "App", "Application Service", "Application CI", "Configuration Item Name"
         ],
     },
     "Service_Tier": {
         "label": "Service Tier (optional)",
         "required": False,
-        "aliases": ["Service_Tier", "Tier", "Criticality", "Support Tier"],
+        "aliases": ["Service_Tier", "Tier", "Criticality", "Support Tier", "Business Criticality"],
     },
     "Opened_Date": {
         "label": "Opened / Created Date",
         "required": True,
-        "aliases": ["Opened_Date", "Opened", "Created", "Created_At", "Open Date", "Created Date"],
+        "aliases": ["Opened_Date", "Opened", "Created", "Created_At", "Open Date", "Created Date", "Opened At"],
     },
     "Resolved_Date": {
         "label": "Resolved Date (optional)",
         "required": False,
-        "aliases": ["Resolved_Date", "Resolved", "Resolved_At", "Resolution Date"],
+        "aliases": ["Resolved_Date", "Resolved", "Resolved_At", "Resolution Date", "Resolved At"],
     },
     "Closed_Date": {
         "label": "Closed Date (optional)",
         "required": False,
-        "aliases": ["Closed_Date", "Closed", "Closed_At", "Close Date"],
+        "aliases": ["Closed_Date", "Closed", "Closed_At", "Close Date", "Closed At"],
     },
     "Priority": {
         "label": "Priority / Severity",
         "required": True,
-        "aliases": ["Priority", "Severity", "Impact/Priority", "Incident Priority"],
+        "aliases": ["Priority", "Severity", "Impact/Priority", "Incident Priority", "Urgency"],
     },
     "Reopened_Flag": {
         "label": "Reopened Flag (optional)",
         "required": False,
-        "aliases": ["Reopened_Flag", "Reopened", "Reopen_Flag", "Reopened?"],
+        "aliases": ["Reopened_Flag", "Reopened", "Reopen_Flag", "Reopened?", "Was Reopened"],
     },
     "Category": {
         "label": "Category / Type (optional)",
         "required": False,
-        "aliases": ["Category", "Subcategory", "Type", "Assignment Category"],
+        "aliases": ["Category", "Subcategory", "Type", "Assignment Category", "Incident Category"],
     },
     "Change_Related_Flag": {
         "label": "Change-Related Flag (optional)",
         "required": False,
-        "aliases": ["Change_Related_Flag", "RFC_Flag", "Change Related", "Was Change Related"],
+        "aliases": ["Change_Related_Flag", "RFC_Flag", "Change Related", "Was Change Related", "Related To Change"],
     },
     "Problem_ID": {
         "label": "Problem ID / Link (optional)",
         "required": False,
-        "aliases": ["Problem_ID", "Problem", "Problem Number", "Linked Problem"],
+        "aliases": ["Problem_ID", "Problem", "Problem Number", "Linked Problem", "Parent Problem"],
     },
 }
 
@@ -92,20 +90,21 @@ CHANGE_MAPPING_SPEC = {
         "required": True,
         "aliases": [
             "Service", "Business Service", "Application", "Application Name", "CI",
-            "Configuration Item", "CI Name", "Service Offering", "Product", "System"
+            "Configuration Item", "CI Name", "Service Offering", "Product", "System",
+            "Application CI", "Configuration Item Name"
         ],
     },
     "Change_ID": {
         "label": "Change ID / RFC (optional)",
         "required": False,
-        "aliases": ["Change_ID", "Change", "RFC", "Change Number"],
+        "aliases": ["Change_ID", "Change", "RFC", "Change Number", "RFC Number"],
     },
     "Change_Start": {
         "label": "Change Start Date",
         "required": True,
         "aliases": [
             "Change_Start", "Change_Start_Date", "Start_Date", "Planned_Start",
-            "Implemented_Date", "Implementation Start", "Start"
+            "Implemented_Date", "Implementation Start", "Start", "Planned Start"
         ],
     },
     "Change_End": {
@@ -113,18 +112,18 @@ CHANGE_MAPPING_SPEC = {
         "required": False,
         "aliases": [
             "Change_End", "Change_End_Date", "End_Date", "Planned_End",
-            "Completed_Date", "Implementation End", "End"
+            "Completed_Date", "Implementation End", "End", "Planned End"
         ],
     },
     "Change_Status": {
         "label": "Change Status (optional)",
         "required": False,
-        "aliases": ["Change_Status", "Status", "State"],
+        "aliases": ["Change_Status", "Status", "State", "Implementation Status"],
     },
     "Failed_Flag": {
         "label": "Failure Flag or Success Flag (optional)",
         "required": False,
-        "aliases": ["Failed_Flag", "Failure_Flag", "Implementation_Success_Flag", "Success_Flag"],
+        "aliases": ["Failed_Flag", "Failure_Flag", "Implementation_Success_Flag", "Success_Flag", "Successful Flag"],
     },
     "Risk": {
         "label": "Risk (optional)",
@@ -134,7 +133,7 @@ CHANGE_MAPPING_SPEC = {
     "Category": {
         "label": "Change Category / Type (optional)",
         "required": False,
-        "aliases": ["Category", "Type", "Change_Type"],
+        "aliases": ["Category", "Type", "Change_Type", "Change Category"],
     },
 }
 
@@ -144,7 +143,8 @@ PROBLEM_MAPPING_SPEC = {
         "required": True,
         "aliases": [
             "Service", "Business Service", "Application", "Application Name", "CI",
-            "Configuration Item", "CI Name", "Service Offering", "Product", "System"
+            "Configuration Item", "CI Name", "Service Offering", "Product", "System",
+            "Application CI", "Configuration Item Name"
         ],
     },
     "Problem_ID": {
@@ -155,27 +155,27 @@ PROBLEM_MAPPING_SPEC = {
     "Opened_Date": {
         "label": "Problem Opened Date (optional)",
         "required": False,
-        "aliases": ["Opened_Date", "Opened", "Created"],
+        "aliases": ["Opened_Date", "Opened", "Created", "Opened At"],
     },
     "Resolved_Date": {
         "label": "Problem Resolved Date (optional)",
         "required": False,
-        "aliases": ["Resolved_Date", "Resolved"],
+        "aliases": ["Resolved_Date", "Resolved", "Resolved At"],
     },
     "Closed_Date": {
         "label": "Problem Closed Date (optional)",
         "required": False,
-        "aliases": ["Closed_Date", "Closed"],
+        "aliases": ["Closed_Date", "Closed", "Closed At"],
     },
     "State": {
         "label": "Problem State / Status (optional)",
         "required": False,
-        "aliases": ["State", "Status"],
+        "aliases": ["State", "Status", "Problem State"],
     },
     "RCA_Completed_Flag": {
         "label": "RCA Completed Flag (optional)",
         "required": False,
-        "aliases": ["RCA_Completed_Flag", "RCA_Completed", "RCA Complete"],
+        "aliases": ["RCA_Completed_Flag", "RCA_Completed", "RCA Complete", "RCA Done"],
     },
     "Known_Error_Flag": {
         "label": "Known Error Flag (optional)",
@@ -185,19 +185,16 @@ PROBLEM_MAPPING_SPEC = {
     "Priority": {
         "label": "Problem Priority (optional)",
         "required": False,
-        "aliases": ["Priority", "Severity"],
+        "aliases": ["Priority", "Severity", "Urgency"],
     },
     "Category": {
         "label": "Problem Category (optional)",
         "required": False,
-        "aliases": ["Category", "Type"],
+        "aliases": ["Category", "Type", "Problem Category"],
     },
 }
 
 
-# ============================================================
-# Helpers
-# ============================================================
 def _safe_read_csv(path: str) -> pd.DataFrame:
     if os.path.exists(path):
         return pd.read_csv(path)
@@ -218,39 +215,49 @@ def _required_template_text() -> str:
 
 
 def _normalize_col_name(x: str) -> str:
-    return str(x).strip().lower()
+    return str(x).strip().lower().replace("_", " ").replace("-", " ")
 
 
-def _suggest_column(columns: List[str], aliases: List[str]) -> str:
+def _fuzzy_suggest(columns: List[str], aliases: List[str]) -> str:
     if not columns:
         return "-- None --"
 
-    norm_map = {_normalize_col_name(c): c for c in columns}
-    for alias in aliases:
-        if _normalize_col_name(alias) in norm_map:
-            return norm_map[_normalize_col_name(alias)]
+    norm_to_original = {_normalize_col_name(c): c for c in columns}
+    norm_columns = list(norm_to_original.keys())
 
-    # fuzzy-ish contains fallback
     for alias in aliases:
         a = _normalize_col_name(alias)
-        for c in columns:
-            cn = _normalize_col_name(c)
-            if a in cn or cn in a:
-                return c
+        if a in norm_to_original:
+            return norm_to_original[a]
+
+    for alias in aliases:
+        a = _normalize_col_name(alias)
+        for nc in norm_columns:
+            if a in nc or nc in a:
+                return norm_to_original[nc]
+
+    candidates = []
+    for alias in aliases:
+        a = _normalize_col_name(alias)
+        match = get_close_matches(a, norm_columns, n=1, cutoff=0.72)
+        if match:
+            candidates.append(match[0])
+    if candidates:
+        return norm_to_original[candidates[0]]
 
     return "-- None --"
 
 
 def _render_mapping_ui(df: pd.DataFrame, spec: Dict[str, Dict[str, object]], title: str, key_prefix: str) -> Dict[str, Optional[str]]:
     st.markdown(f"#### {title}")
-    st.caption("Confirm the best available column for each canonical OSIL field. Use the operational anchor that makes the most sense for the organization.")
+    st.caption("Auto-detection is only a starting point. Confirm the best field for each canonical OSIL input before running analysis.")
 
     columns = list(df.columns)
     options = ["-- None --"] + columns
     mapping: Dict[str, Optional[str]] = {}
 
     for canonical, cfg in spec.items():
-        suggested = _suggest_column(columns, cfg["aliases"]) if columns else "-- None --"
+        suggested = _fuzzy_suggest(columns, cfg["aliases"]) if columns else "-- None --"
         if suggested not in options:
             suggested = "-- None --"
 
@@ -370,7 +377,7 @@ def render_service_instability_leaders(service_risk_df: pd.DataFrame) -> None:
             action = "Start a SIP focused on change governance: Tier-1 controls, stronger validation, and post-change monitoring."
 
         st.markdown(
-            f"""
+            f'''
 <div style="border:1px solid #D1D5DB;background:#F5F7FA;padding:14px 16px;border-radius:10px;margin-bottom:10px;">
   <div style="font-size:16px;"><b>#{rank} {service}</b></div>
   <div style="margin-top:6px;">
@@ -385,7 +392,7 @@ def render_service_instability_leaders(service_risk_df: pd.DataFrame) -> None:
     {action}
   </div>
 </div>
-""",
+''',
             unsafe_allow_html=True,
         )
 
@@ -406,9 +413,6 @@ def _build_pdf_payload(results: dict, tenant_name: str) -> dict:
     }
 
 
-# ============================================================
-# Main
-# ============================================================
 def main():
     st.title(APP_TITLE)
     st.caption(APP_SUB)
@@ -457,7 +461,6 @@ def main():
                 st.error(f"Could not read Incident CSV: {e}")
                 return
         else:
-            inc_preview = None
             inc_mapping = {}
 
         if chg_file is not None:
@@ -470,7 +473,6 @@ def main():
                 st.error(f"Could not read Change CSV: {e}")
                 return
         else:
-            chg_preview = None
             chg_mapping = {}
 
         if prb_file is not None:
@@ -483,7 +485,6 @@ def main():
                 st.error(f"Could not read Problem CSV: {e}")
                 return
         else:
-            prb_preview = None
             prb_mapping = {}
 
         st.caption(
@@ -551,7 +552,6 @@ def main():
         st.error(f"Run failed: {e}")
         return
 
-    # Top metrics
     mc1, mc2, mc3 = st.columns(3)
     mc1.metric("BVSI™", f"{results['bvsi']:.1f}")
     mc2.metric("Operating Posture", results["posture"])
