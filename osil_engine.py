@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from datetime import date
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -79,12 +78,43 @@ INCIDENT_ALIASES = {
 CHANGE_ALIASES = {
     "Service": ["Service", "service", "Business Service", "business_service", "Application", "application", "CI", "ci"],
     "Change_ID": ["Change_ID", "change_id", "Change", "change", "RFC", "rfc"],
-    "Change_Start": ["Change_Start", "change_start", "Start_Date", "start_date", "Planned_Start", "planned_start", "Implemented_Date", "implemented_date"],
-    "Change_End": ["Change_End", "change_end", "End_Date", "end_date", "Planned_End", "planned_end", "Completed_Date", "completed_date"],
+    "Change_Start": [
+        "Change_Start",
+        "change_start",
+        "Change_Start_Date",
+        "change_start_date",
+        "Start_Date",
+        "start_date",
+        "Planned_Start",
+        "planned_start",
+        "Implemented_Date",
+        "implemented_date",
+    ],
+    "Change_End": [
+        "Change_End",
+        "change_end",
+        "Change_End_Date",
+        "change_end_date",
+        "End_Date",
+        "end_date",
+        "Planned_End",
+        "planned_end",
+        "Completed_Date",
+        "completed_date",
+    ],
     "Change_Status": ["Change_Status", "change_status", "State", "state", "Status", "status"],
-    "Failed_Flag": ["Failed_Flag", "failed_flag", "Failure_Flag", "failure_flag", "Change_Failed_Flag", "change_failed_flag"],
+    "Failed_Flag": [
+        "Failed_Flag",
+        "failed_flag",
+        "Failure_Flag",
+        "failure_flag",
+        "Change_Failed_Flag",
+        "change_failed_flag",
+        "Implementation_Success_Flag",
+        "implementation_success_flag",
+    ],
     "Risk": ["Risk", "risk", "Risk_Level", "risk_level"],
-    "Category": ["Category", "category", "Type", "type"],
+    "Category": ["Category", "category", "Type", "type", "Change_Type", "change_type"],
 }
 
 PROBLEM_ALIASES = {
@@ -171,7 +201,11 @@ def validate_required_columns(df: pd.DataFrame, required: List[str]) -> Tuple[bo
     return len(missing) == 0, missing
 
 
-def calculate_data_readiness(incidents_df: pd.DataFrame, changes_df: Optional[pd.DataFrame] = None, problems_df: Optional[pd.DataFrame] = None) -> float:
+def calculate_data_readiness(
+    incidents_df: pd.DataFrame,
+    changes_df: Optional[pd.DataFrame] = None,
+    problems_df: Optional[pd.DataFrame] = None,
+) -> float:
     checks = []
 
     inc_cols = {str(c).strip().lower() for c in incidents_df.columns} if incidents_df is not None else set()
@@ -190,7 +224,7 @@ def calculate_data_readiness(incidents_df: pd.DataFrame, changes_df: Optional[pd
     if chg_cols:
         checks.extend([
             any(c in chg_cols for c in {"change_id", "change", "rfc"}),
-            any(c in chg_cols for c in {"change_start", "start_date", "planned_start", "implemented_date"}),
+            any(c in chg_cols for c in {"change_start", "change_start_date", "start_date", "planned_start", "implemented_date"}),
         ])
 
     if prb_cols:
@@ -290,6 +324,7 @@ def executive_interpretation(bvsi: float, posture: str, gap: str) -> str:
 # Change / Problem enrichment
 # ============================================================
 def _prepare_changes(changes_df: Optional[pd.DataFrame]) -> pd.DataFrame:
+    raw_df = changes_df.copy() if changes_df is not None else pd.DataFrame()
     df = _canonicalize_columns(changes_df, CHANGE_ALIASES)
     if df.empty:
         return df
@@ -297,11 +332,19 @@ def _prepare_changes(changes_df: Optional[pd.DataFrame]) -> pd.DataFrame:
     df = _parse_dates(df, ["Change_Start", "Change_End"])
     df, _ = _normalize_service_anchor(df, "Service")
 
+    if "Change_Start" not in df.columns:
+        raise ValueError("Missing required change column after alias mapping: Change_Start")
+
     if "Change_End" not in df.columns or not df["Change_End"].notna().any():
         df["Change_End"] = df["Change_Start"] + pd.Timedelta(hours=4)
 
     if "Failed_Flag" in df.columns:
-        df["Failed_Flag"] = _to_bool_series(df["Failed_Flag"])
+        original_cols = {str(c) for c in raw_df.columns} if not raw_df.empty else set()
+        if "Implementation_Success_Flag" in original_cols or "implementation_success_flag" in original_cols:
+            success = _to_bool_series(df["Failed_Flag"])
+            df["Failed_Flag"] = 1 - success
+        else:
+            df["Failed_Flag"] = _to_bool_series(df["Failed_Flag"])
     else:
         status = df["Change_Status"].astype(str).str.lower() if "Change_Status" in df.columns else pd.Series("", index=df.index)
         df["Failed_Flag"] = status.isin(["failed", "unsuccessful", "backed out"]).astype(int)
@@ -470,7 +513,6 @@ def _build_rollup(inc: pd.DataFrame, changes: pd.DataFrame, probs: pd.DataFrame)
         category=("Category", lambda x: x.value_counts().index[0] if len(x) else "General"),
     ).reset_index()
 
-    # Change metrics
     if changes is not None and not changes.empty:
         chg_roll = changes.groupby("Service_Anchor", dropna=False).agg(
             change_count=("Change_ID", "nunique"),
@@ -481,7 +523,6 @@ def _build_rollup(inc: pd.DataFrame, changes: pd.DataFrame, probs: pd.DataFrame)
         base["change_count"] = 0.0
         base["failed_change_rate"] = 0.0
 
-    # Problem metrics
     problem_gap = _problem_gap_by_service(inc, probs)
     base = base.merge(problem_gap, on="Service_Anchor", how="left")
 
@@ -508,7 +549,6 @@ def build_domain_scores(roll: pd.DataFrame) -> Dict[str, float]:
     chg_norm = normalize_0_100((roll["change_collision_rate"] * 100).fillna(0))
     problem_norm = normalize_0_100(roll["Problem_Gap_Risk"])
 
-    # Higher = better score
     service_resilience = float(np.clip(100 - (0.60 * mttr_norm.mean() + 0.40 * reopen_norm.mean()), 0, 100))
     change_governance = float(np.clip(100 - (0.65 * chg_norm.mean() + 0.35 * normalize_0_100(roll["failed_change_rate"] * 100).mean()), 0, 100))
     structural_risk_debt = float(np.clip(100 - (0.55 * rec_norm.mean() + 0.45 * problem_norm.mean()), 0, 100))
@@ -566,7 +606,6 @@ def build_service_risk_df(roll: pd.DataFrame, top_n: int = 10) -> pd.DataFrame:
         }
     )
 
-    # Keep report compatibility by weighting only the original 4 in total score
     df["Total_Service_Risk"] = (
         0.35 * df["Recurrence_Risk"] +
         0.25 * df["MTTR_Drag_Risk"] +
