@@ -335,7 +335,6 @@ def _prepare_changes(changes_df: Optional[pd.DataFrame]) -> pd.DataFrame:
     if "Change_Start" not in df.columns:
         raise ValueError("Missing required change column after alias mapping: Change_Start")
 
-    # Create synthetic Change_ID if source file does not provide one
     if "Change_ID" not in df.columns:
         df["Change_ID"] = [f"CHG-{i+1}" for i in range(len(df))]
 
@@ -627,7 +626,7 @@ def build_sip_candidates(roll: pd.DataFrame, service_risk_df: pd.DataFrame, top_
         ])
 
     merged = service_risk_df.merge(
-        roll[["Service_Anchor", "category", "Problem_Gap_Risk", "failed_change_rate"]],
+        roll[["Service_Anchor", "category", "failed_change_rate"]],
         left_on="Service",
         right_on="Service_Anchor",
         how="left",
