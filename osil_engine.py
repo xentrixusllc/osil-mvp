@@ -1,21 +1,14 @@
-# ===============================
-# OSIL Analytics Engine
-# osil_engine.py
-# ===============================
-
 from __future__ import annotations
 
 from datetime import date
-from typing import Any, Dict, Optional
-import pandas as pd
+from typing import Any, Dict, Optional, Tuple
+
 import numpy as np
+import pandas as pd
 
 INCIDENT_REQUIRED_COLUMNS = ["Service", "Opened_Date", "Priority"]
 
 
-# -------------------------------
-# HELPERS
-# -------------------------------
 def _safe_float(val: Any, default: float = 0.0) -> float:
     try:
         if pd.isna(val):
@@ -31,6 +24,15 @@ def _to_bool_series(series: pd.Series) -> pd.Series:
     lowered = series.astype(str).str.strip().str.lower()
     truthy = {"1", "true", "yes", "y", "t"}
     return lowered.isin(truthy).astype(int)
+
+
+def _first_non_null_mode(series: pd.Series, default: str) -> str:
+    s = series.dropna().astype(str).str.strip()
+    s = s[s != ""]
+    if s.empty:
+        return default
+    vc = s.value_counts()
+    return str(vc.index[0]) if not vc.empty else default
 
 
 def _normalize_0_100(series: pd.Series) -> pd.Series:
@@ -74,49 +76,28 @@ def _executive_interpretation(bvsi: float, posture: str, weakest_domain: str, pr
     )
 
 
-def _metric_definitions():
-    return [
-        {"Metric": "Service Resilience", "Meaning": "Measures recovery strength and repeat disruption control.", "Interpretation": "Higher is better."},
-        {"Metric": "Change Governance", "Meaning": "Measures whether operational changes introduce instability.", "Interpretation": "Higher is better."},
-        {"Metric": "Structural Risk Debt™", "Meaning": "Measures accumulation of unresolved structural issues.", "Interpretation": "Higher is better."},
-        {"Metric": "Reliability Momentum", "Meaning": "Measures whether the environment is trending toward stability.", "Interpretation": "Higher is better."},
-    ]
-
-
-def _score_interpretation():
-    return [
-        {"Range": "80–100", "Meaning": "Stable operating posture", "Action": "Sustain controls and focus on targeted prevention."},
-        {"Range": "60–79", "Meaning": "Moderate risk exposure", "Action": "Targeted improvement needed."},
-        {"Range": "40–59", "Meaning": "Significant instability patterns", "Action": "Leadership attention warranted."},
-        {"Range": "Below 40", "Meaning": "Structural risk accumulation", "Action": "Immediate stabilization should be prioritized."},
-    ]
-
-
-def _action_guidance():
-    return [
-        {"Signal": "BVSI™", "Use": "Gauge overall operating stability posture."},
-        {"Signal": "Heatmap", "Use": "Identify which dimensions are driving instability."},
-        {"Signal": "Top 10 Services", "Use": "Prioritize service-level review and ownership."},
-        {"Signal": "SIP Candidates", "Use": "Launch targeted improvement actions with executive sponsorship."},
-    ]
-
-
-# -------------------------------
-# PREP FUNCTIONS
-# -------------------------------
-def _prepare_incidents(df: pd.DataFrame):
+def _prepare_incidents(df: pd.DataFrame) -> Tuple[pd.DataFrame, str]:
     if df is None or df.empty:
         raise ValueError("Incident dataset is empty.")
 
     out = df.copy()
 
-    if "Service" not in out.columns:
-        raise ValueError("Incident dataset requires a mapped Service column.")
+    if "Service_Anchor" not in out.columns:
+        if "Service" in out.columns:
+            out["Service_Anchor"] = out["Service"]
+            anchor_used = "Service"
+        else:
+            raise ValueError("Incident dataset requires an operational anchor mapped to Service.")
+    else:
+        anchor_used = "Service_Anchor"
 
-    out["Service_Anchor"] = out["Service"].astype(str).str.strip().replace("", "Unknown").fillna("Unknown")
-    anchor_used = "Service"
+    out["Service_Anchor"] = out["Service_Anchor"].astype(str).str.strip().replace("", "Unknown").fillna("Unknown")
+
+    if "Service" not in out.columns:
+        out["Service"] = out["Service_Anchor"]
 
     out["Opened_Date"] = pd.to_datetime(out["Opened_Date"], errors="coerce")
+
     if "Resolved_Date" in out.columns:
         out["Resolved_Date"] = pd.to_datetime(out["Resolved_Date"], errors="coerce")
     else:
@@ -127,8 +108,12 @@ def _prepare_incidents(df: pd.DataFrame):
     else:
         out["Closed_Date"] = pd.NaT
 
-    close_col = "Resolved_Date" if out["Resolved_Date"].notna().any() else "Closed_Date"
-    out["MTTR_Hours"] = (out[close_col] - out["Opened_Date"]).dt.total_seconds() / 3600.0
+    close_col = "Resolved_Date" if isinstance(out["Resolved_Date"], pd.Series) and out["Resolved_Date"].notna().any() else "Closed_Date"
+    if close_col in out.columns:
+        out["MTTR_Hours"] = (out[close_col] - out["Opened_Date"]).dt.total_seconds() / 3600.0
+    else:
+        out["MTTR_Hours"] = 0.0
+
     out["MTTR_Hours"] = pd.to_numeric(out["MTTR_Hours"], errors="coerce").replace([np.inf, -np.inf], np.nan).fillna(0.0)
 
     if "Reopened_Flag" not in out.columns:
@@ -151,6 +136,7 @@ def _prepare_incidents(df: pd.DataFrame):
         out["Problem_ID"] = np.nan
 
     out["Priority_Weight"] = out["Priority"].apply(_priority_weight)
+
     return out, anchor_used
 
 
@@ -160,10 +146,11 @@ def _prepare_changes(df: Optional[pd.DataFrame]) -> pd.DataFrame:
 
     out = df.copy()
 
-    if "Service" not in out.columns:
-        out["Service"] = "Unknown"
+    if "Service_Anchor" not in out.columns:
+        out["Service_Anchor"] = out["Service"] if "Service" in out.columns else "Unknown"
 
-    out["Service_Anchor"] = out["Service"].astype(str).str.strip().replace("", "Unknown").fillna("Unknown")
+    out["Service_Anchor"] = out["Service_Anchor"].astype(str).str.strip().replace("", "Unknown").fillna("Unknown")
+
     out["Change_Start"] = pd.to_datetime(out["Change_Start"], errors="coerce") if "Change_Start" in out.columns else pd.NaT
     out["Change_End"] = pd.to_datetime(out["Change_End"], errors="coerce") if "Change_End" in out.columns else pd.NaT
 
@@ -178,6 +165,9 @@ def _prepare_changes(df: Optional[pd.DataFrame]) -> pd.DataFrame:
         out["Rollback_Flag"] = 0
     out["Rollback_Flag"] = _to_bool_series(out["Rollback_Flag"])
 
+    if "Category" not in out.columns:
+        out["Category"] = "Change"
+
     return out
 
 
@@ -187,20 +177,20 @@ def _prepare_problems(df: Optional[pd.DataFrame]) -> pd.DataFrame:
 
     out = df.copy()
 
-    if "Service" not in out.columns:
-        out["Service"] = "Unknown"
+    if "Service_Anchor" not in out.columns:
+        out["Service_Anchor"] = out["Service"] if "Service" in out.columns else "Unknown"
 
-    out["Service_Anchor"] = out["Service"].astype(str).str.strip().replace("", "Unknown").fillna("Unknown")
+    out["Service_Anchor"] = out["Service_Anchor"].astype(str).str.strip().replace("", "Unknown").fillna("Unknown")
 
     if "Problem_ID" not in out.columns:
         out["Problem_ID"] = [f"PRB-{i+1}" for i in range(len(out))]
 
+    out["Opened_Date"] = pd.to_datetime(out["Opened_Date"], errors="coerce") if "Opened_Date" in out.columns else pd.NaT
+    out["Resolved_Date"] = pd.to_datetime(out["Resolved_Date"], errors="coerce") if "Resolved_Date" in out.columns else pd.NaT
+    out["Closed_Date"] = pd.to_datetime(out["Closed_Date"], errors="coerce") if "Closed_Date" in out.columns else pd.NaT
+
     if "State" not in out.columns:
         out["State"] = "Unknown"
-
-    for col in ["Opened_Date", "Resolved_Date", "Closed_Date"]:
-        if col in out.columns:
-            out[col] = pd.to_datetime(out[col], errors="coerce")
 
     if "RCA_Completed_Flag" not in out.columns:
         out["RCA_Completed_Flag"] = 0
@@ -224,9 +214,6 @@ def _prepare_problems(df: Optional[pd.DataFrame]) -> pd.DataFrame:
     return out
 
 
-# -------------------------------
-# CORE SIGNALS
-# -------------------------------
 def _detect_change_collision(inc: pd.DataFrame, changes: pd.DataFrame) -> pd.DataFrame:
     out = inc.copy()
     out["Change_Collision_Flag"] = out["Change_Related_Flag"].copy()
@@ -287,11 +274,13 @@ def _problem_signals_by_service(inc: pd.DataFrame, probs: pd.DataFrame) -> pd.Da
             + 0.15 * open_problem_penalty * 100.0
         )
 
-        rows.append({
-            "Service_Anchor": svc,
-            "Problem_Gap_Risk": round(float(min(problem_gap_risk, 100.0)), 1),
-            "RCA_Completion_Rate": round(float(rca_rate * 100.0), 1),
-        })
+        rows.append(
+            {
+                "Service_Anchor": svc,
+                "Problem_Gap_Risk": round(float(min(problem_gap_risk, 100.0)), 1),
+                "RCA_Completion_Rate": round(float(rca_rate * 100.0), 1),
+            }
+        )
 
     return pd.DataFrame(rows)
 
@@ -303,8 +292,8 @@ def _build_rollup(inc: pd.DataFrame, changes: pd.DataFrame, probs: pd.DataFrame)
         change_collision_rate=("Change_Collision_Flag", "mean"),
         mttr_hours=("MTTR_Hours", "mean"),
         avg_priority_weight=("Priority_Weight", "mean"),
-        tier=("Service_Tier", lambda x: x.dropna().astype(str).iloc[0] if len(x.dropna()) else "Unspecified"),
-        category=("Category", lambda x: x.dropna().astype(str).iloc[0] if len(x.dropna()) else "Stability Improvement"),
+        tier=("Service_Tier", lambda x: _first_non_null_mode(x, "Unspecified")),
+        category=("Category", lambda x: _first_non_null_mode(x, "Stability Improvement")),
     ).reset_index()
 
     if changes is not None and not changes.empty:
@@ -315,9 +304,7 @@ def _build_rollup(inc: pd.DataFrame, changes: pd.DataFrame, probs: pd.DataFrame)
         ).reset_index()
         base = base.merge(chg_roll, on="Service_Anchor", how="left")
     else:
-        base["change_count"] = 0.0
-        base["failed_change_rate"] = 0.0
-        base["rollback_rate"] = 0.0
+        base["change_count"] = base["failed_change_rate"] = base["rollback_rate"] = 0.0
 
     problem_roll = _problem_signals_by_service(inc, probs)
     base = base.merge(problem_roll, on="Service_Anchor", how="left")
@@ -331,11 +318,18 @@ def _build_rollup(inc: pd.DataFrame, changes: pd.DataFrame, probs: pd.DataFrame)
 
 def _build_service_risk_df(roll: pd.DataFrame, top_n: int = 10) -> pd.DataFrame:
     if roll.empty:
-        return pd.DataFrame(columns=[
-            "Service", "Service_Tier", "Recurrence_Risk", "MTTR_Drag_Risk",
-            "Reopen_Churn_Risk", "Change_Collision_Risk", "Problem_Gap_Risk",
-            "Total_Service_Risk"
-        ])
+        return pd.DataFrame(
+            columns=[
+                "Service",
+                "Service_Tier",
+                "Recurrence_Risk",
+                "MTTR_Drag_Risk",
+                "Reopen_Churn_Risk",
+                "Change_Collision_Risk",
+                "Problem_Gap_Risk",
+                "Total_Service_Risk",
+            ]
+        )
 
     rec = _normalize_0_100(roll["recurrence"] * roll["avg_priority_weight"])
     mttr = _normalize_0_100(roll["mttr_hours"])
@@ -343,15 +337,17 @@ def _build_service_risk_df(roll: pd.DataFrame, top_n: int = 10) -> pd.DataFrame:
     change = _normalize_0_100((roll["change_collision_rate"] * 70) + (roll["failed_change_rate"] * 20) + (roll["rollback_rate"] * 10))
     problem = _normalize_0_100(roll["Problem_Gap_Risk"])
 
-    out = pd.DataFrame({
-        "Service": roll["Service_Anchor"].astype(str),
-        "Service_Tier": roll["tier"].fillna("Unspecified").astype(str),
-        "Recurrence_Risk": rec.round(1),
-        "MTTR_Drag_Risk": mttr.round(1),
-        "Reopen_Churn_Risk": reopen.round(1),
-        "Change_Collision_Risk": change.round(1),
-        "Problem_Gap_Risk": problem.round(1),
-    })
+    out = pd.DataFrame(
+        {
+            "Service": roll["Service_Anchor"].astype(str),
+            "Service_Tier": roll["tier"].fillna("Unspecified").astype(str),
+            "Recurrence_Risk": rec.round(1),
+            "MTTR_Drag_Risk": mttr.round(1),
+            "Reopen_Churn_Risk": reopen.round(1),
+            "Change_Collision_Risk": change.round(1),
+            "Problem_Gap_Risk": problem.round(1),
+        }
+    )
 
     out["Total_Service_Risk"] = (
         0.28 * out["Recurrence_Risk"]
@@ -375,21 +371,25 @@ def _build_domain_scores(service_risk_df: pd.DataFrame) -> Dict[str, float]:
 
     service_resilience = np.clip(
         100 - (0.60 * service_risk_df["MTTR_Drag_Risk"].mean() + 0.40 * service_risk_df["Reopen_Churn_Risk"].mean()),
-        0, 100
+        0,
+        100,
     )
     change_governance = np.clip(100 - service_risk_df["Change_Collision_Risk"].mean(), 0, 100)
     structural_risk_debt = np.clip(
         100 - (0.55 * service_risk_df["Recurrence_Risk"].mean() + 0.45 * service_risk_df["Problem_Gap_Risk"].mean()),
-        0, 100
+        0,
+        100,
     )
     reliability_momentum = np.clip(
-        100 - (
+        100
+        - (
             0.35 * service_risk_df["Recurrence_Risk"].mean()
             + 0.30 * service_risk_df["MTTR_Drag_Risk"].mean()
             + 0.15 * service_risk_df["Reopen_Churn_Risk"].mean()
             + 0.20 * service_risk_df["Change_Collision_Risk"].mean()
         ),
-        0, 100
+        0,
+        100,
     )
 
     return {
@@ -440,39 +440,23 @@ def _build_sip_candidates(service_risk_df: pd.DataFrame, roll: pd.DataFrame, top
     merged["Suggested_Theme"] = merged["category"].fillna("Stability Improvement").astype(str)
     merged["Why_Flagged"] = merged.apply(_why, axis=1)
 
-    return merged[[
-        "Service", "Service_Tier", "Suggested_Theme",
-        "SIP_Priority_Score", "Priority_Label", "Why_Flagged"
-    ]].sort_values("SIP_Priority_Score", ascending=False).head(top_n).reset_index(drop=True)
-
-
-def _cmdb_alignment_text(inc: pd.DataFrame) -> str:
-    anchor = inc["Service_Anchor"].astype(str).fillna("Unknown")
-    total = max(len(anchor), 1)
-    unique_ratio = anchor.nunique() / total
-    ci_like = anchor.str.contains(r"(srv|server|db|database|host|ip-|vm-|node|cluster|sql|prod)", case=False, regex=True).mean()
-    service_like = anchor.str.contains(r"(service|portal|banking|payments|claims|mobile|api|platform)", case=False, regex=True).mean()
-
-    if unique_ratio > 0.50 or ci_like > 0.35:
-        return (
-            "The uploaded dataset appears to rely on fragmented technical anchors more than defined business services. "
-            "This suggests the service model or CMDB may be weakly aligned and may require normalization, clearer service definitions, "
-            "and stronger relationships between business services and underlying CIs before stability analytics can reach full value."
-        )
-    if service_like > 0.35:
-        return (
-            "The uploaded dataset shows usable service-style anchors, but there may still be opportunities to improve service model discipline, "
-            "ownership, and anchor consistency for stronger executive reporting."
-        )
     return (
-        "The uploaded dataset shows moderate anchor consistency. Continue improving service definitions, service ownership, and anchor governance "
-        "to strengthen stability intelligence over time."
+        merged[
+            [
+                "Service",
+                "Service_Tier",
+                "Suggested_Theme",
+                "SIP_Priority_Score",
+                "Priority_Label",
+                "Why_Flagged",
+            ]
+        ]
+        .sort_values("SIP_Priority_Score", ascending=False)
+        .head(top_n)
+        .reset_index(drop=True)
     )
 
 
-# -------------------------------
-# PUBLIC API
-# -------------------------------
 def run_osil(
     incidents_df: pd.DataFrame,
     changes_df: Optional[pd.DataFrame] = None,
@@ -491,13 +475,27 @@ def run_osil(
     posture = _operating_posture(bvsi)
     weakest_domain = min(domain_scores.items(), key=lambda x: x[1])[0] if domain_scores else "Service Resilience"
 
-    incident_signal = "Incident restoration efficiency appears controlled." if domain_scores["Service Resilience"] >= 70 else "Incident restoration signals show visible drag."
-    problem_signal = "Structural learning signals are improving." if domain_scores["Structural Risk Debt™"] >= 70 else "Structural learning signals remain inconsistent."
-    change_signal = "Change governance appears steady." if domain_scores["Change Governance"] >= 70 else "Change-driven instability is contributing to exposure."
+    incident_signal = (
+        "Incident restoration efficiency appears controlled."
+        if domain_scores["Service Resilience"] >= 70
+        else "Incident restoration signals show visible drag."
+    )
+    problem_signal = (
+        "Structural learning signals are improving."
+        if domain_scores["Structural Risk Debt™"] >= 70
+        else "Structural learning signals remain inconsistent."
+    )
+    change_signal = (
+        "Change governance appears steady."
+        if domain_scores["Change Governance"] >= 70
+        else "Change-driven instability is contributing to exposure."
+    )
 
     exec_text = _executive_interpretation(
-        bvsi, posture, weakest_domain,
-        f"{incident_signal} {problem_signal} {change_signal}"
+        bvsi,
+        posture,
+        weakest_domain,
+        f"{incident_signal} {problem_signal} {change_signal}",
     )
 
     sip_view = _build_sip_candidates(service_risk_df, roll, top_n=10)
@@ -507,6 +505,7 @@ def run_osil(
         close_candidates.append(inc["Resolved_Date"].max())
     if "Closed_Date" in inc.columns and isinstance(inc["Closed_Date"], pd.Series) and inc["Closed_Date"].notna().any():
         close_candidates.append(inc["Closed_Date"].max())
+
     as_of = str(max(close_candidates).date()) if close_candidates else date.today().isoformat()
 
     readiness_checks = 0
@@ -546,8 +545,4 @@ def run_osil(
         "incidents_enriched": inc.copy(),
         "changes_prepared": chg.copy(),
         "problems_prepared": prb.copy(),
-        "cmdb_alignment_text": _cmdb_alignment_text(inc),
-        "metric_definitions": _metric_definitions(),
-        "score_interpretation": _score_interpretation(),
-        "action_guidance": _action_guidance(),
     }
