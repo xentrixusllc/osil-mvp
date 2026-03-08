@@ -27,9 +27,21 @@ DEMO_CHANGES = "data/demo_changes.csv"
 DEMO_PROBLEMS = "data/demo_problems.csv"
 
 
-# ============================================================
-# Mapping configuration
-# ============================================================
+def safe_read_csv(file_or_path):
+    encodings = ["utf-8", "utf-8-sig", "cp1252", "latin1", "utf-16"]
+    last_error = None
+    for enc in encodings:
+        try:
+            if isinstance(file_or_path, str):
+                return pd.read_csv(file_or_path, encoding=enc, engine="python")
+            file_or_path.seek(0)
+            return pd.read_csv(file_or_path, encoding=enc, engine="python")
+        except Exception as e:
+            last_error = e
+            continue
+    raise ValueError(f"Unable to read CSV file. Unsupported encoding or malformed CSV. Last error: {last_error}")
+
+
 INCIDENT_MAPPING_SPEC = {
     "Service": {
         "label": "Operational Anchor (Service / Application / CI / etc.)",
@@ -239,20 +251,14 @@ PROBLEM_MAPPING_SPEC = {
 }
 
 
-# ============================================================
-# Helpers
-# ============================================================
 def _safe_read_csv(path: str) -> pd.DataFrame:
     if os.path.exists(path):
-        return pd.read_csv(path)
+        return safe_read_csv(path)
     return pd.DataFrame()
 
 
 def _load_demo_triplet() -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-    inc = _safe_read_csv(DEMO_INCIDENTS)
-    chg = _safe_read_csv(DEMO_CHANGES)
-    prb = _safe_read_csv(DEMO_PROBLEMS)
-    return inc, chg, prb
+    return _safe_read_csv(DEMO_INCIDENTS), _safe_read_csv(DEMO_CHANGES), _safe_read_csv(DEMO_PROBLEMS)
 
 
 def _required_template_text() -> str:
@@ -268,34 +274,28 @@ def _normalize_col_name(x: str) -> str:
 def _fuzzy_suggest(columns: List[str], aliases: List[str]) -> str:
     if not columns:
         return "-- None --"
-
     norm_to_original = {_normalize_col_name(c): c for c in columns}
     norm_columns = list(norm_to_original.keys())
-
     for alias in aliases:
         a = _normalize_col_name(alias)
         if a in norm_to_original:
             return norm_to_original[a]
-
     for alias in aliases:
         a = _normalize_col_name(alias)
         for nc in norm_columns:
             if a in nc or nc in a:
                 return norm_to_original[nc]
-
     for alias in aliases:
         a = _normalize_col_name(alias)
         match = get_close_matches(a, norm_columns, n=1, cutoff=0.72)
         if match:
             return norm_to_original[match[0]]
-
     return "-- None --"
 
 
 def _name_similarity_score(col_name: str, aliases: List[str]) -> float:
     norm = _normalize_col_name(col_name)
     alias_norms = [_normalize_col_name(a) for a in aliases]
-
     if norm in alias_norms:
         return 100.0
     if any((a in norm or norm in a) for a in alias_norms):
@@ -310,7 +310,6 @@ def _cardinality_quality(series: pd.Series) -> float:
     s = s[s != ""]
     if s.empty:
         return 0.0
-
     unique_ratio = s.nunique() / max(len(s), 1)
     if 0.02 <= unique_ratio <= 0.40:
         return 100.0
@@ -325,10 +324,8 @@ def _cardinality_quality(series: pd.Series) -> float:
 
 def _business_relevance_score(col_name: str) -> float:
     norm = _normalize_col_name(col_name)
-
     strong = ["service", "application", "system", "product", "platform", "ci", "configuration item"]
     weak = ["assignment group", "group", "state", "status", "priority", "severity", "category", "location"]
-
     if any(token in norm for token in strong):
         return 100.0
     if any(token in norm for token in weak):
@@ -341,30 +338,21 @@ def _cross_file_overlap_score(base_series: pd.Series, other_series_list: List[pd
     base = {x for x in base if x}
     if not base:
         return 0.0
-
     overlap_scores = []
     for s in other_series_list:
         vals = set(s.dropna().astype(str).str.strip())
         vals = {x for x in vals if x}
         if not vals:
             continue
-
         overlap = len(base.intersection(vals))
         denom = max(min(len(base), len(vals)), 1)
         overlap_scores.append((overlap / denom) * 100.0)
-
     return max(overlap_scores) if overlap_scores else 0.0
 
 
-def _infer_anchor_candidates(
-    df: pd.DataFrame,
-    aliases: List[str],
-    other_candidate_series: Optional[List[pd.Series]] = None,
-    max_candidates: int = 3,
-):
+def _infer_anchor_candidates(df: pd.DataFrame, aliases: List[str], other_candidate_series=None, max_candidates: int = 3):
     if df is None or df.empty:
         return []
-
     scored = []
     for col in df.columns:
         total = (
@@ -374,7 +362,6 @@ def _infer_anchor_candidates(
             + 0.10 * _business_relevance_score(col)
         )
         scored.append((col, round(total, 1)))
-
     scored.sort(key=lambda x: x[1], reverse=True)
     return scored[:max_candidates]
 
@@ -387,63 +374,37 @@ def _confidence_label(score: float) -> str:
     return "Low"
 
 
-def _render_mapping_ui(
-    df: pd.DataFrame,
-    spec: Dict[str, Dict[str, object]],
-    title: str,
-    key_prefix: str,
-    cross_file_candidates: Optional[List[pd.Series]] = None,
-) -> Dict[str, Optional[str]]:
+def _render_mapping_ui(df: pd.DataFrame, spec: Dict[str, Dict[str, object]], title: str, key_prefix: str, cross_file_candidates: Optional[List[pd.Series]] = None) -> Dict[str, Optional[str]]:
     st.markdown(f"#### {title}")
     st.caption("OSIL will auto-suggest likely mappings, but you can still override anything manually before running analysis.")
-
     columns = list(df.columns)
     options = ["-- None --"] + columns
     mapping: Dict[str, Optional[str]] = {}
-
     for canonical, cfg in spec.items():
         if canonical == "Service":
-            candidates = _infer_anchor_candidates(
-                df,
-                cfg["aliases"],
-                other_candidate_series=cross_file_candidates or [],
-                max_candidates=3,
-            )
+            candidates = _infer_anchor_candidates(df, cfg["aliases"], other_candidate_series=cross_file_candidates or [], max_candidates=3)
             suggested = candidates[0][0] if candidates else "-- None --"
             if candidates:
                 best_col, best_score = candidates[0]
                 confidence = _confidence_label(best_score)
                 alts = ", ".join([f"{c} ({s})" for c, s in candidates[1:]]) if len(candidates) > 1 else "None"
-                st.info(
-                    f"{title.replace('Map ', '').replace(' Columns', '')} suggested anchor: "
-                    f"{best_col} (confidence: {confidence}, score: {best_score}). Alternate suggestions: {alts}."
-                )
+                st.info(f"{title.replace('Map ', '').replace(' Columns', '')} suggested anchor: {best_col} (confidence: {confidence}, score: {best_score}). Alternate suggestions: {alts}.")
         else:
             suggested = _fuzzy_suggest(columns, cfg["aliases"]) if columns else "-- None --"
-
         if suggested not in options:
             suggested = "-- None --"
-
         idx = options.index(suggested) if suggested in options else 0
-        selected = st.selectbox(
-            f"{cfg['label']}{' *' if cfg['required'] else ''}",
-            options=options,
-            index=idx,
-            key=f"{key_prefix}_{canonical}",
-        )
+        selected = st.selectbox(f"{cfg['label']}{' *' if cfg['required'] else ''}", options=options, index=idx, key=f"{key_prefix}_{canonical}")
         mapping[canonical] = None if selected == "-- None --" else selected
-
     return mapping
 
 
 def _apply_mapping(df: pd.DataFrame, mapping: Dict[str, Optional[str]]) -> pd.DataFrame:
     out = df.copy()
     rename_map = {}
-
     for canonical, selected in mapping.items():
         if selected and selected in out.columns:
             rename_map[selected] = canonical
-
     return out.rename(columns=rename_map)
 
 
@@ -458,22 +419,18 @@ def _validate_mapping(mapping: Dict[str, Optional[str]], spec: Dict[str, Dict[st
 def heatmap_chart(hm: pd.DataFrame):
     fig = plt.figure(figsize=(10, 5), dpi=160)
     ax = plt.gca()
-
     im = ax.imshow(hm.values, aspect="auto", vmin=0, vmax=100)
     ax.set_xticks(range(len(hm.columns)))
     ax.set_xticklabels(list(hm.columns), fontsize=9)
     ax.set_yticks(range(len(hm.index)))
     ax.set_yticklabels(list(hm.index), fontsize=9)
     ax.set_title("Service Stability Heatmap", fontsize=12)
-
     for i in range(hm.shape[0]):
         for j in range(hm.shape[1]):
             ax.text(j, i, f"{int(round(float(hm.iat[i, j]), 0))}", ha="center", va="center", fontsize=8)
-
     cbar = plt.colorbar(im, ax=ax, fraction=0.03, pad=0.02)
     cbar.set_label("Risk Score", fontsize=8)
     cbar.ax.tick_params(labelsize=7)
-
     plt.tight_layout()
     return fig
 
@@ -484,7 +441,6 @@ def radar_chart(domain_scores: dict):
     angles = np.linspace(0, 2 * np.pi, len(labels), endpoint=False).tolist()
     values_loop = values + [values[0]]
     angles_loop = angles + [angles[0]]
-
     fig = plt.figure(figsize=(6.2, 5.0), dpi=160)
     ax = plt.subplot(111, polar=True)
     ax.set_theta_offset(np.pi / 2)
@@ -504,13 +460,10 @@ def radar_chart(domain_scores: dict):
 def render_service_instability_leaders(service_risk_df: pd.DataFrame) -> None:
     st.subheader("Service Instability Leaders (Top 5)")
     st.caption("Narrative view of the services currently driving the highest operational instability risk.")
-
     if service_risk_df is None or service_risk_df.empty:
         st.info("No service instability signals available.")
         return
-
     df = service_risk_df.sort_values("Total_Service_Risk", ascending=False).head(5).copy()
-
     for rank, (_, row) in enumerate(df.iterrows(), start=1):
         service = str(row.get("Service", "Unknown Service"))
         tier = str(row.get("Service_Tier", "Unspecified"))
@@ -523,17 +476,11 @@ def render_service_instability_leaders(service_risk_df: pd.DataFrame) -> None:
         }
         primary = max(risks, key=risks.get)
         primary_score = risks.get(primary, 0.0)
-
-        st.markdown(
-            f"""
-<div style="border:1px solid #D1D5DB;background:#F5F7FA;padding:14px 16px;border-radius:10px;margin-bottom:10px;">
+        st.markdown(f"""<div style="border:1px solid #D1D5DB;background:#F5F7FA;padding:14px 16px;border-radius:10px;margin-bottom:10px;">
   <div style="font-size:16px;"><b>#{rank} {service}</b></div>
   <div style="margin-top:6px;"><b>Tier:</b> {tier} &nbsp; | &nbsp; <b>Total Risk Score:</b> {score:.1f}</div>
   <div style="margin-top:10px;"><b>Primary Instability Driver:</b> {primary} ({primary_score:.0f}/100)</div>
-</div>
-""",
-            unsafe_allow_html=True,
-        )
+</div>""", unsafe_allow_html=True)
 
 
 def _build_pdf_payload(results: dict, tenant_name: str) -> dict:
@@ -555,15 +502,9 @@ def _build_pdf_payload(results: dict, tenant_name: str) -> dict:
 def main():
     st.title(APP_TITLE)
     st.caption(APP_SUB)
-
     tenant_name = st.text_input("Organization / Tenant Name", value="Default")
-
     st.subheader("Run Options")
-    mode = st.radio(
-        "Choose a run mode",
-        ["Run with Demo Data", "Upload Incident / Change / Problem CSVs"],
-        horizontal=True,
-    )
+    mode = st.radio("Choose a run mode", ["Run with Demo Data", "Upload Incident / Change / Problem CSVs"], horizontal=True)
 
     incidents_df: Optional[pd.DataFrame] = None
     changes_df: Optional[pd.DataFrame] = None
@@ -582,7 +523,6 @@ def main():
     else:
         st.markdown("### Upload Files")
         c1, c2, c3 = st.columns(3)
-
         with c1:
             inc_file = st.file_uploader("Incident CSV", type=["csv"], key="inc")
         with c2:
@@ -594,7 +534,7 @@ def main():
 
         if inc_file is not None:
             try:
-                inc_preview = pd.read_csv(inc_file)
+                inc_preview = safe_read_csv(inc_file)
                 inc_file.seek(0)
             except Exception as e:
                 st.error(f"Could not read Incident CSV: {e}")
@@ -602,7 +542,7 @@ def main():
 
         if chg_file is not None:
             try:
-                chg_preview = pd.read_csv(chg_file)
+                chg_preview = safe_read_csv(chg_file)
                 chg_file.seek(0)
             except Exception as e:
                 st.error(f"Could not read Change CSV: {e}")
@@ -610,7 +550,7 @@ def main():
 
         if prb_file is not None:
             try:
-                prb_preview = pd.read_csv(prb_file)
+                prb_preview = safe_read_csv(prb_file)
                 prb_file.seek(0)
             except Exception as e:
                 st.error(f"Could not read Problem CSV: {e}")
@@ -635,45 +575,11 @@ def main():
                 change_cross.append(inc_preview[c])
                 problem_cross.append(inc_preview[c])
 
-        if inc_preview is not None:
-            st.markdown("### Incident Mapping")
-            inc_mapping = _render_mapping_ui(
-                inc_preview,
-                INCIDENT_MAPPING_SPEC,
-                "Map Incident Columns",
-                "incmap",
-                cross_file_candidates=incident_cross,
-            )
-        else:
-            inc_mapping = {}
+        inc_mapping = _render_mapping_ui(inc_preview, INCIDENT_MAPPING_SPEC, "Map Incident Columns", "incmap", cross_file_candidates=incident_cross) if inc_preview is not None else {}
+        chg_mapping = _render_mapping_ui(chg_preview, CHANGE_MAPPING_SPEC, "Map Change Columns", "chgmap", cross_file_candidates=change_cross) if chg_preview is not None else {}
+        prb_mapping = _render_mapping_ui(prb_preview, PROBLEM_MAPPING_SPEC, "Map Problem Columns", "prbmap", cross_file_candidates=problem_cross) if prb_preview is not None else {}
 
-        if chg_preview is not None:
-            st.markdown("### Change Mapping")
-            chg_mapping = _render_mapping_ui(
-                chg_preview,
-                CHANGE_MAPPING_SPEC,
-                "Map Change Columns",
-                "chgmap",
-                cross_file_candidates=change_cross,
-            )
-        else:
-            chg_mapping = {}
-
-        if prb_preview is not None:
-            st.markdown("### Problem Mapping")
-            prb_mapping = _render_mapping_ui(
-                prb_preview,
-                PROBLEM_MAPPING_SPEC,
-                "Map Problem Columns",
-                "prbmap",
-                cross_file_candidates=problem_cross,
-            )
-        else:
-            prb_mapping = {}
-
-        st.caption(
-            "OSIL suggests likely mappings automatically, but you can still override any field before running analysis."
-        )
+        st.caption("OSIL suggests likely mappings automatically, but you can still override any field before running analysis.")
 
         if st.button("Run Uploaded Analysis", use_container_width=True):
             if inc_file is None:
@@ -691,9 +597,9 @@ def main():
                 return
 
             try:
-                incidents_df = _apply_mapping(pd.read_csv(inc_file), inc_mapping)
-                changes_df = _apply_mapping(pd.read_csv(chg_file), chg_mapping) if chg_file is not None else pd.DataFrame()
-                problems_df = _apply_mapping(pd.read_csv(prb_file), prb_mapping) if prb_file is not None else pd.DataFrame()
+                incidents_df = _apply_mapping(safe_read_csv(inc_file), inc_mapping)
+                changes_df = _apply_mapping(safe_read_csv(chg_file), chg_mapping) if chg_file is not None else pd.DataFrame()
+                problems_df = _apply_mapping(safe_read_csv(prb_file), prb_mapping) if prb_file is not None else pd.DataFrame()
                 source_label = f"Upload ({inc_file.name})"
                 run_requested = True
             except Exception as e:
@@ -703,20 +609,13 @@ def main():
     if not run_requested:
         st.subheader("Required Incident Template")
         st.code(_required_template_text(), language="csv")
-        st.info(
-            "Incidents are required. Changes and Problems are optional. "
-            "OSIL suggests likely anchors, but manual override remains available."
-        )
+        st.info("Incidents are required. Changes and Problems are optional. OSIL suggests likely anchors, but manual override remains available.")
         return
 
     st.success(f"Loaded: {source_label}")
 
     try:
-        results = run_osil(
-            incidents_df=incidents_df,
-            changes_df=changes_df,
-            problems_df=problems_df,
-        )
+        results = run_osil(incidents_df=incidents_df, changes_df=changes_df, problems_df=problems_df)
         results["source_label"] = source_label
         results["tenant_name"] = tenant_name
     except Exception as e:
@@ -728,12 +627,7 @@ def main():
     mc2.metric("Operating Posture", results["posture"])
     mc3.metric("Data Readiness", f"{results['readiness_score']:.1f}%")
 
-    st.caption(
-        f"Dataset: {results['practice_type']} • "
-        f"Service anchor used: {results['anchor_used']} • "
-        f"As of: {results['as_of']}"
-    )
-
+    st.caption(f"Dataset: {results['practice_type']} • Service anchor used: {results['anchor_used']} • As of: {results['as_of']}")
     st.divider()
     st.subheader("Executive Interpretation")
     st.write(results["exec_text"])
@@ -741,18 +635,10 @@ def main():
     st.divider()
     st.subheader("Operational Stability Profile")
     rc1, rc2 = st.columns([1.15, 1.0])
-
     with rc1:
         st.pyplot(radar_chart(results["domain_scores"]), use_container_width=True)
-
     with rc2:
-        st.dataframe(
-            pd.DataFrame({
-                "Domain": list(results["domain_scores"].keys()),
-                "Score": list(results["domain_scores"].values()),
-            }),
-            use_container_width=True,
-        )
+        st.dataframe(pd.DataFrame({"Domain": list(results["domain_scores"].keys()), "Score": list(results["domain_scores"].values())}), use_container_width=True)
 
     st.divider()
     service_risk_df = results["service_risk_df"]
@@ -760,33 +646,21 @@ def main():
 
     if top10 is not None and not top10.empty:
         heatmap_df = top10.copy()
-
         if "Service" in heatmap_df.columns:
             if "Service_Tier" not in heatmap_df.columns:
                 heatmap_df["Service_Tier"] = "Unspecified"
-
-            required_risk_cols = [
-                "Recurrence_Risk",
-                "MTTR_Drag_Risk",
-                "Reopen_Churn_Risk",
-                "Change_Collision_Risk",
-            ]
+            required_risk_cols = ["Recurrence_Risk", "MTTR_Drag_Risk", "Reopen_Churn_Risk", "Change_Collision_Risk"]
             for col in [c for c in required_risk_cols if c not in heatmap_df.columns]:
                 heatmap_df[col] = 0.0
-
-            hm = heatmap_df.set_index(
-                heatmap_df["Service"].astype(str) + " (" + heatmap_df["Service_Tier"].astype(str) + ")"
-            )[required_risk_cols].rename(columns={
+            hm = heatmap_df.set_index(heatmap_df["Service"].astype(str) + " (" + heatmap_df["Service_Tier"].astype(str) + ")")[required_risk_cols].rename(columns={
                 "Recurrence_Risk": "Recurrence",
                 "MTTR_Drag_Risk": "MTTR Drag",
                 "Reopen_Churn_Risk": "Reopen Churn",
                 "Change_Collision_Risk": "Change Collision",
             })
             hm = hm.apply(pd.to_numeric, errors="coerce").replace([np.inf, -np.inf], np.nan).fillna(0.0)
-
             st.markdown("### Service Stability Heatmap (Top 10 Services by Risk)")
             st.pyplot(heatmap_chart(hm), use_container_width=True)
-
         st.markdown("**Top 10 Services — Risk Breakdown**")
         st.dataframe(top10, use_container_width=True)
     else:
@@ -802,11 +676,9 @@ def main():
     st.divider()
     with st.expander("Preview — Incidents", expanded=False):
         st.dataframe(incidents_df.head(20), use_container_width=True)
-
     if changes_df is not None and not changes_df.empty:
         with st.expander("Preview — Changes", expanded=False):
             st.dataframe(changes_df.head(20), use_container_width=True)
-
     if problems_df is not None and not problems_df.empty:
         with st.expander("Preview — Problems", expanded=False):
             st.dataframe(problems_df.head(20), use_container_width=True)
@@ -816,13 +688,7 @@ def main():
     try:
         payload = _build_pdf_payload(results, tenant_name)
         pdf_bytes = build_osil_pdf_report(payload)
-        st.download_button(
-            "Download Executive PDF",
-            data=pdf_bytes,
-            file_name=f"OSIL_Executive_Report_{results['as_of']}_{tenant_name}.pdf",
-            mime="application/pdf",
-            use_container_width=True,
-        )
+        st.download_button("Download Executive PDF", data=pdf_bytes, file_name=f"OSIL_Executive_Report_{results['as_of']}_{tenant_name}.pdf", mime="application/pdf", use_container_width=True)
     except Exception as e:
         st.error(f"PDF generation failed: {e}")
 
