@@ -1,420 +1,321 @@
-import io
-import re
-from typing import Any, Dict, List
+Full next-phase osil_engine.py replacement.
 
-import matplotlib.pyplot as plt
+Replace your current osil_engine.py with the code below:
+
+from __future__ import annotations
+
+from datetime import date
+from typing import Any, Dict, Optional, Tuple
+
 import numpy as np
 import pandas as pd
 
-from reportlab.lib import colors
-from reportlab.lib.pagesizes import LETTER
-from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
-from reportlab.lib.units import inch
-from reportlab.platypus import Image, PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
-
+INCIDENT_REQUIRED_COLUMNS = ["Service", "Opened_Date", "Priority"]
 
 def _safe_float(val: Any, default: float = 0.0) -> float:
     try:
-        if val is None:
+        if pd.isna(val):
             return default
         return float(val)
     except Exception:
         return default
 
+def _to_bool_series(series: pd.Series) -> pd.Series:
+    if series is None:
+        return pd.Series(dtype=float)
+    lowered = series.astype(str).str.strip().str.lower()
+    truthy = {"1","true","yes","y","t"}
+    return lowered.isin(truthy).astype(int)
 
-def _safe_df(val: Any) -> pd.DataFrame:
-    return val.copy() if isinstance(val, pd.DataFrame) else pd.DataFrame()
+def _first_non_null_mode(series: pd.Series, default: str) -> str:
+    s = series.dropna().astype(str).str.strip()
+    s = s[s != ""]
+    if s.empty:
+        return default
+    vc = s.value_counts()
+    return str(vc.index[0]) if not vc.empty else default
 
+def _normalize_0_100(series: pd.Series) -> pd.Series:
+    s = pd.to_numeric(series, errors="coerce").replace([np.inf, -np.inf], np.nan).fillna(0.0)
+    if s.empty:
+        return s
+    mn = float(s.min())
+    mx = float(s.max())
+    if mx <= mn:
+        return pd.Series([0.0] * len(s), index=s.index)
+    return ((s - mn) / (mx - mn) * 100.0).round(1)
 
-def _clean_text(text: Any) -> str:
-    if text is None:
-        return ""
-    s = str(text)
-    s = re.sub(r"\*\*(.*?)\*\*", r"<b>\1</b>", s)
-    s = s.replace("<br>", "<br/>").replace("<br />", "<br/>")
-    allowed = {"b", "i", "u", "br"}
+def _priority_weight(priority: Any) -> float:
+    p = str(priority).strip().upper()
+    mapping = {"P1":1.50,"P2":1.25,"P3":1.00,"P4":0.80,"P5":0.60,"1":1.50,"2":1.25,"3":1.00,"4":0.80,"5":0.60,"CRITICAL":1.50,"HIGH":1.25,"MEDIUM":1.00,"LOW":0.80}
+    return mapping.get(p, 1.0)
 
-    def repl_tag(match):
-        full = match.group(0)
-        tag = match.group(1).lower().replace("/", "")
-        return full if tag in allowed else ""
+def _operating_posture(bvsi: float) -> str:
+    if bvsi >= 85: return "High Confidence Operations"
+    if bvsi >= 70: return "Controlled and Improving"
+    if bvsi >= 55: return "Controlled but Exposed"
+    if bvsi >= 40: return "Reactive and Exposed"
+    return "Fragile Operations"
 
-    s = re.sub(r"</?([a-zA-Z0-9]+).*?>", repl_tag, s)
-    return s
+def _executive_interpretation(bvsi: float, posture: str, weakest_domain: str, practice_text: str) -> str:
+    return f"Your organization is operating in a {posture} posture (BVSI™ {bvsi:.1f}). Current stability signals suggest the greatest exposure sits in {weakest_domain}. {practice_text}"
 
+def _prepare_incidents(df: pd.DataFrame) -> Tuple[pd.DataFrame, str]:
+    if df is None or df.empty:
+        raise ValueError("Incident dataset is empty.")
+    out = df.copy()
+    if "Service_Anchor" not in out.columns:
+        if "Service" in out.columns:
+            out["Service_Anchor"] = out["Service"]
+            anchor_used = "Service"
+        else:
+            raise ValueError("Incident dataset requires an operational anchor mapped to Service.")
+    else:
+        anchor_used = "Service_Anchor"
+    out["Service_Anchor"] = out["Service_Anchor"].astype(str).str.strip().replace("", "Unknown").fillna("Unknown")
+    if "Service" not in out.columns:
+        out["Service"] = out["Service_Anchor"]
+    out["Opened_Date"] = pd.to_datetime(out["Opened_Date"], errors="coerce")
+    out["Resolved_Date"] = pd.to_datetime(out["Resolved_Date"], errors="coerce") if "Resolved_Date" in out.columns else pd.NaT
+    out["Closed_Date"] = pd.to_datetime(out["Closed_Date"], errors="coerce") if "Closed_Date" in out.columns else pd.NaT
+    close_col = "Resolved_Date" if isinstance(out["Resolved_Date"], pd.Series) and out["Resolved_Date"].notna().any() else "Closed_Date"
+    if close_col in out.columns:
+        out["MTTR_Hours"] = (out[close_col] - out["Opened_Date"]).dt.total_seconds() / 3600.0
+    else:
+        out["MTTR_Hours"] = 0.0
+    out["MTTR_Hours"] = pd.to_numeric(out["MTTR_Hours"], errors="coerce").replace([np.inf, -np.inf], np.nan).fillna(0.0)
+    if "Reopened_Flag" not in out.columns:
+        out["Reopened_Flag"] = 0
+    out["Reopened_Flag"] = _to_bool_series(out["Reopened_Flag"])
+    if "Service_Tier" not in out.columns:
+        out["Service_Tier"] = "Unspecified"
+    out["Service_Tier"] = out["Service_Tier"].fillna("Unspecified").astype(str)
+    if "Category" not in out.columns:
+        out["Category"] = "Stability Improvement"
+    out["Category"] = out["Category"].fillna("Stability Improvement").astype(str)
+    if "Change_Related_Flag" not in out.columns:
+        out["Change_Related_Flag"] = 0
+    out["Change_Related_Flag"] = _to_bool_series(out["Change_Related_Flag"])
+    if "Problem_ID" not in out.columns:
+        out["Problem_ID"] = np.nan
+    out["Priority_Weight"] = out["Priority"].apply(_priority_weight)
+    return out, anchor_used
 
-def _styles():
-    styles = getSampleStyleSheet()
-    styles.add(ParagraphStyle(name="OSIL_Title", parent=styles["Title"], fontName="Helvetica-Bold", fontSize=22, leading=26, textColor=colors.HexColor("#0A192F"), spaceAfter=4))
-    styles.add(ParagraphStyle(name="OSIL_Subtitle", parent=styles["BodyText"], fontName="Helvetica", fontSize=9, leading=11, textColor=colors.HexColor("#555555"), spaceAfter=8))
-    styles.add(ParagraphStyle(name="OSIL_Section", parent=styles["Heading2"], fontName="Helvetica-Bold", fontSize=13.5, leading=16, textColor=colors.HexColor("#0A192F"), spaceAfter=6, spaceBefore=2))
-    styles.add(ParagraphStyle(name="OSIL_Body", parent=styles["BodyText"], fontName="Helvetica", fontSize=9.2, leading=12.6, textColor=colors.HexColor("#222222")))
-    styles.add(ParagraphStyle(name="OSIL_Small", parent=styles["BodyText"], fontName="Helvetica", fontSize=8, leading=10, textColor=colors.HexColor("#666666")))
-    styles.add(ParagraphStyle(name="OSIL_Table", parent=styles["BodyText"], fontName="Helvetica", fontSize=7.8, leading=9.3, textColor=colors.HexColor("#222222")))
-    styles.add(ParagraphStyle(name="OSIL_TableHeader", parent=styles["BodyText"], fontName="Helvetica-Bold", fontSize=8, leading=10, textColor=colors.black))
-    return styles
+def _prepare_changes(df: Optional[pd.DataFrame]) -> pd.DataFrame:
+    if df is None or df.empty:
+        return pd.DataFrame()
+    out = df.copy()
+    if "Service_Anchor" not in out.columns:
+        out["Service_Anchor"] = out["Service"] if "Service" in out.columns else "Unknown"
+    out["Service_Anchor"] = out["Service_Anchor"].astype(str).str.strip().replace("", "Unknown").fillna("Unknown")
+    out["Change_Start"] = pd.to_datetime(out["Change_Start"], errors="coerce") if "Change_Start" in out.columns else pd.NaT
+    out["Change_End"] = pd.to_datetime(out["Change_End"], errors="coerce") if "Change_End" in out.columns else pd.NaT
+    if "Change_ID" not in out.columns:
+        out["Change_ID"] = [f"CHG-{i+1}" for i in range(len(out))]
+    if "Failed_Flag" not in out.columns:
+        out["Failed_Flag"] = 0
+    out["Failed_Flag"] = _to_bool_series(out["Failed_Flag"])
+    if "Rollback_Flag" not in out.columns:
+        out["Rollback_Flag"] = 0
+    out["Rollback_Flag"] = _to_bool_series(out["Rollback_Flag"])
+    if "Category" not in out.columns:
+        out["Category"] = "Change"
+    return out
 
+def _prepare_problems(df: Optional[pd.DataFrame]) -> pd.DataFrame:
+    if df is None or df.empty:
+        return pd.DataFrame()
+    out = df.copy()
+    if "Service_Anchor" not in out.columns:
+        out["Service_Anchor"] = out["Service"] if "Service" in out.columns else "Unknown"
+    out["Service_Anchor"] = out["Service_Anchor"].astype(str).str.strip().replace("", "Unknown").fillna("Unknown")
+    if "Problem_ID" not in out.columns:
+        out["Problem_ID"] = [f"PRB-{i+1}" for i in range(len(out))]
+    out["Opened_Date"] = pd.to_datetime(out["Opened_Date"], errors="coerce") if "Opened_Date" in out.columns else pd.NaT
+    out["Resolved_Date"] = pd.to_datetime(out["Resolved_Date"], errors="coerce") if "Resolved_Date" in out.columns else pd.NaT
+    out["Closed_Date"] = pd.to_datetime(out["Closed_Date"], errors="coerce") if "Closed_Date" in out.columns else pd.NaT
+    if "State" not in out.columns:
+        out["State"] = "Unknown"
+    if "RCA_Completed_Flag" not in out.columns:
+        out["RCA_Completed_Flag"] = 0
+    out["RCA_Completed_Flag"] = _to_bool_series(out["RCA_Completed_Flag"])
+    if "Known_Error_Flag" not in out.columns:
+        out["Known_Error_Flag"] = 0
+    out["Known_Error_Flag"] = _to_bool_series(out["Known_Error_Flag"])
+    if "Workaround_Available" not in out.columns:
+        out["Workaround_Available"] = 0
+    out["Workaround_Available"] = _to_bool_series(out["Workaround_Available"])
+    if "Permanent_Fix_Flag" not in out.columns:
+        out["Permanent_Fix_Flag"] = 0
+    out["Permanent_Fix_Flag"] = _to_bool_series(out["Permanent_Fix_Flag"])
+    if "Root_Cause" not in out.columns:
+        out["Root_Cause"] = ""
+    return out
 
-def _footer(canvas, doc):
-    canvas.saveState()
-    canvas.setFont("Helvetica", 8)
-    canvas.setFillColor(colors.HexColor("#666666"))
-    canvas.drawString(0.55 * inch, 0.35 * inch, "OSIL™ by Xentrixus • Operational Stability Intelligence")
-    canvas.drawRightString(7.95 * inch, 0.35 * inch, f"Page {doc.page}")
-    canvas.restoreState()
+def _detect_change_collision(inc: pd.DataFrame, changes: pd.DataFrame) -> pd.DataFrame:
+    out = inc.copy()
+    out["Change_Collision_Flag"] = out["Change_Related_Flag"].copy()
+    if changes is None or changes.empty:
+        return out
+    for _, change in changes.iterrows():
+        svc = change.get("Service_Anchor", "Unknown")
+        start = change.get("Change_Start", pd.NaT)
+        end = change.get("Change_End", pd.NaT)
+        if pd.isna(start):
+            continue
+        if pd.isna(end):
+            end = start + pd.Timedelta(hours=6)
+        mask = ((out["Service_Anchor"] == svc) & (out["Opened_Date"] >= start) & (out["Opened_Date"] <= end + pd.Timedelta(hours=12)))
+        out.loc[mask, "Change_Collision_Flag"] = 1
+    out["Change_Collision_Flag"] = pd.to_numeric(out["Change_Collision_Flag"], errors="coerce").fillna(0).clip(0, 1)
+    return out
 
-
-def _header_band(text: str, width: float = 7.35 * inch) -> Table:
-    t = Table([[text]], colWidths=[width])
-    t.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#0A192F")),
-        ("TEXTCOLOR", (0, 0), (-1, -1), colors.white),
-        ("FONTNAME", (0, 0), (-1, -1), "Helvetica-Bold"),
-        ("FONTSIZE", (0, 0), (-1, -1), 12),
-        ("ALIGN", (0, 0), (-1, -1), "LEFT"),
-        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("LEFTPADDING", (0, 0), (-1, -1), 10),
-        ("TOPPADDING", (0, 0), (-1, -1), 7),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
-    ]))
-    return t
-
-
-def _accent_rule(width: float = 7.35 * inch, color_hex: str = "#64FFDA", height: int = 3) -> Table:
-    t = Table([[""]], colWidths=[width], rowHeights=[height])
-    t.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor(color_hex)),
-        ("LEFTPADDING", (0, 0), (-1, -1), 0),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
-        ("TOPPADDING", (0, 0), (-1, -1), 0),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
-    ]))
-    return t
-
-
-def _paragraph_table(df: pd.DataFrame, col_widths: List[float], styles, header_bg: str = "#E9EDF3") -> Table:
-    df = _safe_df(df)
-    if df.empty:
-        data = [[Paragraph("No data available", styles["OSIL_Table"])]]
-        tbl = Table(data, colWidths=[sum(col_widths)])
-        tbl.setStyle(TableStyle([("GRID", (0, 0), (-1, -1), 0.4, colors.grey)]))
-        return tbl
-
-    header = [Paragraph(_clean_text(c), styles["OSIL_TableHeader"]) for c in df.columns]
-    rows = [[Paragraph(_clean_text(x), styles["OSIL_Table"]) for x in row] for row in df.values.tolist()]
-    tbl = Table([header] + rows, colWidths=col_widths, repeatRows=1)
-    tbl.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor(header_bg)),
-        ("GRID", (0, 0), (-1, -1), 0.35, colors.grey),
-        ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#F8FAFC")]),
-        ("LEFTPADDING", (0, 0), (-1, -1), 5),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 5),
-        ("TOPPADDING", (0, 0), (-1, -1), 4),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-    ]))
-    return tbl
-
-
-def _kpi_box(label: str, value: str, width: float = 2.35 * inch) -> Table:
-    t = Table([[label], [value]], colWidths=[width])
-    t.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#F5F7FA")),
-        ("BOX", (0, 0), (-1, -1), 0.6, colors.HexColor("#D1D5DB")),
-        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-        ("FONTNAME", (0, 1), (-1, 1), "Helvetica-Bold"),
-        ("FONTSIZE", (0, 0), (-1, 0), 8),
-        ("FONTSIZE", (0, 1), (-1, 1), 17),
-        ("TEXTCOLOR", (0, 0), (-1, 0), colors.HexColor("#666666")),
-        ("TEXTCOLOR", (0, 1), (-1, 1), colors.HexColor("#111111")),
-        ("ALIGN", (0, 0), (-1, -1), "LEFT"),
-        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("LEFTPADDING", (0, 0), (-1, -1), 10),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 8),
-        ("TOPPADDING", (0, 0), (-1, 0), 8),
-        ("BOTTOMPADDING", (0, 0), (-1, 0), 2),
-        ("TOPPADDING", (0, 1), (-1, 1), 0),
-        ("BOTTOMPADDING", (0, 1), (-1, 1), 10),
-    ]))
-    return t
-
-
-def _signal_box(title: str, body: str, width: float = 7.35 * inch, styles=None) -> Table:
-    body_para = Paragraph(_clean_text(body), styles["OSIL_Body"])
-    title_para = Paragraph(_clean_text(title), styles["OSIL_TableHeader"])
-    t = Table([[title_para], [body_para]], colWidths=[width])
-    t.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#EAF4FF")),
-        ("BACKGROUND", (0, 1), (-1, 1), colors.HexColor("#F8FBFF")),
-        ("BOX", (0, 0), (-1, -1), 0.6, colors.HexColor("#B8D6F2")),
-        ("LEFTPADDING", (0, 0), (-1, -1), 10),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 10),
-        ("TOPPADDING", (0, 0), (-1, 0), 8),
-        ("BOTTOMPADDING", (0, 0), (-1, 0), 6),
-        ("TOPPADDING", (0, 1), (-1, 1), 4),
-        ("BOTTOMPADDING", (0, 1), (-1, 1), 10),
-    ]))
-    return t
-
-
-def _build_radar_image(domain_scores: Dict[str, float]) -> io.BytesIO:
-    labels = list(domain_scores.keys())
-    values = [_safe_float(domain_scores.get(k, 0.0)) for k in labels]
-
-    if not labels:
-        labels = ["Service Resilience", "Change Governance", "Structural Risk Debt™", "Reliability Momentum"]
-        values = [0, 0, 0, 0]
-
-    angles = np.linspace(0, 2 * np.pi, len(labels), endpoint=False).tolist()
-    angles_loop = angles + [angles[0]]
-    values_loop = values + [values[0]]
-
-    fig = plt.figure(figsize=(4.4, 4.1), dpi=180)
-    ax = plt.subplot(111, polar=True)
-    ax.set_theta_offset(np.pi / 2)
-    ax.set_theta_direction(-1)
-    ax.plot(angles_loop, values_loop, linewidth=2)
-    ax.fill(angles_loop, values_loop, alpha=0.12)
-    ax.set_xticks(angles)
-    ax.set_xticklabels(labels, fontsize=8)
-    ax.set_ylim(0, 100)
-    ax.set_yticks([20, 40, 60, 80, 100])
-    ax.set_yticklabels(["20", "40", "60", "80", "100"], fontsize=7)
-    ax.set_title("Operational Stability Profile", pad=16, fontsize=11)
-
-    img = io.BytesIO()
-    plt.tight_layout()
-    plt.savefig(img, format="png", bbox_inches="tight")
-    plt.close(fig)
-    img.seek(0)
-    return img
-
-
-def _build_heatmap_image(service_risk_top10: pd.DataFrame) -> io.BytesIO | None:
-    df = _safe_df(service_risk_top10)
-    if df.empty:
-        return None
-
-    needed = ["Service", "Service_Tier", "Recurrence_Risk", "MTTR_Drag_Risk", "Reopen_Churn_Risk", "Change_Collision_Risk"]
-    missing = [c for c in needed if c not in df.columns]
-    if missing:
-        return None
-
-    hm = df.head(10).copy()
-    hm.index = hm["Service"].astype(str) + " (" + hm["Service_Tier"].astype(str) + ")"
-    hm = hm[["Recurrence_Risk", "MTTR_Drag_Risk", "Reopen_Churn_Risk", "Change_Collision_Risk"]].rename(
-        columns={
-            "Recurrence_Risk": "Recurrence",
-            "MTTR_Drag_Risk": "MTTR Drag",
-            "Reopen_Churn_Risk": "Reopen Churn",
-            "Change_Collision_Risk": "Change Collision",
-        }
-    )
-    hm = hm.apply(pd.to_numeric, errors="coerce").fillna(0.0)
-
-    fig = plt.figure(figsize=(6.8, 3.9), dpi=180)
-    ax = plt.gca()
-    im = ax.imshow(hm.values, aspect="auto", vmin=0, vmax=100)
-    ax.set_xticks(range(len(hm.columns)))
-    ax.set_xticklabels(list(hm.columns), fontsize=8)
-    ax.set_yticks(range(len(hm.index)))
-    ax.set_yticklabels(list(hm.index), fontsize=8)
-    ax.set_title("Service Stability Heatmap", fontsize=11)
-
-    for i in range(hm.shape[0]):
-        for j in range(hm.shape[1]):
-            ax.text(j, i, f"{int(round(float(hm.iat[i, j]), 0))}", ha="center", va="center", fontsize=8)
-
-    cbar = plt.colorbar(im, ax=ax, fraction=0.03, pad=0.02)
-    cbar.set_label("Risk Score", fontsize=8)
-    cbar.ax.tick_params(labelsize=7)
-
-    img = io.BytesIO()
-    plt.tight_layout()
-    plt.savefig(img, format="png", bbox_inches="tight")
-    plt.close(fig)
-    img.seek(0)
-    return img
-
-
-def _posture_signal_text(bvsi: float, posture: str) -> str:
-    if bvsi >= 85:
-        return f"Operational stability is currently <b>{posture}</b>, with a BVSI™ score of {bvsi:.1f}. Technology operations are broadly supporting business confidence, though targeted prevention can strengthen resilience further."
-    if bvsi >= 70:
-        return f"Operational stability is currently <b>{posture}</b>, with a BVSI™ score of {bvsi:.1f}. Control exists across most operational dimensions, though localized weaknesses remain that could limit reliability at scale."
-    if bvsi >= 55:
-        return f"Operational stability is currently <b>{posture}</b>, with a BVSI™ score of {bvsi:.1f}. Governance mechanisms are functioning, but recurring instability patterns remain across higher-impact services."
-    if bvsi >= 40:
-        return f"Operational stability is currently <b>{posture}</b>, with a BVSI™ score of {bvsi:.1f}. Operational exposure is visible and likely affecting service confidence, efficiency, or customer experience."
-    return f"Operational stability is currently <b>{posture}</b>, with a BVSI™ score of {bvsi:.1f}. Immediate executive attention is warranted to contain structural instability and protect business performance."
-
-
-def _bvsi_scale_table(styles) -> Table:
-    df = pd.DataFrame(
-        [
-            ["85–100", "High Confidence Operations", "Technology stability supports business growth and executive confidence."],
-            ["70–84", "Controlled and Improving", "Core controls exist; targeted improvement can increase resilience and scale-readiness."],
-            ["55–69", "Controlled but Exposed", "Operational control exists, but recurring instability still creates material exposure."],
-            ["40–54", "Reactive and Exposed", "Instability is visible and may be impacting reliability, cost, or customer experience."],
-            ["<40", "Fragile Operations", "Operational fragility is high and stabilization should be treated as an executive priority."],
-        ],
-        columns=["BVSI™ Range", "Operating Condition", "Executive Meaning"],
-    )
-    return _paragraph_table(df, [1.0 * inch, 2.0 * inch, 4.35 * inch], styles)
-
-
-def _domain_definitions_table(domain_scores: Dict[str, float], styles) -> Table:
-    rows = [
-        ["Service Resilience", f'{round(_safe_float(domain_scores.get("Service Resilience", 0.0)), 1)}', "Ability to recover quickly and consistently from incidents."],
-        ["Change Governance", f'{round(_safe_float(domain_scores.get("Change Governance", 0.0)), 1)}', "Effectiveness of controls preventing operational instability during change activity."],
-        ["Structural Risk Debt™", f'{round(_safe_float(domain_scores.get("Structural Risk Debt™", 0.0)), 1)}', "Accumulated instability caused by unresolved recurring weaknesses and operational debt."],
-        ["Reliability Momentum", f'{round(_safe_float(domain_scores.get("Reliability Momentum", 0.0)), 1)}', "Direction of operational reliability based on recurring instability and recovery behavior."],
-    ]
-    df = pd.DataFrame(rows, columns=["Domain", "Score", "What It Means"])
-    return _paragraph_table(df, [2.0 * inch, 0.7 * inch, 4.65 * inch], styles)
-
-
-def _top_three_briefs(sip_candidates: pd.DataFrame) -> pd.DataFrame:
-    df = _safe_df(sip_candidates)
-    if df.empty:
-        return pd.DataFrame(columns=["Initiative", "Why Leadership Should Care"])
-
-    brief_rows = []
-    for _, row in df.head(3).iterrows():
-        svc = str(row.get("Service", "Unknown Service"))
-        tier = str(row.get("Service_Tier", "Unknown Tier"))
-        theme = str(row.get("Suggested_Theme", "Stability Improvement"))
-        why = str(row.get("Why_Flagged", "Elevated operational instability"))
-        brief_rows.append({"Initiative": f"{svc} ({tier}) — {theme}", "Why Leadership Should Care": why})
-    return pd.DataFrame(brief_rows)
-
-
-def _key_takeaways(domain_scores: Dict[str, float], sip_candidates: pd.DataFrame) -> pd.DataFrame:
-    strongest = max(domain_scores.items(), key=lambda x: x[1])[0] if domain_scores else "Service Resilience"
-    weakest = min(domain_scores.items(), key=lambda x: x[1])[0] if domain_scores else "Structural Risk Debt™"
-
-    top_service = "No service identified"
-    priority_label = "Monitor"
-    if isinstance(sip_candidates, pd.DataFrame) and not sip_candidates.empty:
-        top_service = str(sip_candidates.iloc[0].get("Service", top_service))
-        priority_label = str(sip_candidates.iloc[0].get("Priority_Label", priority_label))
-
-    rows = [
-        {"Key Takeaway": f"Operational strength is most visible in {strongest}, which currently provides the strongest stability support."},
-        {"Key Takeaway": f"The primary exposure area is {weakest}, and it should anchor near-term stabilization decisions."},
-        {"Key Takeaway": f"{top_service} is the leading service candidate for action and is currently classified as {priority_label}."},
-    ]
+def _problem_signals_by_service(inc: pd.DataFrame, probs: pd.DataFrame) -> pd.DataFrame:
+    services = pd.Series(inc["Service_Anchor"].dropna().unique(), name="Service_Anchor")
+    rows = []
+    for svc in services:
+        inc_svc = inc[inc["Service_Anchor"] == svc]
+        incident_count = len(inc_svc)
+        linked_ratio = inc_svc["Problem_ID"].notna().mean() if "Problem_ID" in inc_svc.columns else 0.0
+        prob_svc = probs[probs["Service_Anchor"] == svc] if probs is not None and not probs.empty else pd.DataFrame()
+        if prob_svc.empty:
+            rca_rate = known_error_rate = workaround_rate = permanent_fix_rate = open_problem_penalty = 0.0
+        else:
+            rca_rate = prob_svc["RCA_Completed_Flag"].mean() if "RCA_Completed_Flag" in prob_svc.columns else 0.0
+            known_error_rate = prob_svc["Known_Error_Flag"].mean() if "Known_Error_Flag" in prob_svc.columns else 0.0
+            workaround_rate = prob_svc["Workaround_Available"].mean() if "Workaround_Available" in prob_svc.columns else 0.0
+            permanent_fix_rate = prob_svc["Permanent_Fix_Flag"].mean() if "Permanent_Fix_Flag" in prob_svc.columns else 0.0
+            state = prob_svc["State"].astype(str).str.lower() if "State" in prob_svc.columns else pd.Series(dtype=str)
+            open_problem_penalty = (~state.isin(["closed","resolved","complete","completed"])).mean() if not state.empty else 0.0
+        missing_problem_penalty = (1.0 - linked_ratio) * min(incident_count * 0.08, 1.0)
+        missing_rca_penalty = 1.0 - rca_rate
+        weak_fix_penalty = 1.0 - max(permanent_fix_rate, workaround_rate, known_error_rate)
+        problem_gap_risk = 0.35 * missing_problem_penalty * 100.0 + 0.30 * missing_rca_penalty * 100.0 + 0.20 * weak_fix_penalty * 100.0 + 0.15 * open_problem_penalty * 100.0
+        rows.append({"Service_Anchor": svc,"Problem_Gap_Risk": round(float(min(problem_gap_risk,100.0)),1),"RCA_Completion_Rate": round(float(rca_rate*100.0),1),"Known_Error_Rate": round(float(known_error_rate*100.0),1),"Workaround_Rate": round(float(workaround_rate*100.0),1),"Permanent_Fix_Rate": round(float(permanent_fix_rate*100.0),1)})
     return pd.DataFrame(rows)
 
-
-def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
-    styles = _styles()
-    out = io.BytesIO()
-
-    doc = SimpleDocTemplate(
-        out,
-        pagesize=LETTER,
-        rightMargin=0.55 * inch,
-        leftMargin=0.55 * inch,
-        topMargin=0.45 * inch,
-        bottomMargin=0.55 * inch,
-    )
-
-    tenant_name = str(payload.get("tenant_name", "Default"))
-    as_of = str(payload.get("as_of", ""))
-    bvsi = _safe_float(payload.get("bvsi", 0.0))
-    posture = str(payload.get("posture", "Unknown"))
-    executive_interpretation = _clean_text(payload.get("executive_interpretation", ""))
-
-    domain_scores = payload.get("domain_scores", {}) or {}
-    service_risk_top10 = _safe_df(payload.get("service_risk_top10"))
-    sip_candidates = _safe_df(payload.get("sip_candidates"))
-
-    detected_dataset = str(payload.get("detected_dataset", "unknown")).upper()
-    service_anchor_used = str(payload.get("service_anchor_used", "None"))
-    data_readiness_score = _safe_float(payload.get("data_readiness_score", 0.0))
-
-    story = []
-
-    # Page 1
-    story.append(Paragraph("OSIL™ by Xentrixus", styles["OSIL_Title"]))
-    story.append(Paragraph(f"Operational Stability Intelligence Report — {tenant_name}", styles["OSIL_Subtitle"]))
-    story.append(Paragraph(f"As of {as_of}", styles["OSIL_Small"]))
-    story.append(Spacer(1, 6))
-
-    story.append(_header_band("Executive Brief"))
-    story.append(_accent_rule())
-    story.append(Spacer(1, 10))
-
-    metric_row = Table(
-        [[_kpi_box("BVSI™ Score", f"{bvsi:.1f}"), _kpi_box("Operating Posture", posture), _kpi_box("Data Readiness", f"{data_readiness_score:.1f}%")]],
-        colWidths=[2.45 * inch, 2.45 * inch, 2.45 * inch],
-    )
-    metric_row.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP")]))
-    story.append(metric_row)
-
-    story.append(Spacer(1, 10))
-    story.append(Paragraph("BVSI™ Interpretation", styles["OSIL_Section"]))
-    story.append(_bvsi_scale_table(styles))
-
-    story.append(Spacer(1, 10))
-    story.append(_signal_box("Executive Signal", _posture_signal_text(bvsi, posture), styles=styles))
-
-    story.append(Spacer(1, 10))
-    story.append(Paragraph("Executive Summary", styles["OSIL_Section"]))
-    story.append(Paragraph(executive_interpretation, styles["OSIL_Body"]))
-
-    story.append(Spacer(1, 10))
-    story.append(Paragraph("Key Takeaways", styles["OSIL_Section"]))
-    story.append(_paragraph_table(_key_takeaways(domain_scores, sip_candidates), [7.2 * inch], styles))
-
-    story.append(Spacer(1, 8))
-    story.append(Paragraph(f"Detected dataset: {detected_dataset} • Service anchor used: {service_anchor_used} • Organization: {tenant_name}", styles["OSIL_Small"]))
-
-    # Page 2
-    story.append(PageBreak())
-    story.append(_header_band("Operational Stability Profile"))
-    story.append(_accent_rule())
-    story.append(Spacer(1, 10))
-    story.append(Paragraph("How to read this chart: higher scores indicate stronger operational stability. The radar shows current performance across service resilience, change governance, structural risk debt, and reliability momentum.", styles["OSIL_Body"]))
-    story.append(Spacer(1, 10))
-    story.append(Image(_build_radar_image(domain_scores), width=4.75 * inch, height=4.4 * inch))
-    story.append(Spacer(1, 8))
-    story.append(Paragraph("Domain Scores", styles["OSIL_Section"]))
-    story.append(_domain_definitions_table(domain_scores, styles))
-    story.append(Paragraph("Score guide: 80–100 = strong maturity; 60–79 = controlled but improving; 40–59 = operational weakness; below 40 = structural instability.", styles["OSIL_Small"]))
-
-    # Page 3
-    story.append(PageBreak())
-    story.append(_header_band("Service Improvement Priorities"))
-    story.append(_accent_rule())
-    story.append(Spacer(1, 10))
-    story.append(Paragraph("These represent the highest-impact stability improvements for the next 30–60 days. They should be used to guide leadership briefing, ownership alignment, and targeted operational remediation.", styles["OSIL_Body"]))
-    story.append(Spacer(1, 10))
-    story.append(Paragraph("Top 3 Initiatives to Brief Leadership", styles["OSIL_Section"]))
-    story.append(_paragraph_table(_top_three_briefs(sip_candidates), [3.2 * inch, 4.0 * inch], styles))
-    story.append(Spacer(1, 12))
-    story.append(Paragraph("Detailed SIP Candidates", styles["OSIL_Section"]))
-    detailed = sip_candidates.head(10).copy()
-    if not detailed.empty:
-        widths = [7.0 / max(len(detailed.columns), 1) * inch] * len(detailed.columns)
-        story.append(_paragraph_table(detailed, widths, styles))
+def _build_rollup(inc: pd.DataFrame, changes: pd.DataFrame, probs: pd.DataFrame) -> pd.DataFrame:
+    base = inc.groupby("Service_Anchor", dropna=False).agg(
+        recurrence=("Service_Anchor","count"),
+        reopen_rate=("Reopened_Flag","mean"),
+        change_collision_rate=("Change_Collision_Flag","mean"),
+        mttr_hours=("MTTR_Hours","mean"),
+        avg_priority_weight=("Priority_Weight","mean"),
+        tier=("Service_Tier", lambda x: _first_non_null_mode(x, "Unspecified")),
+        category=("Category", lambda x: _first_non_null_mode(x, "Stability Improvement")),
+    ).reset_index()
+    if changes is not None and not changes.empty:
+        chg_roll = changes.groupby("Service_Anchor", dropna=False).agg(
+            change_count=("Change_ID","nunique"),
+            failed_change_rate=("Failed_Flag","mean"),
+            rollback_rate=("Rollback_Flag","mean"),
+        ).reset_index()
+        base = base.merge(chg_roll, on="Service_Anchor", how="left")
     else:
-        story.append(_paragraph_table(detailed, [7.0 * inch], styles))
+        base["change_count"] = base["failed_change_rate"] = base["rollback_rate"] = 0.0
+    problem_roll = _problem_signals_by_service(inc, probs)
+    base = base.merge(problem_roll, on="Service_Anchor", how="left")
+    for c in ["change_count","failed_change_rate","rollback_rate","Problem_Gap_Risk","RCA_Completion_Rate","Known_Error_Rate","Workaround_Rate","Permanent_Fix_Rate"]:
+        base[c] = pd.to_numeric(base[c], errors="coerce").fillna(0.0)
+    base["mttr_hours"] = pd.to_numeric(base["mttr_hours"], errors="coerce").fillna(0.0)
+    return base
 
-    # Page 4
-    story.append(PageBreak())
-    story.append(_header_band("Service Stability Heatmap (Top 10 Services by Risk)"))
-    story.append(_accent_rule())
-    story.append(Spacer(1, 10))
-    story.append(Paragraph("Executive view: Service × Stability Risk across recurrence, MTTR drag, reopen churn, and change collision. This visual helps leadership identify where concentrated instability is likely to create operational exposure.", styles["OSIL_Body"]))
-    story.append(Spacer(1, 10))
-    hm_img = _build_heatmap_image(service_risk_top10)
-    if hm_img is not None:
-        story.append(Image(hm_img, width=6.8 * inch, height=4.2 * inch))
-    else:
-        story.append(Paragraph("No service risk data available.", styles["OSIL_Body"]))
+def _build_service_risk_df(roll: pd.DataFrame, top_n: int = 10) -> pd.DataFrame:
+    if roll.empty:
+        return pd.DataFrame(columns=["Service","Service_Tier","Recurrence_Risk","MTTR_Drag_Risk","Reopen_Churn_Risk","Change_Collision_Risk","Problem_Gap_Risk","Total_Service_Risk"])
+    rec = _normalize_0_100(roll["recurrence"] * roll["avg_priority_weight"])
+    mttr = _normalize_0_100(roll["mttr_hours"])
+    reopen = _normalize_0_100(roll["reopen_rate"] * 100)
+    change = _normalize_0_100((roll["change_collision_rate"] * 70) + (roll["failed_change_rate"] * 20) + (roll["rollback_rate"] * 10))
+    problem = _normalize_0_100(roll["Problem_Gap_Risk"])
+    out = pd.DataFrame({"Service": roll["Service_Anchor"].astype(str),"Service_Tier": roll["tier"].fillna("Unspecified").astype(str),"Recurrence_Risk": rec.round(1),"MTTR_Drag_Risk": mttr.round(1),"Reopen_Churn_Risk": reopen.round(1),"Change_Collision_Risk": change.round(1),"Problem_Gap_Risk": problem.round(1)})
+    out["Total_Service_Risk"] = (0.28*out["Recurrence_Risk"] + 0.24*out["MTTR_Drag_Risk"] + 0.14*out["Reopen_Churn_Risk"] + 0.17*out["Change_Collision_Risk"] + 0.17*out["Problem_Gap_Risk"]).round(1)
+    return out.sort_values("Total_Service_Risk", ascending=False).head(top_n).reset_index(drop=True)
 
-    doc.build(story, onFirstPage=_footer, onLaterPages=_footer)
-    out.seek(0)
-    return out.getvalue()
+def _build_domain_scores(service_risk_df: pd.DataFrame) -> Dict[str,float]:
+    if service_risk_df.empty:
+        return {"Service Resilience":0.0,"Change Governance":0.0,"Structural Risk Debt™":0.0,"Reliability Momentum":0.0}
+    service_resilience = np.clip(100 - (0.60*service_risk_df["MTTR_Drag_Risk"].mean() + 0.40*service_risk_df["Reopen_Churn_Risk"].mean()), 0, 100)
+    change_governance = np.clip(100 - service_risk_df["Change_Collision_Risk"].mean(), 0, 100)
+    structural_risk_debt = np.clip(100 - (0.55*service_risk_df["Recurrence_Risk"].mean() + 0.45*service_risk_df["Problem_Gap_Risk"].mean()), 0, 100)
+    reliability_momentum = np.clip(100 - (0.35*service_risk_df["Recurrence_Risk"].mean() + 0.30*service_risk_df["MTTR_Drag_Risk"].mean() + 0.15*service_risk_df["Reopen_Churn_Risk"].mean() + 0.20*service_risk_df["Change_Collision_Risk"].mean()), 0, 100)
+    return {"Service Resilience": round(float(service_resilience),1),"Change Governance": round(float(change_governance),1),"Structural Risk Debt™": round(float(structural_risk_debt),1),"Reliability Momentum": round(float(reliability_momentum),1)}
+
+def _build_sip_candidates(service_risk_df: pd.DataFrame, roll: pd.DataFrame, top_n: int = 10) -> pd.DataFrame:
+    if service_risk_df.empty:
+        return pd.DataFrame(columns=["Service","Service_Tier","Suggested_Theme","SIP_Priority_Score","Priority_Label","Why_Flagged"])
+    merged = service_risk_df.merge(roll[["Service_Anchor","category","RCA_Completion_Rate","Permanent_Fix_Rate"]], left_on="Service", right_on="Service_Anchor", how="left")
+    merged["SIP_Priority_Score"] = (0.65*merged["Total_Service_Risk"] + 0.20*merged["Problem_Gap_Risk"] + 0.10*(100-merged["RCA_Completion_Rate"].fillna(0)) + 0.05*(100-merged["Permanent_Fix_Rate"].fillna(0))).round(1)
+    def _label(score: float) -> str:
+        if score >= 70: return "Next SIP"
+        if score >= 45: return "Monitor"
+        return "Backlog"
+    def _why(row: pd.Series) -> str:
+        parts = []
+        if _safe_float(row.get("Recurrence_Risk",0)) >= 60: parts.append("high recurrence")
+        if _safe_float(row.get("MTTR_Drag_Risk",0)) >= 60: parts.append("MTTR drag")
+        if _safe_float(row.get("Change_Collision_Risk",0)) >= 60: parts.append("change instability")
+        if _safe_float(row.get("Problem_Gap_Risk",0)) >= 60: parts.append("structural learning gap")
+        if _safe_float(row.get("RCA_Completion_Rate",100)) < 40: parts.append("low RCA completion")
+        return " + ".join(parts) if parts else "multi-factor stability exposure"
+    merged["Priority_Label"] = merged["SIP_Priority_Score"].apply(_label)
+    merged["Suggested_Theme"] = merged["category"].fillna("Stability Improvement").astype(str)
+    merged["Why_Flagged"] = merged.apply(_why, axis=1)
+    return merged[["Service","Service_Tier","Suggested_Theme","SIP_Priority_Score","Priority_Label","Why_Flagged"]].sort_values("SIP_Priority_Score", ascending=False).head(top_n).reset_index(drop=True)
+
+def run_osil(incidents_df: pd.DataFrame, changes_df: Optional[pd.DataFrame]=None, problems_df: Optional[pd.DataFrame]=None) -> Dict[str,Any]:
+    inc, anchor_used = _prepare_incidents(incidents_df)
+    chg = _prepare_changes(changes_df)
+    prb = _prepare_problems(problems_df)
+    inc = _detect_change_collision(inc, chg)
+    roll = _build_rollup(inc, chg, prb)
+    service_risk_df = _build_service_risk_df(roll, top_n=10)
+    domain_scores = _build_domain_scores(service_risk_df)
+    bvsi = round(float(np.mean(list(domain_scores.values()))),1) if domain_scores else 0.0
+    posture = _operating_posture(bvsi)
+    weakest_domain = min(domain_scores.items(), key=lambda x: x[1])[0] if domain_scores else "Service Resilience"
+    incident_signal = "Incident restoration efficiency appears controlled." if domain_scores["Service Resilience"] >= 70 else "Incident restoration signals show visible drag."
+    problem_signal = "Structural learning signals are improving." if domain_scores["Structural Risk Debt™"] >= 70 else "Structural learning signals remain inconsistent."
+    change_signal = "Change governance appears steady." if domain_scores["Change Governance"] >= 70 else "Change-driven instability is contributing to exposure."
+    exec_text = _executive_interpretation(bvsi, posture, weakest_domain, f"{incident_signal} {problem_signal} {change_signal}")
+    sip_view = _build_sip_candidates(service_risk_df, roll, top_n=10)
+    close_candidates = []
+    if "Resolved_Date" in inc.columns and isinstance(inc["Resolved_Date"], pd.Series) and inc["Resolved_Date"].notna().any():
+        close_candidates.append(inc["Resolved_Date"].max())
+    if "Closed_Date" in inc.columns and isinstance(inc["Closed_Date"], pd.Series) and inc["Closed_Date"].notna().any():
+        close_candidates.append(inc["Closed_Date"].max())
+    as_of = str(max(close_candidates).date()) if close_candidates else date.today().isoformat()
+    readiness_checks = 0
+    readiness_total = 8
+    readiness_checks += 1 if "Service" in inc.columns or "Service_Anchor" in inc.columns else 0
+    readiness_checks += 1 if "Opened_Date" in inc.columns else 0
+    readiness_checks += 1 if "Priority" in inc.columns else 0
+    readiness_checks += 1 if ("Resolved_Date" in inc.columns or "Closed_Date" in inc.columns) else 0
+    readiness_checks += 1 if "Reopened_Flag" in inc.columns else 0
+    readiness_checks += 1 if changes_df is not None and not changes_df.empty else 0
+    readiness_checks += 1 if problems_df is not None and not problems_df.empty else 0
+    readiness_checks += 1 if problems_df is not None and not problems_df.empty and "Root_Cause" in problems_df.columns else 0
+    readiness_score = round((readiness_checks/readiness_total)*100,1)
+    practice_parts = ["INCIDENT"]
+    if changes_df is not None and not changes_df.empty: practice_parts.append("CHANGE")
+    if problems_df is not None and not problems_df.empty: practice_parts.append("PROBLEM")
+    return {
+        "source_label":"",
+        "practice_type":" + ".join(practice_parts),
+        "anchor_used":anchor_used,
+        "readiness_score":readiness_score,
+        "bvsi":bvsi,
+        "posture":posture,
+        "gap":weakest_domain,
+        "as_of":as_of,
+        "exec_text":exec_text,
+        "domain_scores":domain_scores,
+        "service_risk_df":service_risk_df.copy(),
+        "top10":service_risk_df.copy(),
+        "sip_view":sip_view.copy(),
+        "tenant_name":"Default",
+        "preview_df":inc.head(20).copy(),
+        "incidents_enriched":inc.copy(),
+        "changes_prepared":chg.copy(),
+        "problems_prepared":prb.copy(),
+    }
