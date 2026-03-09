@@ -1,4 +1,4 @@
-"""OSIL Streamlit Application - Fixed Version"""
+"""OSIL Streamlit Application - Complete Fixed Version"""
 import os
 from difflib import get_close_matches
 from typing import Dict, List, Optional, Tuple
@@ -417,18 +417,18 @@ def render_service_instability_leaders(service_risk_df: pd.DataFrame) -> None:
         )
 
 def _build_pdf_payload(results: dict, tenant_name: str) -> dict:
-    """Build payload for PDF generator with proper error handling"""
+    """Build payload for PDF generator with all required fields"""
     return {
-        "bvsi": results["bvsi"],
-        "posture": results["posture"],
-        "as_of": results["as_of"],
-        "executive_interpretation": results["exec_text"],
-        "domain_scores": results["domain_scores"],
-        "service_risk_top10": results["top10"],
-        "sip_candidates": results["sip_view"],
-        "data_readiness_score": results["readiness_score"],
-        "service_anchor_used": results["anchor_used"],
-        "detected_dataset": results["practice_type"],
+        "bvsi": results.get("bvsi", 0.0),
+        "posture": results.get("posture", "Unknown"),
+        "as_of": results.get("as_of", ""),
+        "executive_interpretation": results.get("exec_text", ""),
+        "domain_scores": results.get("domain_scores", {}),
+        "service_risk_top10": results.get("top10", pd.DataFrame()),
+        "sip_candidates": results.get("sip_view", pd.DataFrame()),
+        "data_readiness_score": results.get("readiness_score", 0.0),
+        "service_anchor_used": results.get("anchor_used", "None"),
+        "detected_dataset": results.get("practice_type", "unknown"),
         "tenant_name": tenant_name,
     }
 
@@ -571,7 +571,7 @@ def main():
         results["tenant_name"] = tenant_name
     except Exception as e:
         st.error(f"Run failed: {e}")
-        st.exception(e)  # Show full traceback for debugging
+        st.exception(e)
         return
     
     # Display metrics
@@ -698,7 +698,7 @@ def main():
         st.success("PDF generated successfully!")
     except Exception as e:
         st.error(f"PDF generation failed: {e}")
-        st.exception(e)  # Show detailed error for debugging
+        st.exception(e)
 
 if __name__ == "__main__":
     main()
