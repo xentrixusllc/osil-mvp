@@ -195,9 +195,26 @@ PROBLEM_MAPPING_SPEC = {
 }
 
 
+def safe_read_csv(file_or_path):
+    encodings = ["utf-8", "utf-8-sig", "cp1252", "latin1", "utf-16"]
+    last_error = None
+
+    for enc in encodings:
+        try:
+            if isinstance(file_or_path, str):
+                return pd.read_csv(file_or_path, encoding=enc, engine="python")
+            file_or_path.seek(0)
+            return pd.read_csv(file_or_path, encoding=enc, engine="python")
+        except Exception as e:
+            last_error = e
+            continue
+
+    raise ValueError(f"Unable to read CSV file. Unsupported encoding or malformed CSV. Last error: {last_error}")
+
+
 def _safe_read_csv(path: str) -> pd.DataFrame:
     if os.path.exists(path):
-        return pd.read_csv(path)
+        return safe_read_csv(path)
     return pd.DataFrame()
 
 
@@ -453,7 +470,7 @@ def main():
 
         if inc_file is not None:
             try:
-                inc_preview = pd.read_csv(inc_file)
+                inc_preview = safe_read_csv(inc_file)
                 inc_file.seek(0)
                 st.markdown("### Incident Mapping")
                 inc_mapping = _render_mapping_ui(inc_preview, INCIDENT_MAPPING_SPEC, "Map Incident Columns", "incmap")
@@ -465,7 +482,7 @@ def main():
 
         if chg_file is not None:
             try:
-                chg_preview = pd.read_csv(chg_file)
+                chg_preview = safe_read_csv(chg_file)
                 chg_file.seek(0)
                 st.markdown("### Change Mapping")
                 chg_mapping = _render_mapping_ui(chg_preview, CHANGE_MAPPING_SPEC, "Map Change Columns", "chgmap")
@@ -477,7 +494,7 @@ def main():
 
         if prb_file is not None:
             try:
-                prb_preview = pd.read_csv(prb_file)
+                prb_preview = safe_read_csv(prb_file)
                 prb_file.seek(0)
                 st.markdown("### Problem Mapping")
                 prb_mapping = _render_mapping_ui(prb_preview, PROBLEM_MAPPING_SPEC, "Map Problem Columns", "prbmap")
@@ -508,17 +525,17 @@ def main():
                 return
 
             try:
-                incidents_df = pd.read_csv(inc_file)
+                incidents_df = safe_read_csv(inc_file)
                 incidents_df = _apply_mapping(incidents_df, inc_mapping)
 
                 if chg_file is not None:
-                    changes_df = pd.read_csv(chg_file)
+                    changes_df = safe_read_csv(chg_file)
                     changes_df = _apply_mapping(changes_df, chg_mapping)
                 else:
                     changes_df = pd.DataFrame()
 
                 if prb_file is not None:
-                    problems_df = pd.read_csv(prb_file)
+                    problems_df = safe_read_csv(prb_file)
                     problems_df = _apply_mapping(problems_df, prb_mapping)
                 else:
                     problems_df = pd.DataFrame()
@@ -591,26 +608,46 @@ def main():
     top10 = results["top10"].copy()
 
     if top10 is not None and not top10.empty:
-        hm = top10.set_index(top10["Service"] + " (" + top10["Service_Tier"] + ")")[
-            ["Recurrence_Risk", "MTTR_Drag_Risk", "Reopen_Churn_Risk", "Change_Collision_Risk"]
-        ].rename(columns={
-            "Recurrence_Risk": "Recurrence",
-            "MTTR_Drag_Risk": "MTTR Drag",
-            "Reopen_Churn_Risk": "Reopen Churn",
-            "Change_Collision_Risk": "Change Collision",
-        })
-        hm = hm.apply(pd.to_numeric, errors="coerce").replace([np.inf, -np.inf], np.nan).fillna(0.0)
+        heatmap_df = top10.copy()
 
-        st.markdown("### Service Stability Heatmap (Top 10 Services by Risk)")
-        hm_fig = heatmap_chart(hm)
-        hc1, hc2, hc3 = st.columns([1, 2, 1])
-        with hc2:
-            st.pyplot(hm_fig, use_container_width=False)
+        if "Service" in heatmap_df.columns:
+            if "Service_Tier" not in heatmap_df.columns:
+                heatmap_df["Service_Tier"] = "Unspecified"
 
-        st.caption(
-            "How to read: services with consistently high values across multiple columns usually represent the strongest candidates "
-            "for leadership attention or SIP execution."
-        )
+            required_risk_cols = [
+                "Recurrence_Risk",
+                "MTTR_Drag_Risk",
+                "Reopen_Churn_Risk",
+                "Change_Collision_Risk",
+            ]
+
+            for col in required_risk_cols:
+                if col not in heatmap_df.columns:
+                    heatmap_df[col] = 0.0
+
+            hm = heatmap_df.set_index(
+                heatmap_df["Service"].astype(str) + " (" + heatmap_df["Service_Tier"].astype(str) + ")"
+            )[required_risk_cols].rename(
+                columns={
+                    "Recurrence_Risk": "Recurrence",
+                    "MTTR_Drag_Risk": "MTTR Drag",
+                    "Reopen_Churn_Risk": "Reopen Churn",
+                    "Change_Collision_Risk": "Change Collision",
+                }
+            )
+
+            hm = hm.apply(pd.to_numeric, errors="coerce").replace([np.inf, -np.inf], np.nan).fillna(0.0)
+
+            st.markdown("### Service Stability Heatmap (Top 10 Services by Risk)")
+            hm_fig = heatmap_chart(hm)
+            hc1, hc2, hc3 = st.columns([1, 2, 1])
+            with hc2:
+                st.pyplot(hm_fig, use_container_width=False)
+
+            st.caption(
+                "How to read: services with consistently high values across multiple columns usually represent the strongest candidates "
+                "for leadership attention or SIP execution."
+            )
 
         st.markdown("**Top 10 Services — Risk Breakdown**")
         st.dataframe(top10, use_container_width=True)
