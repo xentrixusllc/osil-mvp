@@ -28,32 +28,6 @@ DEMO_PROBLEMS = "data/demo_problems.csv"
 
 
 # ============================================================
-# Robust CSV handling
-# ============================================================
-def safe_read_csv(file_or_path):
-    """
-    Robust CSV reader for Excel / enterprise exports with mixed encodings.
-    Supports uploaded files and filesystem paths.
-    """
-    encodings = ["utf-8", "utf-8-sig", "cp1252", "latin1", "utf-16"]
-
-    last_error = None
-
-    for enc in encodings:
-        try:
-            if isinstance(file_or_path, str):
-                return pd.read_csv(file_or_path, encoding=enc, engine="python")
-            else:
-                file_or_path.seek(0)
-                return pd.read_csv(file_or_path, encoding=enc, engine="python")
-        except Exception as e:
-            last_error = e
-            continue
-
-    raise ValueError(f"Unable to read CSV file. Unsupported encoding or malformed CSV. Last error: {last_error}")
-
-
-# ============================================================
 # Mapping configuration
 # ============================================================
 INCIDENT_MAPPING_SPEC = {
@@ -270,7 +244,7 @@ PROBLEM_MAPPING_SPEC = {
 # ============================================================
 def _safe_read_csv(path: str) -> pd.DataFrame:
     if os.path.exists(path):
-        return safe_read_csv(path)
+        return pd.read_csv(path)
     return pd.DataFrame()
 
 
@@ -620,7 +594,7 @@ def main():
 
         if inc_file is not None:
             try:
-                inc_preview = safe_read_csv(inc_file)
+                inc_preview = pd.read_csv(inc_file)
                 inc_file.seek(0)
             except Exception as e:
                 st.error(f"Could not read Incident CSV: {e}")
@@ -628,7 +602,7 @@ def main():
 
         if chg_file is not None:
             try:
-                chg_preview = safe_read_csv(chg_file)
+                chg_preview = pd.read_csv(chg_file)
                 chg_file.seek(0)
             except Exception as e:
                 st.error(f"Could not read Change CSV: {e}")
@@ -636,7 +610,7 @@ def main():
 
         if prb_file is not None:
             try:
-                prb_preview = safe_read_csv(prb_file)
+                prb_preview = pd.read_csv(prb_file)
                 prb_file.seek(0)
             except Exception as e:
                 st.error(f"Could not read Problem CSV: {e}")
@@ -717,9 +691,9 @@ def main():
                 return
 
             try:
-                incidents_df = _apply_mapping(safe_read_csv(inc_file), inc_mapping)
-                changes_df = _apply_mapping(safe_read_csv(chg_file), chg_mapping) if chg_file is not None else pd.DataFrame()
-                problems_df = _apply_mapping(safe_read_csv(prb_file), prb_mapping) if prb_file is not None else pd.DataFrame()
+                incidents_df = _apply_mapping(pd.read_csv(inc_file), inc_mapping)
+                changes_df = _apply_mapping(pd.read_csv(chg_file), chg_mapping) if chg_file is not None else pd.DataFrame()
+                problems_df = _apply_mapping(pd.read_csv(prb_file), prb_mapping) if prb_file is not None else pd.DataFrame()
                 source_label = f"Upload ({inc_file.name})"
                 run_requested = True
             except Exception as e:
