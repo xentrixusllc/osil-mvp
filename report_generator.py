@@ -1,4 +1,4 @@
-"""OSIL Executive PDF Report Generator - Consulting Style"""
+"""OSIL Executive PDF Report Generator - Consulting Style Fixed"""
 import io
 import re
 from typing import Any, Dict, List, Optional
@@ -75,7 +75,7 @@ def _styles():
         ParagraphStyle(
             name="OSIL_Subtitle",
             parent=styles["BodyText"],
-            fontName="Helvetica-Light",
+            fontName="Helvetica",  # FIXED: removed -Light
             fontSize=12,
             leading=14,
             textColor=colors.HexColor("#64748B"),
@@ -391,20 +391,18 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
 
         story = []
 
-        # EXECUTIVE HEADER - McKinsey/Accenture Style
+        # EXECUTIVE HEADER
         story.append(Paragraph("OSIL™", styles["OSIL_Title"]))
-        story.append(Paragraph(f"Operational Stability Intelligence Report", styles["OSIL_Subtitle"]))
+        story.append(Paragraph("Operational Stability Intelligence Report", styles["OSIL_Subtitle"]))
         story.append(Paragraph(f"Prepared for: <b>{tenant_name}</b> | Report Date: {as_of} | Classification: Confidential", 
                               styles["OSIL_ReportMeta"]))
         
-        # Horizontal Rule
         story.append(_horizontal_rule(6.5*inch))
         story.append(Spacer(1, 20))
         
-        # Key Metrics Row - Horizontal Layout
+        # Key Metrics
         posture_color = _get_posture_color(bvsi)
         
-        # Create status badge
         status_badge = Table([[Paragraph(posture.upper(), ParagraphStyle(
             name='badge', fontName='Helvetica-Bold', fontSize=9, textColor=colors.white, alignment=1
         ))]], colWidths=[1.8*inch], rowHeights=[24])
@@ -414,7 +412,6 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
             ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
         ]))
         
-        # Three column layout for metrics
         metric_row = Table([
             [
                 Paragraph("BVSI™ SCORE", styles["OSIL_Label"]),
@@ -439,17 +436,15 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
         
         story.append(metric_row)
         story.append(Spacer(1, 8))
-        
-        # Assessment line
         story.append(_horizontal_rule(6.5*inch, "#CBD5E1"))
         story.append(Spacer(1, 12))
         
-        # Executive Summary Box
+        # Executive Summary
         story.append(Paragraph("Executive Summary", styles["OSIL_Section"]))
         story.append(Paragraph(exec_summary, styles["OSIL_Body"]))
         story.append(Spacer(1, 16))
         
-        # Key Insights in columns
+        # Key Insights
         story.append(Paragraph("Key Insights", styles["OSIL_SubSection"]))
         strongest = max(domain_scores.items(), key=lambda x: x[1])[0] if domain_scores else "N/A"
         weakest = min(domain_scores.items(), key=lambda x: x[1])[0] if domain_scores else "N/A"
@@ -484,7 +479,7 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
         story.append(Paragraph(f"<i>Data Sources: {detected_dataset} | Service Classification: {service_anchor}</i>", 
                               ParagraphStyle(name='meta', fontName='Helvetica', fontSize=8, textColor=colors.HexColor("#94A3B8"))))
 
-        # PAGE 2 - Stability Profile
+        # PAGE 2
         story.append(PageBreak())
         story.append(Paragraph("Stability Assessment", styles["OSIL_Section"]))
         story.append(Paragraph("Four-domain analysis of operational maturity.", styles["OSIL_Body"]))
@@ -510,7 +505,7 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
         ]
         story.append(_make_table(domain_data, [1.8*inch, 0.8*inch, 3.9*inch], styles))
 
-        # PAGE 3 - SIP Priorities
+        # PAGE 3
         story.append(PageBreak())
         story.append(Paragraph("Strategic Improvement Priorities", styles["OSIL_Section"]))
         story.append(Paragraph("30-60 day high-impact initiatives for executive action.", styles["OSIL_Body"]))
@@ -530,7 +525,7 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
             
             story.append(_make_table(sip_data, [0.5*inch, 1.6*inch, 0.7*inch, 1.2*inch, 0.9*inch, 1.6*inch], styles))
 
-        # PAGE 4 - Heatmap
+        # PAGE 4
         story.append(PageBreak())
         story.append(Paragraph("Risk Heatmap", styles["OSIL_Section"]))
         story.append(Paragraph("Service-level risk intensity. Red zones require immediate intervention.", styles["OSIL_Body"]))
