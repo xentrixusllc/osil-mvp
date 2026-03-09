@@ -1,4 +1,4 @@
-"""OSIL Executive PDF Report Generator - Executive Grade"""
+"""OSIL Executive PDF Report Generator - Final Fixed Version"""
 import io
 import re
 from typing import Any, Dict, List, Optional
@@ -40,7 +40,6 @@ def _clean_text(text: Any) -> str:
     s = str(text)
     s = re.sub(r"\*\*(.*?)\*\*", r"<b>\1</b>", s)
     s = s.replace("<br>", "<br/>").replace("<br />", "<br/>")
-    # Fix common spacing issues
     s = s.replace("™", "&trade;")
     return s
 
@@ -140,18 +139,6 @@ def _styles():
             textColor=colors.HexColor("#222222"),
         )
     )
-
-    styles.add(
-        ParagraphStyle(
-            name="OSIL_Metric",
-            parent=styles["BodyText"],
-            fontName="Helvetica-Bold",
-            fontSize=20,
-            leading=24,
-            textColor=colors.HexColor("#0A192F"),
-            alignment=1,  # Center
-        )
-    )
     
     return styles
 
@@ -162,6 +149,56 @@ def _footer(canvas, doc):
     canvas.drawString(0.6 * inch, 0.4 * inch, "OSIL™ by Xentrixus • Operational Stability Intelligence • Confidential")
     canvas.drawRightString(7.9 * inch, 0.4 * inch, f"Page {doc.page}")
     canvas.restoreState()
+
+def _metric_box(label, value, width):
+    """Create metric display box with proper text handling"""
+    val_len = len(str(value))
+    if val_len > 15:
+        val_size = 14
+        val_height = 35
+    elif val_len > 10:
+        val_size = 16
+        val_height = 40
+    else:
+        val_size = 20
+        val_height = 45
+    
+    lbl_style = ParagraphStyle(
+        name='metric_lbl', 
+        fontName='Helvetica', 
+        fontSize=10, 
+        textColor=colors.HexColor("#666666"), 
+        alignment=1,
+        leading=12
+    )
+    
+    val_style = ParagraphStyle(
+        name='metric_val', 
+        fontName='Helvetica-Bold', 
+        fontSize=val_size, 
+        textColor=colors.HexColor("#0A192F"), 
+        alignment=1,
+        leading=val_size + 2,
+        wordWrap='CJK'
+    )
+    
+    data = [
+        [Paragraph(str(label), lbl_style)],
+        [Paragraph(str(value), val_style)]
+    ]
+    
+    t = Table(data, colWidths=[width], rowHeights=[28, val_height])
+    t.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor("#F5F7FA")),
+        ('BOX', (0, 0), (-1, -1), 1.5, colors.HexColor("#0A192F")),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('TOPPADDING', (0, 0), (-1, 0), 6),
+        ('BOTTOMPADDING', (0, 1), (-1, 1), 6),
+        ('LEFTPADDING', (0, 0), (-1, -1), 8),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 8),
+    ]))
+    return t
 
 def _build_radar_image(domain_scores: Dict[str, float]) -> Optional[io.BytesIO]:
     try:
@@ -269,19 +306,17 @@ def _make_table(data, col_widths, styles, use_paragraphs=True):
         ]))
         return t
     
-    # Ensure uniform row length
     max_cols = max(len(row) for row in data)
     norm_data = []
     for i, row in enumerate(data):
         new_row = []
         for j, cell in enumerate(row):
-            if use_paragraphs and i > 0:  # Data rows use paragraphs for wrapping
+            if use_paragraphs and i > 0:
                 new_row.append(Paragraph(str(cell), styles["OSIL_TableCell"]))
-            elif i == 0:  # Header row
+            elif i == 0:
                 new_row.append(Paragraph(str(cell), styles["OSIL_TableHeader"]))
             else:
                 new_row.append(str(cell))
-        # Pad if needed
         while len(new_row) < max_cols:
             new_row.append("" if i > 0 else Paragraph("", styles["OSIL_TableHeader"]) if i == 0 else "")
         norm_data.append(new_row)
@@ -305,27 +340,12 @@ def _make_table(data, col_widths, styles, use_paragraphs=True):
         ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
     ]
     
-    # Alternating row colors for data
     if len(norm_data) > 1:
         for i in range(1, len(norm_data)):
             if i % 2 == 0:
                 style_commands.append(('BACKGROUND', (0, i), (-1, i), colors.HexColor("#F8FAFC")))
     
     t.setStyle(TableStyle(style_commands))
-    return t
-
-def _metric_box(label, value, width):
-    """Create metric display box"""
-    data = [[Paragraph(label, ParagraphStyle(name='lbl', fontName='Helvetica', fontSize=10, textColor=colors.HexColor("#666666"), alignment=1))],
-            [Paragraph(value, ParagraphStyle(name='val', fontName='Helvetica-Bold', fontSize=22, textColor=colors.HexColor("#0A192F"), alignment=1))]]
-    t = Table(data, colWidths=[width], rowHeights=[25, 45])
-    t.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor("#F5F7FA")),
-        ('BOX', (0, 0), (-1, -1), 1.5, colors.HexColor("#0A192F")),
-        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-        ('TOPPADDING', (0, 0), (-1, 0), 8),
-        ('BOTTOMPADDING', (0, 1), (-1, 1), 8),
-    ]))
     return t
 
 def _posture_text(bvsi, posture):
@@ -374,12 +394,12 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
         story.append(Paragraph(f"<i>Report Date: {as_of}</i>", styles["OSIL_Small"]))
         story.append(Spacer(1, 24))
         
-        # Metrics Row
+        # Metrics Row - Fixed spacing
         metric_row = Table(
-            [[_metric_box("BVSI™ Score", f"{bvsi:.1f}", 2.0*inch),
-              _metric_box("Operating Posture", posture, 2.0*inch),
-              _metric_box("Data Readiness", f"{readiness:.1f}%", 2.0*inch)]],
-            colWidths=[2.2*inch, 2.2*inch, 2.2*inch]
+            [[_metric_box("BVSI™ Score", f"{bvsi:.1f}", 2.1*inch),
+              _metric_box("Operating Posture", posture, 2.1*inch),
+              _metric_box("Data Readiness", f"{readiness:.1f}%", 2.1*inch)]],
+            colWidths=[2.3*inch, 2.3*inch, 2.3*inch]
         )
         metric_row.setStyle(TableStyle([('ALIGN', (0, 0), (-1, -1), 'CENTER'), ('VALIGN', (0, 0), (-1, -1), 'TOP')]))
         story.append(metric_row)
