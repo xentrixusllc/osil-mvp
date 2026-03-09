@@ -1,22 +1,23 @@
+"""OSIL Streamlit Application - Fixed Version"""
 import os
 from difflib import get_close_matches
 from typing import Dict, List, Optional, Tuple
-
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import streamlit as st
-
 from osil_engine import INCIDENT_REQUIRED_COLUMNS, run_osil
 from report_generator import build_osil_pdf_report
 
+# Fix: Set matplotlib backend for Streamlit compatibility
+plt.switch_backend('Agg')
 
 st.set_page_config(
     page_title="OSIL™ by Xentrixus",
     layout="wide",
 )
 
-APP_TITLE = "Xentrixus OSIL™ — Stability Intelligence MVP"
+APP_TITLE = "Xentrixus OSIL™ --- Stability Intelligence MVP"
 APP_SUB = (
     "Upload Incident / Change / Problem exports → get BVSI™, Structural Risk Debt™, "
     "SIP priorities, and executive interpretation."
@@ -25,7 +26,6 @@ APP_SUB = (
 DEMO_INCIDENTS = "data/demo_incidents.csv"
 DEMO_CHANGES = "data/demo_changes.csv"
 DEMO_PROBLEMS = "data/demo_problems.csv"
-
 
 INCIDENT_MAPPING_SPEC = {
     "Service": {
@@ -194,11 +194,11 @@ PROBLEM_MAPPING_SPEC = {
     },
 }
 
-
 def safe_read_csv(file_or_path):
+    """Safely read CSV with multiple encoding attempts"""
     encodings = ["utf-8", "utf-8-sig", "cp1252", "latin1", "utf-16"]
     last_error = None
-
+    
     for enc in encodings:
         try:
             if isinstance(file_or_path, str):
@@ -208,77 +208,81 @@ def safe_read_csv(file_or_path):
         except Exception as e:
             last_error = e
             continue
-
+    
     raise ValueError(f"Unable to read CSV file. Unsupported encoding or malformed CSV. Last error: {last_error}")
 
-
 def _safe_read_csv(path: str) -> pd.DataFrame:
+    """Safe read with file existence check"""
     if os.path.exists(path):
         return safe_read_csv(path)
     return pd.DataFrame()
 
-
 def _load_demo_triplet() -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """Load demo data files"""
     inc = _safe_read_csv(DEMO_INCIDENTS)
     chg = _safe_read_csv(DEMO_CHANGES)
     prb = _safe_read_csv(DEMO_PROBLEMS)
     return inc, chg, prb
 
-
 def _required_template_text() -> str:
+    """Get required column template"""
     cols = ",".join(INCIDENT_REQUIRED_COLUMNS)
     example = "Customer Portal,Tier 1,2026-01-05 08:00,P2"
     return f"{cols}\n{example}"
 
-
 def _normalize_col_name(x: str) -> str:
+    """Normalize column name for matching"""
     return str(x).strip().lower().replace("_", " ").replace("-", " ")
 
-
 def _fuzzy_suggest(columns: List[str], aliases: List[str]) -> str:
+    """Fuzzy match column names"""
     if not columns:
         return "-- None --"
-
+    
     norm_to_original = {_normalize_col_name(c): c for c in columns}
     norm_columns = list(norm_to_original.keys())
-
+    
+    # Exact match first
     for alias in aliases:
         a = _normalize_col_name(alias)
         if a in norm_to_original:
             return norm_to_original[a]
-
+    
+    # Contains match
     for alias in aliases:
         a = _normalize_col_name(alias)
         for nc in norm_columns:
             if a in nc or nc in a:
                 return norm_to_original[nc]
-
+    
+    # Fuzzy match
     candidates = []
     for alias in aliases:
         a = _normalize_col_name(alias)
         match = get_close_matches(a, norm_columns, n=1, cutoff=0.72)
         if match:
             candidates.append(match[0])
+    
     if candidates:
         return norm_to_original[candidates[0]]
-
+    
     return "-- None --"
 
-
 def _render_mapping_ui(df: pd.DataFrame, spec: Dict[str, Dict[str, object]], title: str, key_prefix: str) -> Dict[str, Optional[str]]:
+    """Render column mapping UI"""
     st.markdown(f"#### {title}")
     st.caption("Auto-detection is only a starting point. Confirm the best field for each canonical OSIL input before running analysis.")
-
+    
     columns = list(df.columns)
     options = ["-- None --"] + columns
     mapping: Dict[str, Optional[str]] = {}
-
+    
     for canonical, cfg in spec.items():
         suggested = _fuzzy_suggest(columns, cfg["aliases"]) if columns else "-- None --"
         if suggested not in options:
             suggested = "-- None --"
-
         idx = options.index(suggested) if suggested in options else 0
+        
         selected = st.selectbox(
             f"{cfg['label']}{' *' if cfg['required'] else ''}",
             options=options,
@@ -286,60 +290,58 @@ def _render_mapping_ui(df: pd.DataFrame, spec: Dict[str, Dict[str, object]], tit
             key=f"{key_prefix}_{canonical}",
         )
         mapping[canonical] = None if selected == "-- None --" else selected
-
+    
     return mapping
 
-
 def _apply_mapping(df: pd.DataFrame, mapping: Dict[str, Optional[str]]) -> pd.DataFrame:
+    """Apply column mapping to DataFrame"""
     out = df.copy()
     rename_map = {}
-
+    
     for canonical, selected in mapping.items():
         if selected and selected in out.columns:
             rename_map[selected] = canonical
-
+    
     out = out.rename(columns=rename_map)
     return out
 
-
 def _validate_mapping(mapping: Dict[str, Optional[str]], spec: Dict[str, Dict[str, object]], dataset_name: str) -> List[str]:
+    """Validate required mappings are present"""
     missing = []
     for canonical, cfg in spec.items():
         if cfg["required"] and not mapping.get(canonical):
             missing.append(f"{dataset_name}: {canonical}")
     return missing
 
-
 def heatmap_chart(hm: pd.DataFrame):
+    """Generate heatmap chart for Streamlit display"""
     fig = plt.figure(figsize=(10, 5), dpi=160)
     ax = plt.gca()
-
     im = ax.imshow(hm.values, aspect="auto", vmin=0, vmax=100)
     ax.set_xticks(range(len(hm.columns)))
     ax.set_xticklabels(list(hm.columns), fontsize=9)
     ax.set_yticks(range(len(hm.index)))
     ax.set_yticklabels(list(hm.index), fontsize=9)
     ax.set_title("Service Stability Heatmap", fontsize=12)
-
+    
     for i in range(hm.shape[0]):
         for j in range(hm.shape[1]):
             ax.text(j, i, f"{int(round(float(hm.iat[i, j]), 0))}", ha="center", va="center", fontsize=8)
-
+    
     cbar = plt.colorbar(im, ax=ax, fraction=0.03, pad=0.02)
     cbar.set_label("Risk Score", fontsize=8)
     cbar.ax.tick_params(labelsize=7)
-
     plt.tight_layout()
     return fig
 
-
 def radar_chart(domain_scores: dict):
+    """Generate radar chart for Streamlit display"""
     labels = list(domain_scores.keys())
     values = [float(domain_scores[k]) for k in labels]
     angles = np.linspace(0, 2 * np.pi, len(labels), endpoint=False).tolist()
     values_loop = values + [values[0]]
     angles_loop = angles + [angles[0]]
-
+    
     fig = plt.figure(figsize=(6.2, 5.0), dpi=160)
     ax = plt.subplot(111, polar=True)
     ax.set_theta_offset(np.pi / 2)
@@ -355,31 +357,32 @@ def radar_chart(domain_scores: dict):
     plt.tight_layout()
     return fig
 
-
 def render_service_instability_leaders(service_risk_df: pd.DataFrame) -> None:
+    """Render service instability leaders section"""
     st.subheader("Service Instability Leaders (Top 5)")
     st.caption("Narrative view of the services currently driving the highest operational instability risk.")
-
+    
     if service_risk_df is None or service_risk_df.empty:
         st.info("No service instability signals available.")
         return
-
+    
     df = service_risk_df.sort_values("Total_Service_Risk", ascending=False).head(5).copy()
-
+    
     for rank, (_, row) in enumerate(df.iterrows(), start=1):
         service = str(row.get("Service", "Unknown Service"))
         tier = str(row.get("Service_Tier", "Unknown Tier"))
         score = float(row.get("Total_Service_Risk", 0.0))
-
+        
         risks = {
             "Recurrence": float(row.get("Recurrence_Risk", 0.0)),
             "MTTR Drag": float(row.get("MTTR_Drag_Risk", 0.0)),
             "Reopen Churn": float(row.get("Reopen_Churn_Risk", 0.0)),
             "Change Collision": float(row.get("Change_Collision_Risk", 0.0)),
         }
+        
         primary = max(risks, key=risks.get)
         primary_score = risks.get(primary, 0.0)
-
+        
         if primary == "Recurrence":
             meaning = "Recurring incidents suggest unresolved structural issues and repeat operational friction."
             action = "Start a SIP focused on recurrence elimination: clear problem statements, root cause pathways, and preventive controls."
@@ -392,29 +395,29 @@ def render_service_instability_leaders(service_risk_df: pd.DataFrame) -> None:
         else:
             meaning = "Instability patterns frequently occur near change windows, suggesting governance gaps or insufficient pre-release validation."
             action = "Start a SIP focused on change governance: Tier-1 controls, stronger validation, and post-change monitoring."
-
+        
         st.markdown(
             f'''
-<div style="border:1px solid #D1D5DB;background:#F5F7FA;padding:14px 16px;border-radius:10px;margin-bottom:10px;">
-  <div style="font-size:16px;"><b>#{rank} {service}</b></div>
-  <div style="margin-top:6px;">
-    <b>Tier:</b> {tier} &nbsp; | &nbsp; <b>Total Risk Score:</b> {score:.1f}
-  </div>
-  <div style="margin-top:10px;">
-    <b>Primary Instability Driver:</b> {primary} ({primary_score:.0f}/100)<br/>
-    {meaning}
-  </div>
-  <div style="margin-top:10px;">
-    <b>Recommended Action:</b><br/>
-    {action}
-  </div>
-</div>
-''',
+            <div style="border:1px solid #D1D5DB;background:#F5F7FA;padding:14px 16px;border-radius:10px;margin-bottom:10px;">
+            <div style="font-size:16px;"><b>#{rank} {service}</b></div>
+            <div style="margin-top:6px;">
+            <b>Tier:</b> {tier} &nbsp; | &nbsp; <b>Total Risk Score:</b> {score:.1f}
+            </div>
+            <div style="margin-top:10px;">
+            <b>Primary Instability Driver:</b> {primary} ({primary_score:.0f}/100)<br/>
+            {meaning}
+            </div>
+            <div style="margin-top:10px;">
+            <b>Recommended Action:</b><br/>
+            {action}
+            </div>
+            </div>
+            ''',
             unsafe_allow_html=True,
         )
 
-
 def _build_pdf_payload(results: dict, tenant_name: str) -> dict:
+    """Build payload for PDF generator with proper error handling"""
     return {
         "bvsi": results["bvsi"],
         "posture": results["posture"],
@@ -429,26 +432,26 @@ def _build_pdf_payload(results: dict, tenant_name: str) -> dict:
         "tenant_name": tenant_name,
     }
 
-
 def main():
+    """Main application function"""
     st.title(APP_TITLE)
     st.caption(APP_SUB)
-
+    
     tenant_name = st.text_input("Organization / Tenant Name", value="Default")
-
+    
     st.subheader("Run Options")
     mode = st.radio(
         "Choose a run mode",
         ["Run with Demo Data", "Upload Incident / Change / Problem CSVs"],
         horizontal=True,
     )
-
+    
     incidents_df: Optional[pd.DataFrame] = None
     changes_df: Optional[pd.DataFrame] = None
     problems_df: Optional[pd.DataFrame] = None
     source_label = None
     run_requested = False
-
+    
     if mode == "Run with Demo Data":
         if st.button("Run Demo Analysis", use_container_width=True):
             incidents_df, changes_df, problems_df = _load_demo_triplet()
@@ -460,14 +463,14 @@ def main():
     else:
         st.markdown("### Upload Files")
         c1, c2, c3 = st.columns(3)
-
+        
         with c1:
             inc_file = st.file_uploader("Incident CSV", type=["csv"], key="inc")
         with c2:
             chg_file = st.file_uploader("Change CSV (optional)", type=["csv"], key="chg")
         with c3:
             prb_file = st.file_uploader("Problem CSV (optional)", type=["csv"], key="prb")
-
+        
         if inc_file is not None:
             try:
                 inc_preview = safe_read_csv(inc_file)
@@ -479,7 +482,7 @@ def main():
                 return
         else:
             inc_mapping = {}
-
+        
         if chg_file is not None:
             try:
                 chg_preview = safe_read_csv(chg_file)
@@ -491,7 +494,7 @@ def main():
                 return
         else:
             chg_mapping = {}
-
+        
         if prb_file is not None:
             try:
                 prb_preview = safe_read_csv(prb_file)
@@ -503,60 +506,61 @@ def main():
                 return
         else:
             prb_mapping = {}
-
+        
         st.caption(
             "Use the best available operational anchor for each dataset. "
             "That may be a service, application, CI, service offering, product, or another sensible grouping field."
         )
-
+        
         if st.button("Run Uploaded Analysis", use_container_width=True):
             if inc_file is None:
                 st.error("Please upload an Incident CSV.")
                 return
-
+            
             missing = _validate_mapping(inc_mapping, INCIDENT_MAPPING_SPEC, "Incident")
             if chg_file is not None:
                 missing += _validate_mapping(chg_mapping, CHANGE_MAPPING_SPEC, "Change")
             if prb_file is not None:
                 missing += _validate_mapping(prb_mapping, PROBLEM_MAPPING_SPEC, "Problem")
-
+            
             if missing:
                 st.error("Missing required mappings: " + " | ".join(missing))
                 return
-
+            
             try:
                 incidents_df = safe_read_csv(inc_file)
                 incidents_df = _apply_mapping(incidents_df, inc_mapping)
-
+                
                 if chg_file is not None:
                     changes_df = safe_read_csv(chg_file)
                     changes_df = _apply_mapping(changes_df, chg_mapping)
                 else:
                     changes_df = pd.DataFrame()
-
+                
                 if prb_file is not None:
                     problems_df = safe_read_csv(prb_file)
                     problems_df = _apply_mapping(problems_df, prb_mapping)
                 else:
                     problems_df = pd.DataFrame()
-
+                
                 source_label = f"Upload ({inc_file.name})"
                 run_requested = True
+                
             except Exception as e:
                 st.error(f"Upload load failed: {e}")
                 return
-
+    
     if not run_requested:
         st.subheader("Required Incident Template")
         st.code(_required_template_text(), language="csv")
         st.info(
             "Incidents are required. Changes and Problems are optional. "
-            "For customer/org uploads, map the best available operational anchor — service, application, CI, or equivalent."
+            "For customer/org uploads, map the best available operational anchor -- service, application, CI, or equivalent."
         )
         return
-
+    
     st.success(f"Loaded: {source_label}")
-
+    
     try:
         results = run_osil(
             incidents_df=incidents_df,
@@ -567,121 +571,123 @@ def main():
         results["tenant_name"] = tenant_name
     except Exception as e:
         st.error(f"Run failed: {e}")
+        st.exception(e)  # Show full traceback for debugging
         return
-
+    
+    # Display metrics
     mc1, mc2, mc3 = st.columns(3)
     mc1.metric("BVSI™", f"{results['bvsi']:.1f}")
     mc2.metric("Operating Posture", results["posture"])
     mc3.metric("Data Readiness", f"{results['readiness_score']:.1f}%")
-
+    
     st.caption(
         f"Dataset: {results['practice_type']} • "
         f"Service anchor used: {results['anchor_used']} • "
         f"As of: {results['as_of']}"
     )
-
+    
     st.divider()
-
     st.subheader("Executive Interpretation")
     st.write(results["exec_text"])
-
+    
     st.divider()
-
     st.subheader("Operational Stability Profile")
     rc1, rc2 = st.columns([1.15, 1.0])
-
+    
     with rc1:
         fig_radar = radar_chart(results["domain_scores"])
         st.pyplot(fig_radar, use_container_width=True)
         st.caption("How to read: balanced shape = aligned governance; collapsed axis = maturity gap requiring targeted SIP focus.")
-
+    
     with rc2:
-        st.markdown("### Stability Domain Scores (0–100)")
+        st.markdown("### Stability Domain Scores (0-100)")
         st.dataframe(
             pd.DataFrame({"Domain": list(results["domain_scores"].keys()), "Score": list(results["domain_scores"].values())}),
             use_container_width=True,
         )
-
+    
     st.divider()
-
+    
+    # Service Risk and Heatmap
     service_risk_df = results["service_risk_df"]
     top10 = results["top10"].copy()
-
+    
     if top10 is not None and not top10.empty:
         heatmap_df = top10.copy()
-
         if "Service" in heatmap_df.columns:
             if "Service_Tier" not in heatmap_df.columns:
                 heatmap_df["Service_Tier"] = "Unspecified"
-
+            
             required_risk_cols = [
                 "Recurrence_Risk",
                 "MTTR_Drag_Risk",
                 "Reopen_Churn_Risk",
                 "Change_Collision_Risk",
             ]
-
+            
             for col in required_risk_cols:
                 if col not in heatmap_df.columns:
                     heatmap_df[col] = 0.0
-
-            hm = heatmap_df.set_index(
-                heatmap_df["Service"].astype(str) + " (" + heatmap_df["Service_Tier"].astype(str) + ")"
-            )[required_risk_cols].rename(
-                columns={
-                    "Recurrence_Risk": "Recurrence",
-                    "MTTR_Drag_Risk": "MTTR Drag",
-                    "Reopen_Churn_Risk": "Reopen Churn",
-                    "Change_Collision_Risk": "Change Collision",
-                }
-            )
-
-            hm = hm.apply(pd.to_numeric, errors="coerce").replace([np.inf, -np.inf], np.nan).fillna(0.0)
-
-            st.markdown("### Service Stability Heatmap (Top 10 Services by Risk)")
-            hm_fig = heatmap_chart(hm)
-            hc1, hc2, hc3 = st.columns([1, 2, 1])
-            with hc2:
-                st.pyplot(hm_fig, use_container_width=False)
-
-            st.caption(
-                "How to read: services with consistently high values across multiple columns usually represent the strongest candidates "
-                "for leadership attention or SIP execution."
-            )
-
-        st.markdown("**Top 10 Services — Risk Breakdown**")
-        st.dataframe(top10, use_container_width=True)
+            
+            try:
+                hm = heatmap_df.set_index(
+                    heatmap_df["Service"].astype(str) + " (" + heatmap_df["Service_Tier"].astype(str) + ")"
+                )[required_risk_cols].rename(
+                    columns={
+                        "Recurrence_Risk": "Recurrence",
+                        "MTTR_Drag_Risk": "MTTR Drag",
+                        "Reopen_Churn_Risk": "Reopen Churn",
+                        "Change_Collision_Risk": "Change Collision",
+                    }
+                )
+                hm = hm.apply(pd.to_numeric, errors="coerce").replace([np.inf, -np.inf], np.nan).fillna(0.0)
+                
+                st.markdown("### Service Stability Heatmap (Top 10 Services by Risk)")
+                hm_fig = heatmap_chart(hm)
+                hc1, hc2, hc3 = st.columns([1, 2, 1])
+                with hc2:
+                    st.pyplot(hm_fig, use_container_width=False)
+                st.caption(
+                    "How to read: services with consistently high values across multiple columns usually represent the strongest candidates "
+                    "for leadership attention or SIP execution."
+                )
+            except Exception as e:
+                st.warning(f"Could not generate heatmap: {e}")
+            
+            st.markdown("**Top 10 Services -- Risk Breakdown**")
+            st.dataframe(top10, use_container_width=True)
     else:
         st.info("No service risk data available.")
-
+    
     st.divider()
-
     render_service_instability_leaders(service_risk_df)
-
+    
     st.divider()
-
     st.markdown("### Top SIP Candidates (Next 30 Days)")
     st.dataframe(results["sip_view"], use_container_width=True)
-
+    
     st.divider()
-
-    with st.expander("Preview — Incidents", expanded=False):
+    
+    # Data previews
+    with st.expander("Preview -- Incidents", expanded=False):
         st.dataframe(incidents_df.head(20), use_container_width=True)
-
+    
     if changes_df is not None and not changes_df.empty:
-        with st.expander("Preview — Changes", expanded=False):
+        with st.expander("Preview -- Changes", expanded=False):
             st.dataframe(changes_df.head(20), use_container_width=True)
-
+    
     if problems_df is not None and not problems_df.empty:
-        with st.expander("Preview — Problems", expanded=False):
+        with st.expander("Preview -- Problems", expanded=False):
             st.dataframe(problems_df.head(20), use_container_width=True)
-
+    
     st.divider()
-
+    
+    # PDF Generation with error handling
     st.markdown("### Executive PDF Report")
     try:
         payload = _build_pdf_payload(results, tenant_name)
         pdf_bytes = build_osil_pdf_report(payload)
+        
         st.download_button(
             "Download Executive PDF",
             data=pdf_bytes,
@@ -689,9 +695,10 @@ def main():
             mime="application/pdf",
             use_container_width=True,
         )
+        st.success("PDF generated successfully!")
     except Exception as e:
         st.error(f"PDF generation failed: {e}")
-
+        st.exception(e)  # Show detailed error for debugging
 
 if __name__ == "__main__":
     main()
