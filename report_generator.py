@@ -31,7 +31,9 @@ def _safe_float(val: Any, default: float = 0.0) -> float:
 
 
 def _safe_df(val: Any) -> pd.DataFrame:
-    return val.copy() if isinstance(val, pd.DataFrame) else pd.DataFrame()
+    if isinstance(val, pd.DataFrame):
+        return val.copy()
+    return pd.DataFrame()
 
 
 def _clean_text(text: Any) -> str:
@@ -210,7 +212,7 @@ def _paragraph_table(df: pd.DataFrame, col_widths: List[float], styles, header_b
     tbl.setStyle(
         TableStyle(
             [
-                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor(header_bg)),
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#E9EDF3")),
                 ("GRID", (0, 0), (-1, -1), 0.35, colors.grey),
                 ("VALIGN", (0, 0), (-1, -1), "TOP"),
                 ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#F8FAFC")]),
