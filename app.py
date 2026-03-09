@@ -27,9 +27,6 @@ DEMO_CHANGES = "data/demo_changes.csv"
 DEMO_PROBLEMS = "data/demo_problems.csv"
 
 
-# ============================================================
-# Mapping configuration
-# ============================================================
 INCIDENT_MAPPING_SPEC = {
     "Service": {
         "label": "Operational Anchor (Service / Application / CI / etc.)",
@@ -37,8 +34,7 @@ INCIDENT_MAPPING_SPEC = {
         "aliases": [
             "Service", "Business Service", "business_service", "Application", "Application Name",
             "CI", "Configuration Item", "CI Name", "Affected Service", "Service Offering",
-            "Product", "System", "App", "Application Service", "Application CI",
-            "Configuration Item Name", "Business Application", "System Name", "Product Name"
+            "Product", "System", "App", "Application Service", "Application CI", "Configuration Item Name"
         ],
     },
     "Service_Tier": {
@@ -86,16 +82,6 @@ INCIDENT_MAPPING_SPEC = {
         "required": False,
         "aliases": ["Problem_ID", "Problem", "Problem Number", "Linked Problem", "Parent Problem"],
     },
-    "Resolution_Code": {
-        "label": "Resolution Code (optional)",
-        "required": False,
-        "aliases": ["Resolution_Code", "Resolution Code", "Resolve Code", "Resolution Category"],
-    },
-    "Closure_Code": {
-        "label": "Closure Code (optional)",
-        "required": False,
-        "aliases": ["Closure_Code", "Closure Code", "Close Code", "Closing Code"],
-    },
 }
 
 CHANGE_MAPPING_SPEC = {
@@ -105,7 +91,7 @@ CHANGE_MAPPING_SPEC = {
         "aliases": [
             "Service", "Business Service", "Application", "Application Name", "CI",
             "Configuration Item", "CI Name", "Service Offering", "Product", "System",
-            "Application CI", "Configuration Item Name", "Business Application", "System Name"
+            "Application CI", "Configuration Item Name"
         ],
     },
     "Change_ID": {
@@ -149,16 +135,6 @@ CHANGE_MAPPING_SPEC = {
         "required": False,
         "aliases": ["Category", "Type", "Change_Type", "Change Category"],
     },
-    "Rollback_Flag": {
-        "label": "Rollback / Backout Flag (optional)",
-        "required": False,
-        "aliases": ["Rollback_Flag", "Rollback", "Rolled_Back", "Backout Flag", "Backed Out"],
-    },
-    "Change_Result": {
-        "label": "Change Result / Outcome (optional)",
-        "required": False,
-        "aliases": ["Change_Result", "Outcome", "Implementation Result", "Result"],
-    },
 }
 
 PROBLEM_MAPPING_SPEC = {
@@ -168,7 +144,7 @@ PROBLEM_MAPPING_SPEC = {
         "aliases": [
             "Service", "Business Service", "Application", "Application Name", "CI",
             "Configuration Item", "CI Name", "Service Offering", "Product", "System",
-            "Application CI", "Configuration Item Name", "Business Application", "System Name"
+            "Application CI", "Configuration Item Name"
         ],
     },
     "Problem_ID": {
@@ -206,26 +182,6 @@ PROBLEM_MAPPING_SPEC = {
         "required": False,
         "aliases": ["Known_Error_Flag", "Known_Error", "Known Error"],
     },
-    "Root_Cause": {
-        "label": "Root Cause / RCA Text (optional)",
-        "required": False,
-        "aliases": ["Root_Cause", "Root Cause", "RCA", "Cause", "Cause Description", "Problem Cause", "Analysis Result"],
-    },
-    "Root_Cause_Category": {
-        "label": "Root Cause Category (optional)",
-        "required": False,
-        "aliases": ["Root_Cause_Category", "Root Cause Category", "Cause Category", "RCA Category"],
-    },
-    "Workaround_Available": {
-        "label": "Workaround Available (optional)",
-        "required": False,
-        "aliases": ["Workaround_Available", "Workaround", "Workaround Available", "Has Workaround"],
-    },
-    "Permanent_Fix_Flag": {
-        "label": "Permanent Fix Flag (optional)",
-        "required": False,
-        "aliases": ["Permanent_Fix_Flag", "Permanent Fix", "Fix Implemented", "Permanent Resolution"],
-    },
     "Priority": {
         "label": "Problem Priority (optional)",
         "required": False,
@@ -239,9 +195,6 @@ PROBLEM_MAPPING_SPEC = {
 }
 
 
-# ============================================================
-# Helpers
-# ============================================================
 def _safe_read_csv(path: str) -> pd.DataFrame:
     if os.path.exists(path):
         return pd.read_csv(path)
@@ -257,7 +210,7 @@ def _load_demo_triplet() -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
 
 def _required_template_text() -> str:
     cols = ",".join(INCIDENT_REQUIRED_COLUMNS)
-    example = "Customer Portal,2026-01-05 08:00,P2"
+    example = "Customer Portal,Tier 1,2026-01-05 08:00,P2"
     return f"{cols}\n{example}"
 
 
@@ -283,144 +236,28 @@ def _fuzzy_suggest(columns: List[str], aliases: List[str]) -> str:
             if a in nc or nc in a:
                 return norm_to_original[nc]
 
+    candidates = []
     for alias in aliases:
         a = _normalize_col_name(alias)
         match = get_close_matches(a, norm_columns, n=1, cutoff=0.72)
         if match:
-            return norm_to_original[match[0]]
+            candidates.append(match[0])
+    if candidates:
+        return norm_to_original[candidates[0]]
 
     return "-- None --"
 
 
-def _name_similarity_score(col_name: str, aliases: List[str]) -> float:
-    norm = _normalize_col_name(col_name)
-    alias_norms = [_normalize_col_name(a) for a in aliases]
-
-    if norm in alias_norms:
-        return 100.0
-    if any((a in norm or norm in a) for a in alias_norms):
-        return 85.0
-    if get_close_matches(norm, alias_norms, n=1, cutoff=0.60):
-        return 70.0
-    return 0.0
-
-
-def _cardinality_quality(series: pd.Series) -> float:
-    s = series.dropna().astype(str).str.strip()
-    s = s[s != ""]
-    if s.empty:
-        return 0.0
-
-    unique_ratio = s.nunique() / max(len(s), 1)
-    if 0.02 <= unique_ratio <= 0.40:
-        return 100.0
-    if 0.40 < unique_ratio <= 0.70:
-        return 75.0
-    if 0.005 <= unique_ratio < 0.02:
-        return 60.0
-    if 0.70 < unique_ratio <= 0.90:
-        return 45.0
-    return 20.0
-
-
-def _business_relevance_score(col_name: str) -> float:
-    norm = _normalize_col_name(col_name)
-
-    strong = ["service", "application", "system", "product", "platform", "ci", "configuration item"]
-    weak = ["assignment group", "group", "state", "status", "priority", "severity", "category", "location"]
-
-    if any(token in norm for token in strong):
-        return 100.0
-    if any(token in norm for token in weak):
-        return 20.0
-    return 50.0
-
-
-def _cross_file_overlap_score(base_series: pd.Series, other_series_list: List[pd.Series]) -> float:
-    base = set(base_series.dropna().astype(str).str.strip())
-    base = {x for x in base if x}
-    if not base:
-        return 0.0
-
-    overlap_scores = []
-    for s in other_series_list:
-        vals = set(s.dropna().astype(str).str.strip())
-        vals = {x for x in vals if x}
-        if not vals:
-            continue
-
-        overlap = len(base.intersection(vals))
-        denom = max(min(len(base), len(vals)), 1)
-        overlap_scores.append((overlap / denom) * 100.0)
-
-    return max(overlap_scores) if overlap_scores else 0.0
-
-
-def _infer_anchor_candidates(
-    df: pd.DataFrame,
-    aliases: List[str],
-    other_candidate_series: Optional[List[pd.Series]] = None,
-    max_candidates: int = 3,
-):
-    if df is None or df.empty:
-        return []
-
-    scored = []
-    for col in df.columns:
-        total = (
-            0.40 * _name_similarity_score(col, aliases)
-            + 0.20 * _cardinality_quality(df[col])
-            + 0.30 * _cross_file_overlap_score(df[col], other_candidate_series or [])
-            + 0.10 * _business_relevance_score(col)
-        )
-        scored.append((col, round(total, 1)))
-
-    scored.sort(key=lambda x: x[1], reverse=True)
-    return scored[:max_candidates]
-
-
-def _confidence_label(score: float) -> str:
-    if score >= 80:
-        return "High"
-    if score >= 60:
-        return "Medium"
-    return "Low"
-
-
-def _render_mapping_ui(
-    df: pd.DataFrame,
-    spec: Dict[str, Dict[str, object]],
-    title: str,
-    key_prefix: str,
-    cross_file_candidates: Optional[List[pd.Series]] = None,
-) -> Dict[str, Optional[str]]:
+def _render_mapping_ui(df: pd.DataFrame, spec: Dict[str, Dict[str, object]], title: str, key_prefix: str) -> Dict[str, Optional[str]]:
     st.markdown(f"#### {title}")
-    st.caption("OSIL will auto-suggest likely mappings, but you can still override anything manually before running analysis.")
+    st.caption("Auto-detection is only a starting point. Confirm the best field for each canonical OSIL input before running analysis.")
 
     columns = list(df.columns)
     options = ["-- None --"] + columns
     mapping: Dict[str, Optional[str]] = {}
 
     for canonical, cfg in spec.items():
-        if canonical == "Service":
-            candidates = _infer_anchor_candidates(
-                df,
-                cfg["aliases"],
-                other_candidate_series=cross_file_candidates or [],
-                max_candidates=3,
-            )
-            suggested = candidates[0][0] if candidates else "-- None --"
-            if candidates:
-                best_col, best_score = candidates[0]
-                confidence = _confidence_label(best_score)
-                alts = ", ".join([f"{c} ({s})" for c, s in candidates[1:]]) if len(candidates) > 1 else "None"
-                st.info(
-                    f"{title.replace('Map ', '').replace(' Columns', '')} suggested anchor: "
-                    f"{best_col} (confidence: {confidence}, score: {best_score}). Alternate suggestions: {alts}."
-                )
-        else:
-            suggested = _fuzzy_suggest(columns, cfg["aliases"]) if columns else "-- None --"
-
+        suggested = _fuzzy_suggest(columns, cfg["aliases"]) if columns else "-- None --"
         if suggested not in options:
             suggested = "-- None --"
 
@@ -444,7 +281,8 @@ def _apply_mapping(df: pd.DataFrame, mapping: Dict[str, Optional[str]]) -> pd.Da
         if selected and selected in out.columns:
             rename_map[selected] = canonical
 
-    return out.rename(columns=rename_map)
+    out = out.rename(columns=rename_map)
+    return out
 
 
 def _validate_mapping(mapping: Dict[str, Optional[str]], spec: Dict[str, Dict[str, object]], dataset_name: str) -> List[str]:
@@ -513,8 +351,9 @@ def render_service_instability_leaders(service_risk_df: pd.DataFrame) -> None:
 
     for rank, (_, row) in enumerate(df.iterrows(), start=1):
         service = str(row.get("Service", "Unknown Service"))
-        tier = str(row.get("Service_Tier", "Unspecified"))
+        tier = str(row.get("Service_Tier", "Unknown Tier"))
         score = float(row.get("Total_Service_Risk", 0.0))
+
         risks = {
             "Recurrence": float(row.get("Recurrence_Risk", 0.0)),
             "MTTR Drag": float(row.get("MTTR_Drag_Risk", 0.0)),
@@ -524,14 +363,36 @@ def render_service_instability_leaders(service_risk_df: pd.DataFrame) -> None:
         primary = max(risks, key=risks.get)
         primary_score = risks.get(primary, 0.0)
 
+        if primary == "Recurrence":
+            meaning = "Recurring incidents suggest unresolved structural issues and repeat operational friction."
+            action = "Start a SIP focused on recurrence elimination: clear problem statements, root cause pathways, and preventive controls."
+        elif primary == "MTTR Drag":
+            meaning = "Recovery times are longer than expected, indicating response coordination gaps, unclear ownership, or weak runbooks."
+            action = "Start a SIP focused on recovery execution: playbooks, escalation pathways, and targeted automation to reduce recovery time."
+        elif primary == "Reopen Churn":
+            meaning = "High reopen rates suggest incomplete resolution or fixes that do not hold under operational load."
+            action = "Start a SIP focused on fix quality: improve validation, tighten closure criteria, and drive problem investigations for repeat patterns."
+        else:
+            meaning = "Instability patterns frequently occur near change windows, suggesting governance gaps or insufficient pre-release validation."
+            action = "Start a SIP focused on change governance: Tier-1 controls, stronger validation, and post-change monitoring."
+
         st.markdown(
-            f"""
+            f'''
 <div style="border:1px solid #D1D5DB;background:#F5F7FA;padding:14px 16px;border-radius:10px;margin-bottom:10px;">
   <div style="font-size:16px;"><b>#{rank} {service}</b></div>
-  <div style="margin-top:6px;"><b>Tier:</b> {tier} &nbsp; | &nbsp; <b>Total Risk Score:</b> {score:.1f}</div>
-  <div style="margin-top:10px;"><b>Primary Instability Driver:</b> {primary} ({primary_score:.0f}/100)</div>
+  <div style="margin-top:6px;">
+    <b>Tier:</b> {tier} &nbsp; | &nbsp; <b>Total Risk Score:</b> {score:.1f}
+  </div>
+  <div style="margin-top:10px;">
+    <b>Primary Instability Driver:</b> {primary} ({primary_score:.0f}/100)<br/>
+    {meaning}
+  </div>
+  <div style="margin-top:10px;">
+    <b>Recommended Action:</b><br/>
+    {action}
+  </div>
 </div>
-""",
+''',
             unsafe_allow_html=True,
         )
 
@@ -590,89 +451,45 @@ def main():
         with c3:
             prb_file = st.file_uploader("Problem CSV (optional)", type=["csv"], key="prb")
 
-        inc_preview = chg_preview = prb_preview = None
-
         if inc_file is not None:
             try:
                 inc_preview = pd.read_csv(inc_file)
                 inc_file.seek(0)
+                st.markdown("### Incident Mapping")
+                inc_mapping = _render_mapping_ui(inc_preview, INCIDENT_MAPPING_SPEC, "Map Incident Columns", "incmap")
             except Exception as e:
                 st.error(f"Could not read Incident CSV: {e}")
                 return
+        else:
+            inc_mapping = {}
 
         if chg_file is not None:
             try:
                 chg_preview = pd.read_csv(chg_file)
                 chg_file.seek(0)
+                st.markdown("### Change Mapping")
+                chg_mapping = _render_mapping_ui(chg_preview, CHANGE_MAPPING_SPEC, "Map Change Columns", "chgmap")
             except Exception as e:
                 st.error(f"Could not read Change CSV: {e}")
                 return
+        else:
+            chg_mapping = {}
 
         if prb_file is not None:
             try:
                 prb_preview = pd.read_csv(prb_file)
                 prb_file.seek(0)
+                st.markdown("### Problem Mapping")
+                prb_mapping = _render_mapping_ui(prb_preview, PROBLEM_MAPPING_SPEC, "Map Problem Columns", "prbmap")
             except Exception as e:
                 st.error(f"Could not read Problem CSV: {e}")
                 return
-
-        incident_cross: List[pd.Series] = []
-        change_cross: List[pd.Series] = []
-        problem_cross: List[pd.Series] = []
-
-        if chg_preview is not None:
-            for c in chg_preview.columns:
-                incident_cross.append(chg_preview[c])
-                change_cross.append(chg_preview[c])
-
-        if prb_preview is not None:
-            for c in prb_preview.columns:
-                incident_cross.append(prb_preview[c])
-                problem_cross.append(prb_preview[c])
-
-        if inc_preview is not None:
-            for c in inc_preview.columns:
-                change_cross.append(inc_preview[c])
-                problem_cross.append(inc_preview[c])
-
-        if inc_preview is not None:
-            st.markdown("### Incident Mapping")
-            inc_mapping = _render_mapping_ui(
-                inc_preview,
-                INCIDENT_MAPPING_SPEC,
-                "Map Incident Columns",
-                "incmap",
-                cross_file_candidates=incident_cross,
-            )
-        else:
-            inc_mapping = {}
-
-        if chg_preview is not None:
-            st.markdown("### Change Mapping")
-            chg_mapping = _render_mapping_ui(
-                chg_preview,
-                CHANGE_MAPPING_SPEC,
-                "Map Change Columns",
-                "chgmap",
-                cross_file_candidates=change_cross,
-            )
-        else:
-            chg_mapping = {}
-
-        if prb_preview is not None:
-            st.markdown("### Problem Mapping")
-            prb_mapping = _render_mapping_ui(
-                prb_preview,
-                PROBLEM_MAPPING_SPEC,
-                "Map Problem Columns",
-                "prbmap",
-                cross_file_candidates=problem_cross,
-            )
         else:
             prb_mapping = {}
 
         st.caption(
-            "OSIL suggests likely mappings automatically, but you can still override any field before running analysis."
+            "Use the best available operational anchor for each dataset. "
+            "That may be a service, application, CI, service offering, product, or another sensible grouping field."
         )
 
         if st.button("Run Uploaded Analysis", use_container_width=True):
@@ -691,9 +508,21 @@ def main():
                 return
 
             try:
-                incidents_df = _apply_mapping(pd.read_csv(inc_file), inc_mapping)
-                changes_df = _apply_mapping(pd.read_csv(chg_file), chg_mapping) if chg_file is not None else pd.DataFrame()
-                problems_df = _apply_mapping(pd.read_csv(prb_file), prb_mapping) if prb_file is not None else pd.DataFrame()
+                incidents_df = pd.read_csv(inc_file)
+                incidents_df = _apply_mapping(incidents_df, inc_mapping)
+
+                if chg_file is not None:
+                    changes_df = pd.read_csv(chg_file)
+                    changes_df = _apply_mapping(changes_df, chg_mapping)
+                else:
+                    changes_df = pd.DataFrame()
+
+                if prb_file is not None:
+                    problems_df = pd.read_csv(prb_file)
+                    problems_df = _apply_mapping(problems_df, prb_mapping)
+                else:
+                    problems_df = pd.DataFrame()
+
                 source_label = f"Upload ({inc_file.name})"
                 run_requested = True
             except Exception as e:
@@ -705,7 +534,7 @@ def main():
         st.code(_required_template_text(), language="csv")
         st.info(
             "Incidents are required. Changes and Problems are optional. "
-            "OSIL suggests likely anchors, but manual override remains available."
+            "For customer/org uploads, map the best available operational anchor — service, application, CI, or equivalent."
         )
         return
 
@@ -735,57 +564,53 @@ def main():
     )
 
     st.divider()
+
     st.subheader("Executive Interpretation")
     st.write(results["exec_text"])
 
     st.divider()
+
     st.subheader("Operational Stability Profile")
     rc1, rc2 = st.columns([1.15, 1.0])
 
     with rc1:
-        st.pyplot(radar_chart(results["domain_scores"]), use_container_width=True)
+        fig_radar = radar_chart(results["domain_scores"])
+        st.pyplot(fig_radar, use_container_width=True)
+        st.caption("How to read: balanced shape = aligned governance; collapsed axis = maturity gap requiring targeted SIP focus.")
 
     with rc2:
+        st.markdown("### Stability Domain Scores (0–100)")
         st.dataframe(
-            pd.DataFrame({
-                "Domain": list(results["domain_scores"].keys()),
-                "Score": list(results["domain_scores"].values()),
-            }),
+            pd.DataFrame({"Domain": list(results["domain_scores"].keys()), "Score": list(results["domain_scores"].values())}),
             use_container_width=True,
         )
 
     st.divider()
+
     service_risk_df = results["service_risk_df"]
     top10 = results["top10"].copy()
 
     if top10 is not None and not top10.empty:
-        heatmap_df = top10.copy()
+        hm = top10.set_index(top10["Service"] + " (" + top10["Service_Tier"] + ")")[
+            ["Recurrence_Risk", "MTTR_Drag_Risk", "Reopen_Churn_Risk", "Change_Collision_Risk"]
+        ].rename(columns={
+            "Recurrence_Risk": "Recurrence",
+            "MTTR_Drag_Risk": "MTTR Drag",
+            "Reopen_Churn_Risk": "Reopen Churn",
+            "Change_Collision_Risk": "Change Collision",
+        })
+        hm = hm.apply(pd.to_numeric, errors="coerce").replace([np.inf, -np.inf], np.nan).fillna(0.0)
 
-        if "Service" in heatmap_df.columns:
-            if "Service_Tier" not in heatmap_df.columns:
-                heatmap_df["Service_Tier"] = "Unspecified"
+        st.markdown("### Service Stability Heatmap (Top 10 Services by Risk)")
+        hm_fig = heatmap_chart(hm)
+        hc1, hc2, hc3 = st.columns([1, 2, 1])
+        with hc2:
+            st.pyplot(hm_fig, use_container_width=False)
 
-            required_risk_cols = [
-                "Recurrence_Risk",
-                "MTTR_Drag_Risk",
-                "Reopen_Churn_Risk",
-                "Change_Collision_Risk",
-            ]
-            for col in [c for c in required_risk_cols if c not in heatmap_df.columns]:
-                heatmap_df[col] = 0.0
-
-            hm = heatmap_df.set_index(
-                heatmap_df["Service"].astype(str) + " (" + heatmap_df["Service_Tier"].astype(str) + ")"
-            )[required_risk_cols].rename(columns={
-                "Recurrence_Risk": "Recurrence",
-                "MTTR_Drag_Risk": "MTTR Drag",
-                "Reopen_Churn_Risk": "Reopen Churn",
-                "Change_Collision_Risk": "Change Collision",
-            })
-            hm = hm.apply(pd.to_numeric, errors="coerce").replace([np.inf, -np.inf], np.nan).fillna(0.0)
-
-            st.markdown("### Service Stability Heatmap (Top 10 Services by Risk)")
-            st.pyplot(heatmap_chart(hm), use_container_width=True)
+        st.caption(
+            "How to read: services with consistently high values across multiple columns usually represent the strongest candidates "
+            "for leadership attention or SIP execution."
+        )
 
         st.markdown("**Top 10 Services — Risk Breakdown**")
         st.dataframe(top10, use_container_width=True)
@@ -793,13 +618,16 @@ def main():
         st.info("No service risk data available.")
 
     st.divider()
+
     render_service_instability_leaders(service_risk_df)
 
     st.divider()
+
     st.markdown("### Top SIP Candidates (Next 30 Days)")
     st.dataframe(results["sip_view"], use_container_width=True)
 
     st.divider()
+
     with st.expander("Preview — Incidents", expanded=False):
         st.dataframe(incidents_df.head(20), use_container_width=True)
 
@@ -812,6 +640,7 @@ def main():
             st.dataframe(problems_df.head(20), use_container_width=True)
 
     st.divider()
+
     st.markdown("### Executive PDF Report")
     try:
         payload = _build_pdf_payload(results, tenant_name)
