@@ -1,4 +1,4 @@
-"""OSIL Executive PDF Report Generator - Debugged Version"""
+"""OSIL Executive PDF Report Generator - Working Version"""
 import io
 import re
 from typing import Any, Dict, List, Optional
@@ -127,7 +127,7 @@ def _build_radar_image(domain_scores: Dict[str, float]) -> Optional[io.BytesIO]:
         angles_loop = angles + [angles[0]]
         values_loop = values + [values[0]]
         
-        fig = plt.figure(figsize=(5.5, 4.5), dpi=150)
+        fig = plt.figure(figsize=(5, 4), dpi=120)
         ax = fig.add_subplot(111, polar=True)
         ax.set_theta_offset(np.pi / 2)
         ax.set_theta_direction(-1)
@@ -138,7 +138,7 @@ def _build_radar_image(domain_scores: Dict[str, float]) -> Optional[io.BytesIO]:
         ax.set_ylim(0, 100)
         ax.set_yticks([20, 40, 60, 80, 100])
         ax.set_yticklabels(["20", "40", "60", "80", "100"], fontsize=8)
-        ax.set_title("Operational Stability Profile", pad=20, fontsize=12, fontweight='bold')
+        ax.set_title("Operational Stability Profile", pad=20, fontsize=11, fontweight='bold')
         
         plt.tight_layout()
         img = io.BytesIO()
@@ -167,7 +167,7 @@ def _build_heatmap_image(service_risk_top10: pd.DataFrame) -> Optional[io.BytesI
     
     try:
         hm = df.head(10).copy()
-        hm["Display_Name"] = hm["Service"].astype(str).str[:20] + " (" + hm["Service_Tier"].astype(str) + ")"
+        hm["Display_Name"] = hm["Service"].astype(str).str[:18] + " (" + hm["Service_Tier"].astype(str) + ")"
         hm = hm.set_index("Display_Name")[available_risks]
         
         display_names = {
@@ -179,30 +179,31 @@ def _build_heatmap_image(service_risk_top10: pd.DataFrame) -> Optional[io.BytesI
         hm = hm.rename(columns=display_names)
         hm = hm.apply(pd.to_numeric, errors="coerce").fillna(0.0)
         
-        height = max(5, len(hm) * 0.45)
-        fig, ax = plt.subplots(figsize=(7.5, height), dpi=150)
+        # Smaller figure size for PDF
+        height = min(6, max(4, len(hm) * 0.4))
+        fig, ax = plt.subplots(figsize=(6, height), dpi=120)
         
         im = ax.imshow(hm.values, aspect="auto", vmin=0, vmax=100, cmap='RdYlGn_r')
         ax.set_xticks(np.arange(len(hm.columns)))
         ax.set_yticks(np.arange(len(hm.index)))
-        ax.set_xticklabels(list(hm.columns), fontsize=10)
-        ax.set_yticklabels(list(hm.index), fontsize=10)
-        ax.set_title("Service Stability Risk Heatmap", fontsize=12, fontweight='bold', pad=15)
+        ax.set_xticklabels(list(hm.columns), fontsize=9)
+        ax.set_yticklabels(list(hm.index), fontsize=9)
+        ax.set_title("Service Stability Risk Heatmap", fontsize=11, fontweight='bold', pad=12)
         
         for i in range(len(hm.index)):
             for j in range(len(hm.columns)):
                 val = int(round(float(hm.iloc[i, j]), 0))
                 text_color = "white" if val > 60 else "black"
                 ax.text(j, i, str(val), ha="center", va="center", 
-                       fontsize=9, color=text_color, fontweight='bold')
+                       fontsize=8, color=text_color, fontweight='bold')
         
         cbar = plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
-        cbar.set_label("Risk Score (0-100)", fontsize=10)
-        cbar.ax.tick_params(labelsize=9)
+        cbar.set_label("Risk Score", fontsize=9)
+        cbar.ax.tick_params(labelsize=8)
         
         plt.tight_layout()
         img = io.BytesIO()
-        plt.savefig(img, format="png", bbox_inches="tight", facecolor='white', edgecolor='none', pad_inches=0.2)
+        plt.savefig(img, format="png", bbox_inches="tight", facecolor='white', edgecolor='none', pad_inches=0.15)
         plt.close(fig)
         img.seek(0)
         return img
@@ -213,7 +214,6 @@ def _build_heatmap_image(service_risk_top10: pd.DataFrame) -> Optional[io.BytesI
 def _create_table(data: List[List[str]], col_widths: List[float], header: bool = True) -> Table:
     """Create table with validation"""
     if not data or len(data) == 0:
-        # Return empty table placeholder
         t = Table([["No data available"]], colWidths=[sum(col_widths) if col_widths else 6*inch])
         t.setStyle(TableStyle([
             ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
@@ -222,7 +222,6 @@ def _create_table(data: List[List[str]], col_widths: List[float], header: bool =
         ]))
         return t
     
-    # Ensure all rows have same length
     max_cols = max(len(row) for row in data)
     normalized_data = []
     for row in data:
@@ -302,7 +301,6 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
         story.append(Paragraph(f"As of: {as_of}", styles["OSIL_Small"]))
         story.append(Spacer(1, 20))
         
-        # Metrics
         metrics_data = [
             ["BVSI™ Score", "Operating Posture", "Data Readiness"],
             [f"{bvsi:.1f}", posture, f"{readiness:.1f}%"]
@@ -310,7 +308,6 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
         story.append(_create_table(metrics_data, [2.3*inch, 2.3*inch, 2.3*inch]))
         story.append(Spacer(1, 20))
         
-        # BVSI Scale
         story.append(Paragraph("BVSI™ Scale Reference", styles["OSIL_Section"]))
         scale_data = [
             ["BVSI™ Range", "Operating Condition", "Executive Meaning"],
@@ -357,7 +354,7 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
         
         radar_img = _build_radar_image(domain_scores)
         if radar_img:
-            story.append(Image(radar_img, width=4.8*inch, height=4.0*inch))
+            story.append(Image(radar_img, width=4.5*inch, height=3.6*inch))
         else:
             story.append(Paragraph("Unable to generate radar chart.", styles["OSIL_Small"]))
         
@@ -416,7 +413,9 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
         
         hm_img = _build_heatmap_image(service_risk_df)
         if hm_img:
-            story.append(Image(hm_img, width=6.5*inch))
+            # FIXED: Explicit dimensions to fit page
+            img = Image(hm_img, width=5.0*inch, height=4.5*inch)
+            story.append(img)
         else:
             story.append(Paragraph("Insufficient data for heatmap generation.", styles["OSIL_Body"]))
 
