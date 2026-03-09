@@ -10,20 +10,9 @@ from reportlab.lib import colors
 from reportlab.lib.pagesizes import LETTER
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import inch
-from reportlab.platypus import (
-    Image,
-    PageBreak,
-    Paragraph,
-    SimpleDocTemplate,
-    Spacer,
-    Table,
-    TableStyle,
-)
+from reportlab.platypus import Image, PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 
-# =========================================================
-# Helpers
-# =========================================================
 def _safe_float(val: Any, default: float = 0.0) -> float:
     try:
         if val is None:
@@ -34,34 +23,21 @@ def _safe_float(val: Any, default: float = 0.0) -> float:
 
 
 def _safe_df(val: Any) -> pd.DataFrame:
-    if isinstance(val, pd.DataFrame):
-        return val.copy()
-    return pd.DataFrame()
+    return val.copy() if isinstance(val, pd.DataFrame) else pd.DataFrame()
 
 
 def _clean_text(text: Any) -> str:
-    """
-    Clean markdown / simple HTML artifacts so they render nicely in ReportLab Paragraphs.
-    """
     if text is None:
         return ""
     s = str(text)
-
-    # Convert markdown bold **x** -> <b>x</b>
     s = re.sub(r"\*\*(.*?)\*\*", r"<b>\1</b>", s)
-
-    # Normalize <br/> tags
     s = s.replace("<br>", "<br/>").replace("<br />", "<br/>")
-
-    # Strip unsupported HTML tags except a small safe set
     allowed = {"b", "i", "u", "br"}
 
     def repl_tag(match):
         full = match.group(0)
         tag = match.group(1).lower().replace("/", "")
-        if tag in allowed:
-            return full
-        return ""
+        return full if tag in allowed else ""
 
     s = re.sub(r"</?([a-zA-Z0-9]+).*?>", repl_tag, s)
     return s
@@ -69,88 +45,13 @@ def _clean_text(text: Any) -> str:
 
 def _styles():
     styles = getSampleStyleSheet()
-
-    styles.add(
-        ParagraphStyle(
-            name="OSIL_Title",
-            parent=styles["Title"],
-            fontName="Helvetica-Bold",
-            fontSize=22,
-            leading=26,
-            textColor=colors.HexColor("#0A192F"),
-            spaceAfter=6,
-        )
-    )
-
-    styles.add(
-        ParagraphStyle(
-            name="OSIL_Subtitle",
-            parent=styles["BodyText"],
-            fontName="Helvetica",
-            fontSize=9,
-            leading=11,
-            textColor=colors.HexColor("#555555"),
-            spaceAfter=10,
-        )
-    )
-
-    styles.add(
-        ParagraphStyle(
-            name="OSIL_Section",
-            parent=styles["Heading2"],
-            fontName="Helvetica-Bold",
-            fontSize=14,
-            leading=17,
-            textColor=colors.HexColor("#0A192F"),
-            spaceAfter=8,
-            spaceBefore=2,
-        )
-    )
-
-    styles.add(
-        ParagraphStyle(
-            name="OSIL_Body",
-            parent=styles["BodyText"],
-            fontName="Helvetica",
-            fontSize=9.5,
-            leading=13,
-            textColor=colors.HexColor("#222222"),
-        )
-    )
-
-    styles.add(
-        ParagraphStyle(
-            name="OSIL_Small",
-            parent=styles["BodyText"],
-            fontName="Helvetica",
-            fontSize=8,
-            leading=10,
-            textColor=colors.HexColor("#666666"),
-        )
-    )
-
-    styles.add(
-        ParagraphStyle(
-            name="OSIL_Table",
-            parent=styles["BodyText"],
-            fontName="Helvetica",
-            fontSize=7.8,
-            leading=9.4,
-            textColor=colors.HexColor("#222222"),
-        )
-    )
-
-    styles.add(
-        ParagraphStyle(
-            name="OSIL_TableHeader",
-            parent=styles["BodyText"],
-            fontName="Helvetica-Bold",
-            fontSize=8,
-            leading=10,
-            textColor=colors.black,
-        )
-    )
-
+    styles.add(ParagraphStyle(name="OSIL_Title", parent=styles["Title"], fontName="Helvetica-Bold", fontSize=22, leading=26, textColor=colors.HexColor("#0A192F"), spaceAfter=4))
+    styles.add(ParagraphStyle(name="OSIL_Subtitle", parent=styles["BodyText"], fontName="Helvetica", fontSize=9, leading=11, textColor=colors.HexColor("#555555"), spaceAfter=8))
+    styles.add(ParagraphStyle(name="OSIL_Section", parent=styles["Heading2"], fontName="Helvetica-Bold", fontSize=13.5, leading=16, textColor=colors.HexColor("#0A192F"), spaceAfter=6, spaceBefore=2))
+    styles.add(ParagraphStyle(name="OSIL_Body", parent=styles["BodyText"], fontName="Helvetica", fontSize=9.2, leading=12.6, textColor=colors.HexColor("#222222")))
+    styles.add(ParagraphStyle(name="OSIL_Small", parent=styles["BodyText"], fontName="Helvetica", fontSize=8, leading=10, textColor=colors.HexColor("#666666")))
+    styles.add(ParagraphStyle(name="OSIL_Table", parent=styles["BodyText"], fontName="Helvetica", fontSize=7.8, leading=9.3, textColor=colors.HexColor("#222222")))
+    styles.add(ParagraphStyle(name="OSIL_TableHeader", parent=styles["BodyText"], fontName="Helvetica-Bold", fontSize=8, leading=10, textColor=colors.black))
     return styles
 
 
@@ -159,70 +60,82 @@ def _footer(canvas, doc):
     canvas.setFont("Helvetica", 8)
     canvas.setFillColor(colors.HexColor("#666666"))
     canvas.drawString(0.55 * inch, 0.35 * inch, "OSIL™ by Xentrixus • Operational Stability Intelligence")
-    canvas.drawRightString(7.95 * inch, 0.35 * inch, "Confidential")
+    canvas.drawRightString(7.95 * inch, 0.35 * inch, f"Page {doc.page}")
     canvas.restoreState()
 
 
 def _header_band(text: str, width: float = 7.35 * inch) -> Table:
     t = Table([[text]], colWidths=[width])
-    t.setStyle(
-        TableStyle(
-            [
-                ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#0A192F")),
-                ("TEXTCOLOR", (0, 0), (-1, -1), colors.white),
-                ("FONTNAME", (0, 0), (-1, -1), "Helvetica-Bold"),
-                ("FONTSIZE", (0, 0), (-1, -1), 12),
-                ("ALIGN", (0, 0), (-1, -1), "LEFT"),
-                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-                ("LEFTPADDING", (0, 0), (-1, -1), 10),
-                ("TOPPADDING", (0, 0), (-1, -1), 7),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
-            ]
-        )
-    )
+    t.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#0A192F")),
+        ("TEXTCOLOR", (0, 0), (-1, -1), colors.white),
+        ("FONTNAME", (0, 0), (-1, -1), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, -1), 12),
+        ("ALIGN", (0, 0), (-1, -1), "LEFT"),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 10),
+        ("TOPPADDING", (0, 0), (-1, -1), 7),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
+    ]))
     return t
 
 
 def _accent_rule(width: float = 7.35 * inch, color_hex: str = "#64FFDA", height: int = 3) -> Table:
     t = Table([[""]], colWidths=[width], rowHeights=[height])
-    t.setStyle(
-        TableStyle(
-            [
-                ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor(color_hex)),
-                ("LEFTPADDING", (0, 0), (-1, -1), 0),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 0),
-                ("TOPPADDING", (0, 0), (-1, -1), 0),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
-            ]
-        )
-    )
+    t.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor(color_hex)),
+        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+        ("TOPPADDING", (0, 0), (-1, -1), 0),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+    ]))
     return t
+
+
+def _paragraph_table(df: pd.DataFrame, col_widths: List[float], styles, header_bg: str = "#E9EDF3") -> Table:
+    df = _safe_df(df)
+    if df.empty:
+        data = [[Paragraph("No data available", styles["OSIL_Table"])]]
+        tbl = Table(data, colWidths=[sum(col_widths)])
+        tbl.setStyle(TableStyle([("GRID", (0, 0), (-1, -1), 0.4, colors.grey)]))
+        return tbl
+
+    header = [Paragraph(_clean_text(c), styles["OSIL_TableHeader"]) for c in df.columns]
+    rows = [[Paragraph(_clean_text(x), styles["OSIL_Table"]) for x in row] for row in df.values.tolist()]
+    tbl = Table([header] + rows, colWidths=col_widths, repeatRows=1)
+    tbl.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor(header_bg)),
+        ("GRID", (0, 0), (-1, -1), 0.35, colors.grey),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#F8FAFC")]),
+        ("LEFTPADDING", (0, 0), (-1, -1), 5),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+        ("TOPPADDING", (0, 0), (-1, -1), 4),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+    ]))
+    return tbl
 
 
 def _kpi_box(label: str, value: str, width: float = 2.35 * inch) -> Table:
     t = Table([[label], [value]], colWidths=[width])
-    t.setStyle(
-        TableStyle(
-            [
-                ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#F5F7FA")),
-                ("BOX", (0, 0), (-1, -1), 0.6, colors.HexColor("#D1D5DB")),
-                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-                ("FONTNAME", (0, 1), (-1, 1), "Helvetica-Bold"),
-                ("FONTSIZE", (0, 0), (-1, 0), 8),
-                ("FONTSIZE", (0, 1), (-1, 1), 17),
-                ("TEXTCOLOR", (0, 0), (-1, 0), colors.HexColor("#666666")),
-                ("TEXTCOLOR", (0, 1), (-1, 1), colors.HexColor("#111111")),
-                ("ALIGN", (0, 0), (-1, -1), "LEFT"),
-                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-                ("LEFTPADDING", (0, 0), (-1, -1), 10),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 8),
-                ("TOPPADDING", (0, 0), (-1, 0), 8),
-                ("BOTTOMPADDING", (0, 0), (-1, 0), 2),
-                ("TOPPADDING", (0, 1), (-1, 1), 0),
-                ("BOTTOMPADDING", (0, 1), (-1, 1), 10),
-            ]
-        )
-    )
+    t.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#F5F7FA")),
+        ("BOX", (0, 0), (-1, -1), 0.6, colors.HexColor("#D1D5DB")),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTNAME", (0, 1), (-1, 1), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, 0), 8),
+        ("FONTSIZE", (0, 1), (-1, 1), 17),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.HexColor("#666666")),
+        ("TEXTCOLOR", (0, 1), (-1, 1), colors.HexColor("#111111")),
+        ("ALIGN", (0, 0), (-1, -1), "LEFT"),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 10),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+        ("TOPPADDING", (0, 0), (-1, 0), 8),
+        ("BOTTOMPADDING", (0, 0), (-1, 0), 2),
+        ("TOPPADDING", (0, 1), (-1, 1), 0),
+        ("BOTTOMPADDING", (0, 1), (-1, 1), 10),
+    ]))
     return t
 
 
@@ -230,71 +143,18 @@ def _signal_box(title: str, body: str, width: float = 7.35 * inch, styles=None) 
     body_para = Paragraph(_clean_text(body), styles["OSIL_Body"])
     title_para = Paragraph(_clean_text(title), styles["OSIL_TableHeader"])
     t = Table([[title_para], [body_para]], colWidths=[width])
-    t.setStyle(
-        TableStyle(
-            [
-                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#EAF4FF")),
-                ("BACKGROUND", (0, 1), (-1, 1), colors.HexColor("#F8FBFF")),
-                ("BOX", (0, 0), (-1, -1), 0.6, colors.HexColor("#B8D6F2")),
-                ("LEFTPADDING", (0, 0), (-1, -1), 10),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 10),
-                ("TOPPADDING", (0, 0), (-1, 0), 8),
-                ("BOTTOMPADDING", (0, 0), (-1, 0), 6),
-                ("TOPPADDING", (0, 1), (-1, 1), 4),
-                ("BOTTOMPADDING", (0, 1), (-1, 1), 10),
-            ]
-        )
-    )
+    t.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#EAF4FF")),
+        ("BACKGROUND", (0, 1), (-1, 1), colors.HexColor("#F8FBFF")),
+        ("BOX", (0, 0), (-1, -1), 0.6, colors.HexColor("#B8D6F2")),
+        ("LEFTPADDING", (0, 0), (-1, -1), 10),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+        ("TOPPADDING", (0, 0), (-1, 0), 8),
+        ("BOTTOMPADDING", (0, 0), (-1, 0), 6),
+        ("TOPPADDING", (0, 1), (-1, 1), 4),
+        ("BOTTOMPADDING", (0, 1), (-1, 1), 10),
+    ]))
     return t
-
-
-def _paragraph_table(
-    df: pd.DataFrame,
-    col_widths: List[float],
-    styles,
-    header_bg: str = "#E9EDF3",
-) -> Table:
-    df = _safe_df(df)
-
-    if df.empty:
-        data = [[Paragraph("No data available", styles["OSIL_Table"])]]
-        tbl = Table(data, colWidths=[sum(col_widths)])
-        tbl.setStyle(
-            TableStyle(
-                [
-                    ("GRID", (0, 0), (-1, -1), 0.4, colors.grey),
-                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                    ("LEFTPADDING", (0, 0), (-1, -1), 5),
-                    ("RIGHTPADDING", (0, 0), (-1, -1), 5),
-                    ("TOPPADDING", (0, 0), (-1, -1), 4),
-                    ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-                ]
-            )
-        )
-        return tbl
-
-    header = [Paragraph(_clean_text(c), styles["OSIL_TableHeader"]) for c in df.columns]
-    rows = []
-    for row in df.values.tolist():
-        rows.append([Paragraph(_clean_text(x), styles["OSIL_Table"]) for x in row])
-
-    data = [header] + rows
-    tbl = Table(data, colWidths=col_widths, repeatRows=1)
-    tbl.setStyle(
-        TableStyle(
-            [
-                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor(header_bg)),
-                ("GRID", (0, 0), (-1, -1), 0.35, colors.grey),
-                ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#F8FAFC")]),
-                ("LEFTPADDING", (0, 0), (-1, -1), 5),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 5),
-                ("TOPPADDING", (0, 0), (-1, -1), 4),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-            ]
-        )
-    )
-    return tbl
 
 
 def _build_radar_image(domain_scores: Dict[str, float]) -> io.BytesIO:
@@ -313,10 +173,8 @@ def _build_radar_image(domain_scores: Dict[str, float]) -> io.BytesIO:
     ax = plt.subplot(111, polar=True)
     ax.set_theta_offset(np.pi / 2)
     ax.set_theta_direction(-1)
-
     ax.plot(angles_loop, values_loop, linewidth=2)
     ax.fill(angles_loop, values_loop, alpha=0.12)
-
     ax.set_xticks(angles)
     ax.set_xticklabels(labels, fontsize=8)
     ax.set_ylim(0, 100)
@@ -337,36 +195,25 @@ def _build_heatmap_image(service_risk_top10: pd.DataFrame) -> io.BytesIO | None:
     if df.empty:
         return None
 
-    needed = [
-        "Service",
-        "Service_Tier",
-        "Recurrence_Risk",
-        "MTTR_Drag_Risk",
-        "Reopen_Churn_Risk",
-        "Change_Collision_Risk",
-    ]
+    needed = ["Service", "Service_Tier", "Recurrence_Risk", "MTTR_Drag_Risk", "Reopen_Churn_Risk", "Change_Collision_Risk"]
     missing = [c for c in needed if c not in df.columns]
     if missing:
         return None
 
     hm = df.head(10).copy()
     hm.index = hm["Service"].astype(str) + " (" + hm["Service_Tier"].astype(str) + ")"
-    hm = hm[
-        ["Recurrence_Risk", "MTTR_Drag_Risk", "Reopen_Churn_Risk", "Change_Collision_Risk"]
-    ].rename(
+    hm = hm[["Recurrence_Risk", "MTTR_Drag_Risk", "Reopen_Churn_Risk", "Change_Collision_Risk"]].rename(
         columns={
             "Recurrence_Risk": "Recurrence",
             "MTTR_Drag_Risk": "MTTR Drag",
-            "Reopen_Churn_Risk": "Reopen",
-            "Change_Collision_Risk": "Change",
+            "Reopen_Churn_Risk": "Reopen Churn",
+            "Change_Collision_Risk": "Change Collision",
         }
     )
-
     hm = hm.apply(pd.to_numeric, errors="coerce").fillna(0.0)
 
     fig = plt.figure(figsize=(6.8, 3.9), dpi=180)
     ax = plt.gca()
-
     im = ax.imshow(hm.values, aspect="auto", vmin=0, vmax=100)
     ax.set_xticks(range(len(hm.columns)))
     ax.set_xticklabels(list(hm.columns), fontsize=8)
@@ -418,26 +265,10 @@ def _bvsi_scale_table(styles) -> Table:
 
 def _domain_definitions_table(domain_scores: Dict[str, float], styles) -> Table:
     rows = [
-        [
-            "Service Resilience",
-            f'{round(_safe_float(domain_scores.get("Service Resilience", 0.0)), 1)}',
-            "Ability to recover quickly and consistently from incidents.",
-        ],
-        [
-            "Change Governance",
-            f'{round(_safe_float(domain_scores.get("Change Governance", 0.0)), 1)}',
-            "Effectiveness of controls preventing operational instability during change activity.",
-        ],
-        [
-            "Structural Risk Debt™",
-            f'{round(_safe_float(domain_scores.get("Structural Risk Debt™", 0.0)), 1)}',
-            "Accumulated instability caused by unresolved recurring weaknesses and operational debt.",
-        ],
-        [
-            "Reliability Momentum",
-            f'{round(_safe_float(domain_scores.get("Reliability Momentum", 0.0)), 1)}',
-            "Direction of operational reliability based on recurring instability and recovery behavior.",
-        ],
+        ["Service Resilience", f'{round(_safe_float(domain_scores.get("Service Resilience", 0.0)), 1)}', "Ability to recover quickly and consistently from incidents."],
+        ["Change Governance", f'{round(_safe_float(domain_scores.get("Change Governance", 0.0)), 1)}', "Effectiveness of controls preventing operational instability during change activity."],
+        ["Structural Risk Debt™", f'{round(_safe_float(domain_scores.get("Structural Risk Debt™", 0.0)), 1)}', "Accumulated instability caused by unresolved recurring weaknesses and operational debt."],
+        ["Reliability Momentum", f'{round(_safe_float(domain_scores.get("Reliability Momentum", 0.0)), 1)}', "Direction of operational reliability based on recurring instability and recovery behavior."],
     ]
     df = pd.DataFrame(rows, columns=["Domain", "Score", "What It Means"])
     return _paragraph_table(df, [2.0 * inch, 0.7 * inch, 4.65 * inch], styles)
@@ -454,49 +285,28 @@ def _top_three_briefs(sip_candidates: pd.DataFrame) -> pd.DataFrame:
         tier = str(row.get("Service_Tier", "Unknown Tier"))
         theme = str(row.get("Suggested_Theme", "Stability Improvement"))
         why = str(row.get("Why_Flagged", "Elevated operational instability"))
-        brief_rows.append(
-            {
-                "Initiative": f"{svc} ({tier}) — {theme}",
-                "Why Leadership Should Care": why,
-            }
-        )
+        brief_rows.append({"Initiative": f"{svc} ({tier}) — {theme}", "Why Leadership Should Care": why})
     return pd.DataFrame(brief_rows)
 
 
-def _action_roadmap(domain_scores: Dict[str, float], styles) -> Table:
-    weakest = min(domain_scores.items(), key=lambda x: x[1])[0] if domain_scores else "Service Resilience"
+def _key_takeaways(domain_scores: Dict[str, float], sip_candidates: pd.DataFrame) -> pd.DataFrame:
+    strongest = max(domain_scores.items(), key=lambda x: x[1])[0] if domain_scores else "Service Resilience"
+    weakest = min(domain_scores.items(), key=lambda x: x[1])[0] if domain_scores else "Structural Risk Debt™"
 
-    if weakest == "Change Governance":
-        immediate = "Strengthen Tier-1 change validation and post-change monitoring."
-        near = "Introduce change collision analysis and release-window discipline."
-        strategic = "Integrate change intelligence into broader operational risk governance."
-    elif weakest == "Structural Risk Debt™":
-        immediate = "Launch targeted SIPs for top recurring instability drivers."
-        near = "Increase problem management rigor and structural remediation tracking."
-        strategic = "Establish an operational debt reduction roadmap across critical services."
-    elif weakest == "Reliability Momentum":
-        immediate = "Stabilize top declining services and monitor weekly movement."
-        near = "Track recurring instability patterns and automate early-warning signals."
-        strategic = "Embed trend-based operational forecasting into leadership reviews."
-    else:
-        immediate = "Improve recovery playbooks and tighten incident recovery execution."
-        near = "Reduce MTTR drag through ownership clarity and automation."
-        strategic = "Build resilience engineering practices into critical service operations."
+    top_service = "No service identified"
+    priority_label = "Monitor"
+    if isinstance(sip_candidates, pd.DataFrame) and not sip_candidates.empty:
+        top_service = str(sip_candidates.iloc[0].get("Service", top_service))
+        priority_label = str(sip_candidates.iloc[0].get("Priority_Label", priority_label))
 
-    df = pd.DataFrame(
-        [
-            ["Immediate (0–30 days)", immediate],
-            ["Near-term (30–90 days)", near],
-            ["Strategic (90+ days)", strategic],
-        ],
-        columns=["Time Horizon", "Leadership Action"],
-    )
-    return _paragraph_table(df, [1.7 * inch, 5.65 * inch], styles)
+    rows = [
+        {"Key Takeaway": f"Operational strength is most visible in {strongest}, which currently provides the strongest stability support."},
+        {"Key Takeaway": f"The primary exposure area is {weakest}, and it should anchor near-term stabilization decisions."},
+        {"Key Takeaway": f"{top_service} is the leading service candidate for action and is currently classified as {priority_label}."},
+    ]
+    return pd.DataFrame(rows)
 
 
-# =========================================================
-# Public API expected by app.py
-# =========================================================
 def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
     styles = _styles()
     out = io.BytesIO()
@@ -526,144 +336,84 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
 
     story = []
 
-    # PAGE 1
-    story.append(Paragraph("Operational Stability Intelligence (OSIL™)", styles["OSIL_Title"]))
-    story.append(Paragraph(f"Executive Report — {tenant_name}", styles["OSIL_Subtitle"]))
+    # Page 1
+    story.append(Paragraph("OSIL™ by Xentrixus", styles["OSIL_Title"]))
+    story.append(Paragraph(f"Operational Stability Intelligence Report — {tenant_name}", styles["OSIL_Subtitle"]))
     story.append(Paragraph(f"As of {as_of}", styles["OSIL_Small"]))
     story.append(Spacer(1, 6))
 
-    story.append(_header_band("Executive Stability Brief"))
+    story.append(_header_band("Executive Brief"))
     story.append(_accent_rule())
     story.append(Spacer(1, 10))
 
     metric_row = Table(
-        [[
-            _kpi_box("BVSI™ Score", f"{bvsi:.1f}"),
-            _kpi_box("Operating Posture", posture),
-            _kpi_box("Data Readiness", f"{data_readiness_score:.1f}%"),
-        ]],
+        [[_kpi_box("BVSI™ Score", f"{bvsi:.1f}"), _kpi_box("Operating Posture", posture), _kpi_box("Data Readiness", f"{data_readiness_score:.1f}%")]],
         colWidths=[2.45 * inch, 2.45 * inch, 2.45 * inch],
     )
     metric_row.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP")]))
     story.append(metric_row)
 
     story.append(Spacer(1, 10))
-    story.append(Paragraph("BVSI™ Scale", styles["OSIL_Section"]))
+    story.append(Paragraph("BVSI™ Interpretation", styles["OSIL_Section"]))
     story.append(_bvsi_scale_table(styles))
 
     story.append(Spacer(1, 10))
     story.append(_signal_box("Executive Signal", _posture_signal_text(bvsi, posture), styles=styles))
 
     story.append(Spacer(1, 10))
-    story.append(Paragraph("Executive Interpretation", styles["OSIL_Section"]))
+    story.append(Paragraph("Executive Summary", styles["OSIL_Section"]))
     story.append(Paragraph(executive_interpretation, styles["OSIL_Body"]))
 
     story.append(Spacer(1, 10))
-    story.append(Paragraph("Assessment Context", styles["OSIL_Section"]))
-    context_df = pd.DataFrame(
-        [
-            ["Detected Dataset", detected_dataset],
-            ["Service Anchor Used", service_anchor_used],
-            ["Organization", tenant_name],
-        ],
-        columns=["Field", "Value"],
-    )
-    story.append(_paragraph_table(context_df, [2.2 * inch, 5.0 * inch], styles))
-
-    # PAGE 2
-    story.append(PageBreak())
-    story.append(_header_band("Operational Stability Diagnostics"))
-    story.append(_accent_rule())
-    story.append(Spacer(1, 10))
-
-    radar_img = _build_radar_image(domain_scores)
-    story.append(Image(radar_img, width=4.75 * inch, height=4.4 * inch))
-    story.append(Spacer(1, 10))
-
-    story.append(Paragraph("Domain Definitions and Scores", styles["OSIL_Section"]))
-    story.append(_domain_definitions_table(domain_scores, styles))
+    story.append(Paragraph("Key Takeaways", styles["OSIL_Section"]))
+    story.append(_paragraph_table(_key_takeaways(domain_scores, sip_candidates), [7.2 * inch], styles))
 
     story.append(Spacer(1, 8))
-    story.append(
-        Paragraph(
-            "Score interpretation: 80–100 = strong operational maturity; 60–79 = controlled but improvement needed; "
-            "40–59 = operational weakness; below 40 = structural instability.",
-            styles["OSIL_Small"],
-        )
-    )
+    story.append(Paragraph(f"Detected dataset: {detected_dataset} • Service anchor used: {service_anchor_used} • Organization: {tenant_name}", styles["OSIL_Small"]))
 
-    # PAGE 3
+    # Page 2
     story.append(PageBreak())
-    story.append(_header_band("Service Improvement Programs (SIPs)"))
+    story.append(_header_band("Operational Stability Profile"))
     story.append(_accent_rule())
     story.append(Spacer(1, 10))
-
-    story.append(
-        Paragraph(
-            "SIPs are targeted operational initiatives designed to remove concentrated instability from services or workflows. "
-            "They should be used to align ownership, reduce recurring disruption, and improve business confidence in technology operations.",
-            styles["OSIL_Body"],
-        )
-    )
+    story.append(Paragraph("How to read this chart: higher scores indicate stronger operational stability. The radar shows current performance across service resilience, change governance, structural risk debt, and reliability momentum.", styles["OSIL_Body"]))
     story.append(Spacer(1, 10))
+    story.append(Image(_build_radar_image(domain_scores), width=4.75 * inch, height=4.4 * inch))
+    story.append(Spacer(1, 8))
+    story.append(Paragraph("Domain Scores", styles["OSIL_Section"]))
+    story.append(_domain_definitions_table(domain_scores, styles))
+    story.append(Paragraph("Score guide: 80–100 = strong maturity; 60–79 = controlled but improving; 40–59 = operational weakness; below 40 = structural instability.", styles["OSIL_Small"]))
 
+    # Page 3
+    story.append(PageBreak())
+    story.append(_header_band("Service Improvement Priorities"))
+    story.append(_accent_rule())
+    story.append(Spacer(1, 10))
+    story.append(Paragraph("These represent the highest-impact stability improvements for the next 30–60 days. They should be used to guide leadership briefing, ownership alignment, and targeted operational remediation.", styles["OSIL_Body"]))
+    story.append(Spacer(1, 10))
     story.append(Paragraph("Top 3 Initiatives to Brief Leadership", styles["OSIL_Section"]))
     story.append(_paragraph_table(_top_three_briefs(sip_candidates), [3.2 * inch, 4.0 * inch], styles))
-
     story.append(Spacer(1, 12))
     story.append(Paragraph("Detailed SIP Candidates", styles["OSIL_Section"]))
     detailed = sip_candidates.head(10).copy()
     if not detailed.empty:
-        width = 7.0 / max(len(detailed.columns), 1)
-        story.append(_paragraph_table(detailed, [width * inch] * len(detailed.columns), styles))
+        widths = [7.0 / max(len(detailed.columns), 1) * inch] * len(detailed.columns)
+        story.append(_paragraph_table(detailed, widths, styles))
     else:
         story.append(_paragraph_table(detailed, [7.0 * inch], styles))
 
-    # PAGE 4
+    # Page 4
     story.append(PageBreak())
-    story.append(_header_band("Service Stability Heatmap"))
+    story.append(_header_band("Service Stability Heatmap (Top 10 Services by Risk)"))
     story.append(_accent_rule())
     story.append(Spacer(1, 10))
-
-    story.append(
-        Paragraph(
-            "This visual highlights where operational instability is concentrated by service across four executive-relevant risk drivers: "
-            "recurrence, MTTR drag, reopen churn, and change collision. Higher scores indicate greater stability risk.",
-            styles["OSIL_Body"],
-        )
-    )
+    story.append(Paragraph("Executive view: Service × Stability Risk across recurrence, MTTR drag, reopen churn, and change collision. This visual helps leadership identify where concentrated instability is likely to create operational exposure.", styles["OSIL_Body"]))
     story.append(Spacer(1, 10))
-
     hm_img = _build_heatmap_image(service_risk_top10)
     if hm_img is not None:
         story.append(Image(hm_img, width=6.8 * inch, height=4.2 * inch))
     else:
         story.append(Paragraph("No service risk data available.", styles["OSIL_Body"]))
-
-    story.append(Spacer(1, 8))
-    story.append(
-        Paragraph(
-            "How to read the heatmap: darker and higher-scoring cells indicate where a service is accumulating stability pressure. "
-            "Services showing elevated values across multiple columns should be prioritized for executive review or SIP action.",
-            styles["OSIL_Small"],
-        )
-    )
-
-    # PAGE 5
-    story.append(PageBreak())
-    story.append(_header_band("Recommended Leadership Actions"))
-    story.append(_accent_rule())
-    story.append(Spacer(1, 10))
-
-    story.append(
-        Paragraph(
-            "The actions below translate OSIL™ findings into an executive roadmap. They are intended to help leadership prioritize short-term stabilization "
-            "while building toward stronger long-term operational resilience.",
-            styles["OSIL_Body"],
-        )
-    )
-    story.append(Spacer(1, 10))
-    story.append(_action_roadmap(domain_scores, styles))
 
     doc.build(story, onFirstPage=_footer, onLaterPages=_footer)
     out.seek(0)
