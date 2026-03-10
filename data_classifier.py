@@ -5,7 +5,7 @@ def _lower_cols(df: pd.DataFrame) -> list[str]:
 
 def detect_practice_type(df: pd.DataFrame) -> str:
     """
-    Option A: simple column pattern detection.
+    Evaluates columns to determine the operational dataset type.
     """
     cols = _lower_cols(df)
     joined = " | ".join(cols)
@@ -50,12 +50,7 @@ def detect_practice_type(df: pd.DataFrame) -> str:
 
 def normalize_service_anchor(df: pd.DataFrame) -> tuple[pd.DataFrame, str]:
     """
-    Create a canonical Service_Anchor column using the approved fallback order:
-    1) Business Service / Service Offering
-    2) Application / Product
-    3) CI
-    4) Assignment Group
-    5) Category
+    Creates a canonical Service_Anchor column using an executive fallback priority order.
     """
     out = df.copy()
 
@@ -99,7 +94,7 @@ def normalize_service_anchor(df: pd.DataFrame) -> tuple[pd.DataFrame, str]:
 
 def calculate_data_readiness(df: pd.DataFrame) -> float:
     """
-    Simple readiness score based on presence of basic operational fields.
+    Calculates operational maturity based on the presence of required structural data points.
     """
     cols_norm = {str(c).strip().lower() for c in df.columns}
 
