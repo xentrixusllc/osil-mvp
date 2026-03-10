@@ -601,6 +601,8 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
         story.append(KeepTogether([risk_table]))
         story.append(Spacer(1, 24))
         
+        story.append(PageBreak())
+        
         story.append(Paragraph("About This Report", styles["SectionHeader"]))
         about_text = (
             f"The Operational Stability Intelligence Layer (OSIL™) is an enterprise advisory platform developed exclusively by Xentrixus. "
