@@ -1,4 +1,4 @@
-"""OSIL Streamlit Application - Complete Fixed Version"""
+"""OSIL Streamlit Application"""
 import os
 from difflib import get_close_matches
 from typing import Dict, List, Optional, Tuple
@@ -18,9 +18,9 @@ st.set_page_config(
     layout="wide",
 )
 
-APP_TITLE = "Xentrixus OSIL™ --- Stability Intelligence MVP"
+APP_TITLE = "Xentrixus OSIL™ • Stability Intelligence MVP"
 APP_SUB = (
-    "Upload Incident / Change / Problem exports → get BVSI™, Structural Risk Debt™, "
+    "Upload Incident / Change / Problem exports to get BVSI™, Structural Risk Debt™, "
     "SIP priorities, and executive interpretation."
 )
 
@@ -248,7 +248,7 @@ def _normalize_col_name(x: str) -> str:
 def _fuzzy_suggest(columns: List[str], aliases: List[str]) -> str:
     """Fuzzy match column names"""
     if not columns:
-        return "-- None --"
+        return "None"
 
     norm_to_original = {_normalize_col_name(c): c for c in columns}
     norm_columns = list(norm_to_original.keys())
@@ -274,7 +274,7 @@ def _fuzzy_suggest(columns: List[str], aliases: List[str]) -> str:
     if candidates:
         return norm_to_original[candidates[0]]
 
-    return "-- None --"
+    return "None"
 
 def _render_mapping_ui(df: pd.DataFrame, spec: Dict[str, Dict[str, object]], title: str, key_prefix: str) -> Dict[str, Optional[str]]:
     """Render column mapping UI"""
@@ -282,13 +282,13 @@ def _render_mapping_ui(df: pd.DataFrame, spec: Dict[str, Dict[str, object]], tit
     st.caption("Auto detection is only a starting point. Confirm the best field for each canonical OSIL input before running analysis.")
 
     columns = list(df.columns)
-    options = ["-- None --"] + columns
+    options = ["None"] + columns
     mapping: Dict[str, Optional[str]] = {}
 
     for canonical, cfg in spec.items():
-        suggested = _fuzzy_suggest(columns, cfg["aliases"]) if columns else "-- None --"
+        suggested = _fuzzy_suggest(columns, cfg["aliases"]) if columns else "None"
         if suggested not in options:
-            suggested = "-- None --"
+            suggested = "None"
         idx = options.index(suggested) if suggested in options else 0
 
         selected = st.selectbox(
@@ -297,7 +297,7 @@ def _render_mapping_ui(df: pd.DataFrame, spec: Dict[str, Dict[str, object]], tit
             index=idx,
             key=f"{key_prefix}_{canonical}",
         )
-        mapping[canonical] = None if selected == "-- None --" else selected
+        mapping[canonical] = None if selected == "None" else selected
 
     return mapping
 
@@ -431,6 +431,8 @@ def _build_pdf_payload(results: dict, tenant_name: str) -> dict:
         "posture": results.get("posture", "Unknown"),
         "as_of": results.get("as_of", ""),
         "executive_interpretation": results.get("exec_text", ""),
+        "voc_signal": results.get("voc_signal", ""),
+        "crit_signal": results.get("crit_signal", ""),
         "domain_scores": results.get("domain_scores", {}),
         "service_risk_top10": results.get("top10", pd.DataFrame()),
         "sip_candidates": results.get("sip_view", pd.DataFrame()),
@@ -596,6 +598,12 @@ def main():
     st.divider()
     st.subheader("Executive Interpretation")
     st.write(results["exec_text"])
+    
+    st.markdown("#### Critical Business Impact (Active Disruption)")
+    st.error(results["crit_signal"])
+    
+    st.markdown("#### Voice of the Customer (Emerging Risk)")
+    st.info(results["voc_signal"])
 
     st.divider()
     st.subheader("Operational Stability Profile")
