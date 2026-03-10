@@ -1,36 +1,33 @@
 import pandas as pd
 
-
 def _lower_cols(df: pd.DataFrame) -> list[str]:
     return [str(c).strip().lower() for c in df.columns]
 
-
 def detect_practice_type(df: pd.DataFrame) -> str:
     """
-    Option A: simple column-pattern detection.
+    Option A: simple column pattern detection.
     """
     cols = _lower_cols(df)
     joined = " | ".join(cols)
 
-    # Incident
     incident_signals = [
         "incident", "inc number", "number", "opened", "opened at", "priority",
         "reopened", "incident state"
     ]
-    # Change
+
     change_signals = [
         "change", "chg", "planned start", "planned end", "actual start", "actual end",
         "change type", "change state", "risk"
     ]
-    # Problem
+
     problem_signals = [
         "problem", "root cause", "contributing cause", "known error", "problem state"
     ]
-    # Request
+
     request_signals = [
         "request", "req", "requested for", "fulfillment", "catalog item"
     ]
-    # Telemetry / monitoring
+
     telemetry_signals = [
         "alert", "event", "latency", "cpu", "memory", "availability", "threshold"
     ]
@@ -51,7 +48,6 @@ def detect_practice_type(df: pd.DataFrame) -> str:
 
     return "unknown"
 
-
 def normalize_service_anchor(df: pd.DataFrame) -> tuple[pd.DataFrame, str]:
     """
     Create a canonical Service_Anchor column using the approved fallback order:
@@ -64,7 +60,6 @@ def normalize_service_anchor(df: pd.DataFrame) -> tuple[pd.DataFrame, str]:
     out = df.copy()
 
     preferred_order = [
-        # Business service / service offering
         "Business_Service",
         "Business Service",
         "Service_Offering",
@@ -72,28 +67,20 @@ def normalize_service_anchor(df: pd.DataFrame) -> tuple[pd.DataFrame, str]:
         "Service",
         "Service_Name",
         "Service Name",
-
-        # Application / product
         "Application",
         "Application_Name",
         "Application Name",
         "Product",
         "Product_Name",
         "Product Name",
-
-        # CI
         "CI",
         "CI_Name",
         "CI Name",
         "Configuration_Item",
         "Configuration Item",
         "Configuration Item (CI)",
-
-        # Assignment
         "Assignment_Group",
         "Assignment Group",
-
-        # Category fallback
         "Category",
     ]
 
@@ -109,7 +96,6 @@ def normalize_service_anchor(df: pd.DataFrame) -> tuple[pd.DataFrame, str]:
 
     out["Service_Anchor"] = "Unknown"
     return out, "None"
-
 
 def calculate_data_readiness(df: pd.DataFrame) -> float:
     """
@@ -137,6 +123,9 @@ def calculate_data_readiness(df: pd.DataFrame) -> float:
         }),
         "change_flag": any(c in cols_norm for c in {
             "change_related_flag", "change related flag", "rfc", "request for change (rfc) that caused problem"
+        }),
+        "root_cause": any(c in cols_norm for c in {
+            "root_cause_text", "root cause", "rca details", "cause"
         }),
     }
 
