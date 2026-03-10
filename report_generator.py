@@ -230,7 +230,6 @@ def _build_heatmap(service_risk_df: pd.DataFrame) -> Optional[io.BytesIO]:
     
     try:
         hm = df.head(8).copy()
-        # Adjusted truncation length so labels fit cleanly on the Y-Axis
         hm["Display"] = hm["Service"].astype(str).str[:14] + " (" + hm["Service_Tier"].astype(str) + ")"
         hm = hm.set_index("Display")[available]
         hm = hm.rename(columns=display_names)
@@ -297,7 +296,6 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
 
         story = []
 
-        # PAGE 1: EXECUTIVE BRIEFING
         story.append(Paragraph("OSIL™ Executive Briefing", styles["ExecutiveTitle"]))
         story.append(Paragraph(f"Operational Stability Intelligence Report — {tenant_name}<br/>As of {as_of}", 
                               styles["ExecutiveSubtitle"]))
@@ -345,13 +343,13 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
         
         imp_data = [
             [Paragraph("Strategic Insight", styles["TableHeader"]), 
-             Paragraph("Board Action", styles["TableHeader"])],
+             Paragraph("Leadership Action", styles["TableHeader"])],
             [Paragraph(f"<b>Strength:</b> {strongest} demonstrates mature controls and should be leveraged as the operational standard for other domains.", styles["TableCell"]),
              Paragraph("Codify practices into enterprise standards. Expand successful patterns to underperforming domains.", styles["TableCell"])],
             [Paragraph(f"<b>Exposure:</b> {weakest} represents the highest concentration of stability risk across the service portfolio.", styles["TableCell"]),
-             Paragraph(f"Authorize immediate SIP funding for {top_svc} and peer services in the bottom quartile.", styles["TableCell"])],
+             Paragraph(f"Authorize immediate SIP resourcing for {top_svc} and peer services in the bottom quartile.", styles["TableCell"])],
             [Paragraph(f"<b>Investment Priority:</b> {top_svc} exhibits top quartile instability requiring executive intervention.", styles["TableCell"]),
-             Paragraph("Assign executive sponsor immediately. Initiate 30 day remediation sprint with weekly board updates.", styles["TableCell"])]
+             Paragraph("Assign executive sponsor immediately. Initiate 30 day remediation sprint with weekly leadership updates.", styles["TableCell"])]
         ]
         
         imp_table = Table(imp_data, colWidths=[3.5*inch, 3.5*inch])
@@ -379,7 +377,6 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
 
         story.append(PageBreak())
 
-        # PAGE 2: STABILITY PROFILE
         story.append(Paragraph("Operational Stability Profile", styles["PageHeader"]))
         
         radar_img = _build_radar_chart(domain_scores)
@@ -424,14 +421,12 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
             ('BACKGROUND', (0, i), (-1, i), colors.HexColor("#F8FAFC")) for i in range(2, len(domain_rows), 2)
         ]))
         
-        # Keep tables tied to their headers
         story.append(KeepTogether([domain_table]))
         story.append(Spacer(1, 10))
         story.append(Paragraph("Scoring: 80 to 100 Strong | 60 to 79 Controlled | 40 to 59 Weakness | Below 40 Fragility", styles["Caption"]))
 
         story.append(PageBreak())
 
-        # PAGE 3: SERVICE IMPROVEMENT
         story.append(Paragraph("Service Improvement Priorities", styles["PageHeader"]))
         story.append(Paragraph("High impact SIPs for executive sponsorship. These services represent the highest concentration of operational risk.", styles["ExecutiveBody"]))
         story.append(Spacer(1, 16))
@@ -488,7 +483,7 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
             for _, row in sip_candidates.iterrows():
                 svc = str(row.get("Service", ""))
                 tier = str(row.get("Service_Tier", ""))
-                theme = str(row.get("Suggested_Theme", "Stability"))[:15]
+                theme = str(row.get("Suggested_Theme", "Stability"))
                 priority = str(row.get("Priority_Label", ""))
                 score = _safe_float(row.get("SIP_Priority_Score", row.get("sip_priority_score", 0)), 0)
                 
@@ -500,7 +495,7 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
                     Paragraph(f"{score:.1f}", ParagraphStyle(name='c4', parent=styles["TableCellBold"], alignment=1))
                 ])
             
-            sip_table = Table(sip_data, colWidths=[2.3*inch, 0.7*inch, 1.6*inch, 1.2*inch, 1.2*inch])
+            sip_table = Table(sip_data, colWidths=[2.1*inch, 0.7*inch, 2.0*inch, 1.1*inch, 1.1*inch])
             sip_table.setStyle(TableStyle([
                 ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#0F172A")),
                 ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
@@ -521,7 +516,6 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
 
         story.append(PageBreak())
 
-        # PAGE 4: RISK HEATMAP
         story.append(Paragraph("Service Risk Concentration Matrix", styles["PageHeader"]))
         story.append(Paragraph("Cross dimensional risk analysis. Dark red indicates critical risk concentration requiring immediate executive intervention.", styles["ExecutiveBody"]))
         story.append(Spacer(1, 12))
@@ -542,7 +536,6 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
 
         story.append(PageBreak())
 
-        # PAGE 5: APPENDIX
         story.append(Paragraph("Appendix: Reference Methodology", styles["PageHeader"]))
         story.append(Spacer(1, 16))
         
@@ -554,7 +547,7 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
             ["70 to 84", "Controlled & Improving", "Maintain course; selective SIPs in weak domains"],
             ["55 to 69", "Controlled but Exposed", "Immediate SIP activation in Structural Risk Debt"],
             ["40 to 54", "Reactive & Exposed", "Executive intervention required; halt non critical changes"],
-            ["Below 40", "Fragile Operations", "Emergency stabilization; board level crisis protocol"],
+            ["Below 40", "Fragile Operations", "Emergency stabilization; executive crisis protocol"],
         ]
         
         scale_table = Table(scale_data, colWidths=[1.2*inch, 2.0*inch, 3.8*inch])
