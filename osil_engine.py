@@ -60,6 +60,18 @@ def _priority_weight(priority: Any) -> float:
     }
     return mapping.get(p, 1.0)
 
+def _is_high_urgency(priority: Any) -> int:
+    p = str(priority).strip().upper()
+    if p in ["P1", "P2", "1", "2", "CRITICAL", "HIGH"]:
+        return 1
+    return 0
+
+def _is_low_urgency(priority: Any) -> int:
+    p = str(priority).strip().upper()
+    if p in ["P3", "P4", "P5", "3", "4", "5", "MEDIUM", "LOW"]:
+        return 1
+    return 0
+
 def _operating_posture(bvsi: float) -> str:
     if bvsi >= 85:
         return "High Confidence Operations"
@@ -154,6 +166,8 @@ def _prepare_incidents(df: pd.DataFrame) -> Tuple[pd.DataFrame, str]:
         out["Problem_ID"] = np.nan
         
     out["Priority_Weight"] = out["Priority"].apply(_priority_weight)
+    out["Is_High_Urgency"] = out["Priority"].apply(_is_high_urgency)
+    out["Is_Low_Urgency"] = out["Priority"].apply(_is_low_urgency)
     
     return out, anchor_used
 
@@ -375,6 +389,8 @@ def _problem_signals_by_service(inc: pd.DataFrame, probs: pd.DataFrame) -> pd.Da
 def _build_rollup(inc: pd.DataFrame, changes: pd.DataFrame, probs: pd.DataFrame) -> pd.DataFrame:
     base = inc.groupby("Service_Anchor", dropna=False).agg(
         recurrence=("Service_Anchor", "count"),
+        high_urgency_count=("Is_High_Urgency", "sum"),
+        low_urgency_count=("Is_Low_Urgency", "sum"),
         reopen_rate=("Reopened_Flag", "mean"),
         change_collision_rate=("Change_Collision_Flag", "mean"),
         mttr_hours=("MTTR_Hours", "mean"),
@@ -588,6 +604,22 @@ def run_osil(
         if domain_scores["Change Governance"] >= 70
         else "Change driven instability is contributing to exposure."
     )
+
+    if not roll.empty and "low_urgency_count" in roll.columns and roll["low_urgency_count"].sum() > 0:
+        voc_row = roll.sort_values("low_urgency_count", ascending=False).iloc[0]
+        voc_service = voc_row["Service_Anchor"]
+        voc_count = int(voc_row["low_urgency_count"])
+        voc_signal = f"Alert: {voc_service} is generating significant low urgency friction ({voc_count} brewing incidents). This indicates silent productivity loss and emerging risk from the perspective of the business."
+    else:
+        voc_signal = "Low urgency friction is currently within acceptable tolerances."
+    
+    if not roll.empty and "high_urgency_count" in roll.columns and roll["high_urgency_count"].sum() > 0:
+        crit_row = roll.sort_values("high_urgency_count", ascending=False).iloc[0]
+        crit_service = crit_row["Service_Anchor"]
+        crit_count = int(crit_row["high_urgency_count"])
+        crit_signal = f"Critical Exposure: {crit_service} has generated {crit_count} high priority incidents. This represents active disruption to business operations and direct impact to customer experience."
+    else:
+        crit_signal = "High priority disruption is currently contained with no single service showing critical concentration."
     
     exec_text = _executive_interpretation(
         bvsi,
@@ -635,6 +667,8 @@ def run_osil(
         "gap": weakest_domain,
         "as_of": as_of,
         "exec_text": exec_text,
+        "voc_signal": voc_signal,
+        "crit_signal": crit_signal,
         "domain_scores": domain_scores,
         "service_risk_df": service_risk_df.copy(),
         "top10": service_risk_df.copy(),
