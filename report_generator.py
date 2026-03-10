@@ -545,7 +545,6 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
             story.append(Paragraph("Top 3 Initiatives to Brief Leadership", styles["OSIL_SectionHeader"]))
             
             initiatives_data = [["Initiative", "Why Leadership Should Care"]]
-            
             for idx, (_, row) in enumerate(sip_candidates.head(3).iterrows(), 1):
                 svc = str(row.get("Service", row.get("service", "Unknown")))
                 tier = str(row.get("Service_Tier", row.get("service_tier", "Unknown")))
@@ -566,14 +565,14 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
             story.append(Paragraph("Service Improvement Priorities (SIPs)", styles["OSIL_SectionHeader"]))
             
             sip_data = [["Service", "Tier", "Theme", "Priority", "Why Flagged", "Score"]]
-            
             for _, row in sip_candidates.iterrows():
                 svc = str(row.get("Service", row.get("service", "Unknown")))
                 tier = str(row.get("Service_Tier", row.get("service_tier", "Unknown")))
                 theme = str(row.get("Suggested_Theme", row.get("suggested_theme", "Stability")))
                 priority = str(row.get("Priority_Label", row.get("priority_label", "Monitor")))
                 why = str(row.get("Why_Flagged", row.get("why_flagged", "Risk")))
-                score = _safe_float(row.get("Composite_Risk", row.get("composite_risk", 0.0)), 0.0)
+                # FIX: Use SIP_Priority_Score (as per osil_engine.py) with fallback to composite_risk
+                score = _safe_float(row.get("SIP_Priority_Score", row.get("sip_priority_score", row.get("Composite_Risk", row.get("composite_risk", 0.0)))), 0.0)
                 
                 sip_data.append([svc, tier, theme, priority, why, f"{score:.1f}"])
             
