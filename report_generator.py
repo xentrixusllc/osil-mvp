@@ -1,4 +1,4 @@
-"""OSIL Executive PDF Report Generator - Page Layout Fixed"""
+"""OSIL Executive PDF Report Generator - Layout and Heatmap Fixed"""
 import io
 import re
 from typing import Any, Dict, List, Optional
@@ -22,9 +22,8 @@ from reportlab.platypus import (
     KeepTogether,
 )
 
-# Force disable any TeX rendering
+# Configure matplotlib to avoid LaTeX and rendering issues
 plt.rcParams['text.usetex'] = False
-plt.rcParams['text.hinting'] = False
 plt.rcParams['mathtext.default'] = 'regular'
 
 def _safe_float(val: Any, default: float = 0.0) -> float:
@@ -197,8 +196,7 @@ def _build_radar_image(domain_scores: Dict[str, float]) -> Optional[io.BytesIO]:
         angles_loop = angles + [angles[0]]
         values_loop = values + [values[0]]
         
-        # Create figure with constrained layout
-        fig = plt.figure(figsize=(6, 5.5), dpi=120)
+        fig = plt.figure(figsize=(6, 5.5))
         ax = fig.add_subplot(111, polar=True)
         ax.set_theta_offset(np.pi / 2)
         ax.set_theta_direction(-1)
@@ -257,10 +255,8 @@ def _build_heatmap_image(service_risk_df: pd.DataFrame) -> Optional[io.BytesIO]:
         hm = hm.rename(columns=display_names)
         hm = hm.apply(pd.to_numeric, errors="coerce").fillna(0.0)
         
-        # Fixed size for consistency
-        fig, ax = plt.subplots(figsize=(7, 5), dpi=100)
+        fig, ax = plt.subplots(figsize=(7, 5))
         
-        # Use RdYlGn_r colormap
         cmap = plt.cm.RdYlGn_r
         
         im = ax.imshow(hm.values, aspect="auto", vmin=0, vmax=100, cmap=cmap)
@@ -270,12 +266,10 @@ def _build_heatmap_image(service_risk_df: pd.DataFrame) -> Optional[io.BytesIO]:
         ax.set_xticklabels(list(hm.columns), fontsize=10, fontweight='bold')
         ax.set_yticklabels(list(hm.index), fontsize=9)
         
-        # Clean colorbar without LaTeX
         cbar = plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
         cbar.set_label("Risk Score", fontsize=10, fontweight='bold')
         cbar.ax.tick_params(labelsize=9)
         
-        # Text annotations
         for i in range(len(hm.index)):
             for j in range(len(hm.columns)):
                 val = int(round(float(hm.iloc[i, j]), 0))
@@ -444,17 +438,14 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
             ('LINEABOVE', (0, 0), (-1, 0), 1, colors.HexColor("#CBD5E1")),
         ]))
         
-        # Wrap Key Takeaways together to prevent page split
         kt_section = [kt_header, Spacer(1, 4), takeaway_table]
         story.append(KeepTogether(kt_section))
         
         story.append(Spacer(1, 12))
         
-        # Metadata at bottom of page 1
         meta_text = f"Detected dataset: {detected_dataset} • Service anchor used: {service_anchor} • Organization: {tenant_name}"
         story.append(Paragraph(meta_text, styles["OSIL_Small"]))
 
-        # Force page break after page 1 content
         story.append(PageBreak())
 
         # ==================== PAGE 2 CONTENT ====================
@@ -556,7 +547,6 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
             story.append(Image(hm_img, width=6.0*inch, height=4.5*inch))
             story.append(Spacer(1, 10))
         
-        # Heatmap explanation - keep together
         explanation_header = Paragraph("Understanding the Heatmap", styles["OSIL_SectionHeader"])
         explanation_text = Paragraph(
             "The heatmap above displays stability risk concentration across your top services. "
@@ -571,7 +561,6 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
         story.append(KeepTogether([explanation_header, Spacer(1, 4), explanation_text]))
         story.append(Spacer(1, 8))
         
-        # Risk guide table
         story.append(Paragraph("Risk Score Guide", styles["OSIL_SectionHeader"]))
         risk_guide_data = [
             ["Risk Level", "Color Indicator", "Interpretation", "Recommended Action"],
