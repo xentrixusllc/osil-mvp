@@ -470,7 +470,8 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
                 ('BACKGROUND', (0, 1), (-1, 1), colors.HexColor("#FEF3C7"))
             ]))
             story.append(KeepTogether([top3_table]))
-            story.append(Spacer(1, 24))
+            
+            story.append(PageBreak())
             
             story.append(Paragraph("SIP Portfolio", styles["SectionHeader"]))
             
