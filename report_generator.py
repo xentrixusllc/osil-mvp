@@ -1,4 +1,4 @@
-"""OSIL Executive PDF Report Generator - Professional Layout Fixed"""
+"""OSIL Executive PDF Report Generator - Layout and Heatmap Fixed"""
 import io
 import re
 from typing import Any, Dict, List, Optional
@@ -19,7 +19,12 @@ from reportlab.platypus import (
     Spacer,
     Table,
     TableStyle,
+    KeepTogether,
 )
+
+# Disable LaTeX rendering in matplotlib to avoid artifacts
+plt.rcParams['text.usetex'] = False
+plt.rcParams['mathtext.default'] = 'regular'
 
 def _safe_float(val: Any, default: float = 0.0) -> float:
     try:
@@ -59,7 +64,6 @@ def _get_posture_from_bvsi(bvsi: float) -> str:
 def _styles():
     styles = getSampleStyleSheet()
     
-    # Main Title Style
     styles.add(
         ParagraphStyle(
             name="OSIL_MainTitle",
@@ -72,7 +76,6 @@ def _styles():
         )
     )
     
-    # Report Subtitle
     styles.add(
         ParagraphStyle(
             name="OSIL_ReportSubtitle",
@@ -85,7 +88,6 @@ def _styles():
         )
     )
     
-    # Date line
     styles.add(
         ParagraphStyle(
             name="OSIL_Date",
@@ -94,11 +96,10 @@ def _styles():
             fontSize=10,
             leading=12,
             textColor=colors.HexColor("#64748B"),
-            spaceAfter=20,
+            spaceAfter=16,
         )
     )
     
-    # Section Headers
     styles.add(
         ParagraphStyle(
             name="OSIL_SectionHeader",
@@ -108,11 +109,10 @@ def _styles():
             leading=18,
             textColor=colors.HexColor("#0F172A"),
             spaceAfter=10,
-            spaceBefore=14,
+            spaceBefore=12,
         )
     )
     
-    # Page Header
     styles.add(
         ParagraphStyle(
             name="OSIL_PageHeader",
@@ -125,7 +125,6 @@ def _styles():
         )
     )
     
-    # Body text
     styles.add(
         ParagraphStyle(
             name="OSIL_Body",
@@ -137,19 +136,17 @@ def _styles():
         )
     )
     
-    # Small text
     styles.add(
         ParagraphStyle(
             name="OSIL_Small",
             parent=styles["BodyText"],
             fontName="Helvetica",
-            fontSize=8,
-            leading=11,
+            fontSize=9,
+            leading=12,
             textColor=colors.HexColor("#64748B"),
         )
     )
     
-    # Table Header
     styles.add(
         ParagraphStyle(
             name="OSIL_TableHeader",
@@ -158,11 +155,9 @@ def _styles():
             fontSize=9,
             leading=11,
             textColor=colors.white,
-            alignment=1,  # Center alignment
         )
     )
     
-    # Table Cell
     styles.add(
         ParagraphStyle(
             name="OSIL_TableCell",
@@ -174,7 +169,6 @@ def _styles():
         )
     )
     
-    # Table Cell Bold
     styles.add(
         ParagraphStyle(
             name="OSIL_TableCellBold",
@@ -183,19 +177,6 @@ def _styles():
             fontSize=9,
             leading=11,
             textColor=colors.HexColor("#0F172A"),
-            alignment=1,  # Center for scores
-        )
-    )
-    
-    # Left aligned table cell
-    styles.add(
-        ParagraphStyle(
-            name="OSIL_TableCellLeft",
-            parent=styles["BodyText"],
-            fontName="Helvetica",
-            fontSize=9,
-            leading=11,
-            textColor=colors.HexColor("#334155"),
         )
     )
     
@@ -211,7 +192,6 @@ def _footer(canvas, doc):
 
 def _build_radar_image(domain_scores: Dict[str, float]) -> Optional[io.BytesIO]:
     try:
-        # Standardize domain names
         label_map = {
             "Service Resilience": "Service\nResilience",
             "Change Governance": "Change\nGovernance", 
@@ -237,28 +217,23 @@ def _build_radar_image(domain_scores: Dict[str, float]) -> Optional[io.BytesIO]:
         angles_loop = angles + [angles[0]]
         values_loop = values + [values[0]]
         
-        # Create figure with better aesthetics
-        fig, ax = plt.subplots(figsize=(6, 5.5), subplot_kw=dict(projection='polar'), dpi=150)
+        fig, ax = plt.subplots(figsize=(6, 5.5), subplot_kw=dict(projection='polar'), dpi=120)
         ax.set_theta_offset(np.pi / 2)
         ax.set_theta_direction(-1)
         
-        # Draw filled area
         ax.fill(angles_loop, values_loop, color='#3B82F6', alpha=0.25)
         ax.plot(angles_loop, values_loop, color='#1E40AF', linewidth=2.5)
         
-        # Add grid
         ax.grid(True, linestyle='--', alpha=0.6, color='gray')
         ax.set_axisbelow(True)
         
-        # Set labels
         ax.set_xticks(angles)
-        ax.set_xticklabels(labels, fontsize=9, fontweight='bold')
+        ax.set_xticklabels(labels, fontsize=10, fontweight='bold')
         ax.set_ylim(0, 100)
         ax.set_yticks([20, 40, 60, 80, 100])
-        ax.set_yticklabels(["20", "40", "60", "80", "100"], fontsize=8, color='gray')
+        ax.set_yticklabels(["20", "40", "60", "80", "100"], fontsize=9, color='gray')
         
-        # Title
-        ax.set_title("Operational Stability Radar", fontsize=13, fontweight='bold', 
+        ax.set_title("Operational Stability Radar", fontsize=14, fontweight='bold', 
                     color='#0F172A', pad=20, y=1.08)
         
         plt.tight_layout()
@@ -295,46 +270,38 @@ def _build_heatmap_image(service_risk_df: pd.DataFrame) -> Optional[io.BytesIO]:
     
     try:
         hm = df.head(10).copy()
-        # Create display names
         hm["Display_Name"] = hm["Service"].astype(str).str[:22] + " (" + hm["Service_Tier"].astype(str) + ")"
         hm = hm.set_index("Display_Name")[available_risks]
         hm = hm.rename(columns=display_names)
         hm = hm.apply(pd.to_numeric, errors="coerce").fillna(0.0)
         
-        # Determine figure size based on number of services
-        height = min(6, max(4, len(hm) * 0.4))
-        fig, ax = plt.subplots(figsize=(7, height), dpi=150)
+        height = min(6, max(4, len(hm) * 0.45))
+        fig, ax = plt.subplots(figsize=(7.5, height), dpi=120)
         
-        # Use a professional colormap
-        cmap = plt.cm.RdYlGn_r  # Red-Yellow-Green reversed (red = high risk)
+        # Use RdYlGn_r colormap without LaTeX
+        cmap = plt.cm.RdYlGn_r
         
         im = ax.imshow(hm.values, aspect="auto", vmin=0, vmax=100, cmap=cmap)
         
-        # Set ticks
         ax.set_xticks(np.arange(len(hm.columns)))
         ax.set_yticks(np.arange(len(hm.index)))
-        ax.set_xticklabels(list(hm.columns), fontsize=9, fontweight='bold')
-        ax.set_yticklabels(list(hm.index), fontsize=8)
+        ax.set_xticklabels(list(hm.columns), fontsize=10, fontweight='bold')
+        ax.set_yticklabels(list(hm.index), fontsize=9)
         
-        # Rotate x labels for better readability
-        plt.setp(ax.get_xticklabels(), rotation=0, ha="center")
-        
-        # Add colorbar
+        # Add colorbar without LaTeX
         cbar = plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
-        cbar.set_label("Risk Score", fontsize=9, fontweight='bold')
-        cbar.ax.tick_params(labelsize=8)
+        cbar.set_label("Risk Score", fontsize=10, fontweight='bold')
+        cbar.ax.tick_params(labelsize=9)
         
         # Add text annotations
         for i in range(len(hm.index)):
             for j in range(len(hm.columns)):
                 val = int(round(float(hm.iloc[i, j]), 0))
-                # Choose text color based on background intensity
                 text_color = "white" if val > 60 else "black"
                 ax.text(j, i, str(val), ha="center", va="center", 
-                       fontsize=8, color=text_color, fontweight='bold')
+                       fontsize=9, color=text_color, fontweight='bold')
         
-        # Title
-        ax.set_title("Service Stability Heatmap", fontsize=12, fontweight='bold', 
+        ax.set_title("Service Stability Heatmap", fontsize=13, fontweight='bold', 
                     color='#0F172A', pad=15)
         
         plt.tight_layout()
@@ -353,7 +320,6 @@ def _create_table(data, col_widths, header_style, cell_style, cell_styles=None, 
     if not data or len(data) == 0:
         return Table([["No data available"]])
     
-    # Process data into Paragraphs
     table_data = []
     for i, row in enumerate(data):
         new_row = []
@@ -363,7 +329,6 @@ def _create_table(data, col_widths, header_style, cell_style, cell_styles=None, 
             else:
                 style = cell_styles[j] if cell_styles and j < len(cell_styles) else cell_style
                 new_row.append(Paragraph(str(cell), style))
-        # Ensure row length matches col_widths
         while len(new_row) < len(col_widths):
             new_row.append(Paragraph("", cell_style))
         table_data.append(new_row)
@@ -375,17 +340,16 @@ def _create_table(data, col_widths, header_style, cell_style, cell_styles=None, 
         ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
         ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
         ('FONTSIZE', (0, 0), (-1, 0), 9),
-        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
         ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-        ('LEFTPADDING', (0, 0), (-1, -1), 6),
-        ('RIGHTPADDING', (0, 0), (-1, -1), 6),
-        ('TOPPADDING', (0, 0), (-1, -1), 8),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+        ('LEFTPADDING', (0, 0), (-1, -1), 8),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 8),
+        ('TOPPADDING', (0, 0), (-1, -1), 6),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
         ('LINEABOVE', (0, 0), (-1, 0), 1.5, colors.HexColor(header_bg)),
         ('LINEBELOW', (0, 0), (-1, 0), 1.5, colors.HexColor(header_bg)),
     ]
     
-    # Add alternating row colors and grid lines
     for i in range(1, len(table_data)):
         if i % 2 == 0:
             style_commands.append(('BACKGROUND', (0, i), (-1, i), colors.HexColor("#F8FAFC")))
@@ -408,7 +372,6 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
             bottomMargin=0.7 * inch,
         )
 
-        # Extract data
         tenant_name = str(payload.get("tenant_name", "Default"))
         as_of = str(payload.get("as_of", "2026-03-28"))
         bvsi = _safe_float(payload.get("bvsi", 69.6))
@@ -425,8 +388,10 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
         weakest = min(domain_scores.items(), key=lambda x: _safe_float(x[1], 0))[0] if domain_scores else "Structural Risk Debt"
         
         top_svc = "Mobile Banking"
+        top_priority = "Next SIP"
         if not sip_candidates.empty:
             top_svc = str(sip_candidates.iloc[0].get("Service", "Mobile Banking"))
+            top_priority = str(sip_candidates.iloc[0].get("Priority_Label", "Next SIP"))
 
         story = []
 
@@ -435,7 +400,6 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
         story.append(Paragraph(f"Operational Stability Intelligence Report — {tenant_name}", styles["OSIL_ReportSubtitle"]))
         story.append(Paragraph(f"As of {as_of}", styles["OSIL_Date"]))
         
-        # Executive Brief Section
         story.append(Paragraph("Executive Brief", styles["OSIL_SectionHeader"]))
         
         brief_data = [
@@ -445,9 +409,8 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
         brief_table = _create_table(brief_data, [2.0*inch, 3.0*inch, 1.5*inch], 
                                    styles["OSIL_TableHeader"], styles["OSIL_TableCellBold"])
         story.append(brief_table)
-        story.append(Spacer(1, 16))
+        story.append(Spacer(1, 12))
         
-        # BVSI Interpretation
         story.append(Paragraph("BVSI™ Interpretation", styles["OSIL_SectionHeader"]))
         
         interp_data = [
@@ -459,36 +422,33 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
             ["<40", "Fragile Operations", "Operational fragility is high and stabilization should be treated as an executive priority."]
         ]
         interp_table = _create_table(interp_data, [1.2*inch, 2.0*inch, 3.3*inch],
-                                    styles["OSIL_TableHeader"], styles["OSIL_TableCellLeft"])
+                                    styles["OSIL_TableHeader"], styles["OSIL_TableCell"])
         story.append(interp_table)
-        story.append(Spacer(1, 16))
+        story.append(Spacer(1, 12))
         
-        # Executive Signal
         story.append(Paragraph("Executive Signal", styles["OSIL_SectionHeader"]))
         signal_text = f"Operational stability is currently {posture}, with a BVSI™ score of {bvsi:.1f}. Governance mechanisms are functioning, but recurring instability patterns remain across higher-impact services."
         story.append(Paragraph(signal_text, styles["OSIL_Body"]))
-        story.append(Spacer(1, 12))
+        story.append(Spacer(1, 10))
         
-        # Executive Summary
         story.append(Paragraph("Executive Summary", styles["OSIL_SectionHeader"]))
         if exec_summary:
             story.append(Paragraph(exec_summary, styles["OSIL_Body"]))
         else:
             default_summary = f"Your organization is operating in a {posture} posture (BVSI™ {bvsi:.1f}). Current stability signals suggest the greatest exposure sits in {weakest}. Incident restoration signals show visible drag. Structural learning signals remain inconsistent. Change governance appears steady."
             story.append(Paragraph(default_summary, styles["OSIL_Body"]))
-        story.append(Spacer(1, 12))
+        story.append(Spacer(1, 10))
         
-        # Key Takeaways
+        # Key Takeaways - Keep together to avoid page split
         story.append(Paragraph("Key Takeaways", styles["OSIL_SectionHeader"]))
         
         takeaway_data = [
             ["Key Takeaway"],
             [f"Operational strength is most visible in {strongest}, which currently provides the strongest stability support."],
             [f"The primary exposure area is {weakest}, and it should anchor near-term stabilization decisions."],
-            [f"{top_svc} is the leading service candidate for action and is currently classified as Next SIP."]
+            [f"{top_svc} is the leading service candidate for action and is currently classified as {top_priority}."]
         ]
         
-        # Special styling for takeaway table
         takeaway_table = Table(takeaway_data, colWidths=[6.5*inch])
         takeaway_table.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#F1F5F9")),
@@ -506,9 +466,8 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
             ('LINEABOVE', (0, 0), (-1, 0), 1, colors.HexColor("#CBD5E1")),
         ]))
         story.append(takeaway_table)
-        story.append(Spacer(1, 16))
+        story.append(Spacer(1, 12))
         
-        # Metadata
         meta_text = f"Detected dataset: {detected_dataset} • Service anchor used: {service_anchor} • Organization: {tenant_name}"
         story.append(Paragraph(meta_text, styles["OSIL_Small"]))
 
@@ -517,17 +476,15 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
         story.append(Paragraph("Operational Stability Profile", styles["OSIL_PageHeader"]))
         story.append(Spacer(1, 8))
         
-        # Radar Chart with proper spacing
         radar_img = _build_radar_image(domain_scores)
         if radar_img:
             story.append(Image(radar_img, width=5.0*inch, height=4.5*inch))
-            story.append(Spacer(1, 8))
+            story.append(Spacer(1, 6))
         
         how_to_read = "How to read this chart: higher scores indicate stronger operational stability. The radar shows current performance across service resilience, change governance, structural risk debt, and reliability momentum."
         story.append(Paragraph(how_to_read, styles["OSIL_Small"]))
-        story.append(Spacer(1, 16))
+        story.append(Spacer(1, 14))
         
-        # Domain Scores Table
         story.append(Paragraph("Domain Scores", styles["OSIL_SectionHeader"]))
         
         domain_data = [["Domain", "Score", "What It Means"]]
@@ -550,8 +507,7 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
             domain_data.append([display_name, f"{score:.1f}", definition])
         
         domain_table = _create_table(domain_data, [2.2*inch, 0.7*inch, 3.6*inch],
-                                    styles["OSIL_TableHeader"], styles["OSIL_TableCellLeft"],
-                                    cell_styles=[styles["OSIL_TableCellLeft"], styles["OSIL_TableCellBold"], styles["OSIL_TableCellLeft"]])
+                                    styles["OSIL_TableHeader"], styles["OSIL_TableCell"])
         story.append(domain_table)
         story.append(Spacer(1, 8))
         
@@ -562,7 +518,7 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
         story.append(PageBreak())
         story.append(Paragraph("Service Improvement Priorities", styles["OSIL_PageHeader"]))
         story.append(Paragraph("These represent the highest-impact stability improvements for the next 30–60 days. They should be used to guide leadership briefing, ownership alignment, and targeted operational investment.", styles["OSIL_Body"]))
-        story.append(Spacer(1, 12))
+        story.append(Spacer(1, 10))
         
         if not sip_candidates.empty:
             story.append(Paragraph("Top 3 Initiatives to Brief Leadership", styles["OSIL_SectionHeader"]))
@@ -581,11 +537,10 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
                 initiatives_data.append([initiative_name, why])
             
             initiatives_table = _create_table(initiatives_data, [3.0*inch, 3.5*inch],
-                                             styles["OSIL_TableHeader"], styles["OSIL_TableCellLeft"])
+                                             styles["OSIL_TableHeader"], styles["OSIL_TableCell"])
             story.append(initiatives_table)
-            story.append(Spacer(1, 16))
+            story.append(Spacer(1, 14))
             
-            # Detailed SIP Candidates
             story.append(Paragraph("Detailed SIP Candidates", styles["OSIL_SectionHeader"]))
             
             sip_data = [["Service", "Tier", "Theme", "Score", "Priority", "Why Flagged"]]
@@ -599,25 +554,48 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
                 
                 sip_data.append([svc, tier, theme, f"{score:.1f}", priority, why])
             
-            # Different column widths for better fit
             sip_table = _create_table(sip_data, [1.5*inch, 0.6*inch, 1.1*inch, 0.7*inch, 0.9*inch, 1.7*inch],
-                                     styles["OSIL_TableHeader"], styles["OSIL_TableCellLeft"],
-                                     cell_styles=[styles["OSIL_TableCellLeft"], styles["OSIL_TableCell"], 
-                                                 styles["OSIL_TableCell"], styles["OSIL_TableCellBold"],
-                                                 styles["OSIL_TableCell"], styles["OSIL_TableCellLeft"]])
+                                     styles["OSIL_TableHeader"], styles["OSIL_TableCell"])
             story.append(sip_table)
 
         # ==================== PAGE 4 ====================
         story.append(PageBreak())
         story.append(Paragraph("Service Stability Heatmap", styles["OSIL_PageHeader"]))
         story.append(Paragraph("Executive view: Service × Stability Risk across recurrence, MTTR drag, reopen churn, and change collision. This visual helps leadership identify where concentrated instability is likely to create operational exposure.", styles["OSIL_Body"]))
-        story.append(Spacer(1, 12))
+        story.append(Spacer(1, 10))
         
         hm_img = _build_heatmap_image(service_risk_df)
         if hm_img:
             story.append(Image(hm_img, width=6.5*inch, height=5.5*inch))
-        else:
-            story.append(Paragraph("No heatmap data available", styles["OSIL_Body"]))
+            story.append(Spacer(1, 12))
+        
+        # Heatmap explanation section
+        story.append(Paragraph("Understanding the Heatmap", styles["OSIL_SectionHeader"]))
+        
+        explanation_text = (
+            "The heatmap above displays stability risk concentration across your top services. "
+            "Each cell represents a risk score from 0 (green, stable) to 100 (red, critical). "
+            "High scores in the <b>Recurrence</b> column indicate services with repeated incidents. "
+            "<b>MTTR Drag</b> shows slow recovery times. <b>Reopen</b> highlights incidents that were "
+            "closed prematurely and reopened. <b>Change</b> indicates instability related to change activity. "
+            "Services with multiple red/orange cells require immediate executive attention and SIP intervention."
+        )
+        story.append(Paragraph(explanation_text, styles["OSIL_Body"]))
+        story.append(Spacer(1, 10))
+        
+        # Add risk level guide
+        risk_guide_data = [
+            ["Risk Level", "Color Indicator", "Interpretation", "Recommended Action"],
+            ["0-30", "Green", "Stable operations within acceptable parameters", "Maintain current controls, monitor trends"],
+            ["31-60", "Yellow", "Elevated risk requiring attention", "Review operational procedures, consider preventive measures"],
+            ["61-80", "Orange", "High risk, potential service impact", "Initiate SIP, allocate resources for improvement"],
+            ["81-100", "Red", "Critical risk, immediate intervention required", "Executive escalation, emergency SIP activation"]
+        ]
+        
+        story.append(Paragraph("Risk Score Guide", styles["OSIL_SectionHeader"]))
+        risk_table = _create_table(risk_guide_data, [1.0*inch, 1.3*inch, 2.2*inch, 2.0*inch],
+                                  styles["OSIL_TableHeader"], styles["OSIL_TableCell"])
+        story.append(risk_table)
 
         doc.build(story, onFirstPage=_footer, onLaterPages=_footer)
         out.seek(0)
