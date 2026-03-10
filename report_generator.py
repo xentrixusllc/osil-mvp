@@ -297,7 +297,7 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
         story = []
 
         story.append(Paragraph("OSIL™ Executive Briefing", styles["ExecutiveTitle"]))
-        story.append(Paragraph(f"Operational Stability Intelligence Report — {tenant_name}<br/>As of {as_of}", 
+        story.append(Paragraph(f"Operational Stability Intelligence Report for {tenant_name} | As of {as_of}", 
                               styles["ExecutiveSubtitle"]))
         
         metric_data = [
@@ -349,7 +349,7 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
             [Paragraph(f"<b>Exposure:</b> {weakest} represents the highest concentration of stability risk across the service portfolio.", styles["TableCell"]),
              Paragraph(f"Authorize immediate SIP resourcing for {top_svc} and peer services in the bottom quartile.", styles["TableCell"])],
             [Paragraph(f"<b>Investment Priority:</b> {top_svc} exhibits top quartile instability requiring executive intervention.", styles["TableCell"]),
-             Paragraph("Assign executive sponsor immediately. Initiate 30 day remediation sprint with weekly leadership updates.", styles["TableCell"])]
+             Paragraph("Assign executive sponsor immediately. Initiate thirty day remediation sprint with weekly leadership updates.", styles["TableCell"])]
         ]
         
         imp_table = Table(imp_data, colWidths=[3.5*inch, 3.5*inch])
@@ -428,7 +428,7 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
         story.append(PageBreak())
 
         story.append(Paragraph("Service Improvement Priorities", styles["PageHeader"]))
-        story.append(Paragraph("High impact SIPs for executive sponsorship. These services represent the highest concentration of operational risk.", styles["ExecutiveBody"]))
+        story.append(Paragraph("Priority SIPs require executive sponsorship. These services represent the highest concentration of operational risk.", styles["ExecutiveBody"]))
         story.append(Spacer(1, 16))
         
         if not sip_candidates.empty:
@@ -518,7 +518,7 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
         story.append(PageBreak())
 
         story.append(Paragraph("Service Risk Concentration Matrix", styles["PageHeader"]))
-        story.append(Paragraph("Cross dimensional risk analysis. Dark red indicates critical risk concentration requiring immediate executive intervention.", styles["ExecutiveBody"]))
+        story.append(Paragraph("Multidimensional risk analysis. Dark red indicates critical risk concentration requiring immediate executive intervention.", styles["ExecutiveBody"]))
         story.append(Spacer(1, 12))
         
         hm_img = _build_heatmap(service_risk_df)
@@ -529,9 +529,9 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
         story.append(Paragraph("Risk Dimension Definitions", styles["SectionHeader"]))
         story.append(Paragraph(
             "<b>Recurrence:</b> Frequency of repeated incidents indicating unresolved root causes.<br/>"
-            "<b>MTTR Drag:</b> Recovery time exceeds SLAs.<br/>"
+            "<b>MTTR Drag:</b> Recovery time exceeds target levels.<br/>"
             "<b>Reopen:</b> Incidents closed prematurely.<br/>"
-            "<b>Change:</b> Instability correlated with change windows.", 
+            "<b>Change:</b> Instability correlated with deployment windows.", 
             styles["ExecutiveBody"]
         ))
 
@@ -547,7 +547,7 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
             ["85 to 100", "High Confidence", "Invest in scaling operations; stability enables growth"],
             ["70 to 84", "Controlled & Improving", "Maintain course; selective SIPs in weak domains"],
             ["55 to 69", "Controlled but Exposed", "Immediate SIP activation in Structural Risk Debt"],
-            ["40 to 54", "Reactive & Exposed", "Executive intervention required; halt non critical changes"],
+            ["40 to 54", "Reactive & Exposed", "Executive intervention required; halt perimeter changes"],
             ["Below 40", "Fragile Operations", "Emergency stabilization; executive crisis protocol"],
         ]
         
@@ -576,9 +576,9 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
         risk_data = [
             ["Score", "Level", "Response", "Investment"],
             ["0 to 30", "Green / Stable", "Standard operations, monitoring", "Maintenance"],
-            ["31 to 60", "Yellow / Elevated", "Operational review in 30 days", "Preventive"],
+            ["31 to 60", "Yellow / Elevated", "Operational review in thirty days", "Preventive"],
             ["61 to 80", "Orange / High", "Executive sponsor, SIP activation", "Priority"],
-            ["81 to 100", "Red / Critical", "Crisis protocol, change freeze", "Emergency"],
+            ["81 to 100", "Red / Critical", "Crisis protocol, freeze deployments", "Emergency"],
         ]
         
         risk_table = Table(risk_data, colWidths=[1.2*inch, 1.6*inch, 2.5*inch, 1.7*inch])
@@ -602,12 +602,14 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
         story.append(Spacer(1, 24))
         
         story.append(Paragraph("About This Report", styles["SectionHeader"]))
-        story.append(Paragraph(
-            f"The Operational Stability Intelligence Layer (OSIL™) synthesizes incident, change, and problem data. "
-            f"The BVSI™ measures organizational capability to maintain service stability. "
-            f"This analysis is based on {detected_dataset} data using {service_anchor} as the operational anchor.", 
-            styles["ExecutiveBody"]
-        ))
+        about_text = (
+            f"The Operational Stability Intelligence Layer (OSIL™) is an enterprise advisory platform developed exclusively by Xentrixus. "
+            f"OSIL synthesizes complex IT service data to reveal structural vulnerabilities and operational friction. "
+            f"The framework is anchored by the Business Value Stability Index (BVSI™). "
+            f"BVSI translates technical metrics into a unified executive score that measures the absolute capability of an organization to sustain operational resilience and protect core business value. "
+            f"This intelligence brief is derived from {detected_dataset} telemetry using {service_anchor} as the foundational perspective."
+        )
+        story.append(Paragraph(about_text, styles["ExecutiveBody"]))
 
         doc.build(story, onFirstPage=_footer, onLaterPages=_footer)
         out.seek(0)
