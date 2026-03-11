@@ -1,5 +1,6 @@
 """OSIL Streamlit Application"""
 import os
+import textwrap
 from difflib import get_close_matches
 from typing import Dict, List, Optional, Tuple
 
@@ -366,18 +367,21 @@ def radar_chart(domain_scores: dict):
     return fig
 
 def plot_pareto(df: pd.DataFrame):
-    """Generate Pareto chart for Root Cause Themes"""
-    fig, ax1 = plt.subplots(figsize=(8, 4.5), dpi=120)
+    """Generate locked numeric axis Pareto chart for Root Cause Themes"""
+    fig, ax1 = plt.subplots(figsize=(8, 5.5), dpi=120)
     
-    truncated_labels = [str(x)[:20] + "..." if len(str(x)) > 20 else str(x) for x in df["Theme"]]
+    labels = [textwrap.fill(str(x), width=18) for x in df["Theme"]]
+    x_pos = np.arange(len(df))
     
-    ax1.bar(truncated_labels, df["Frequency"], color="#3B82F6")
+    ax1.bar(x_pos, df["Frequency"], color="#3B82F6")
     ax1.set_ylabel("Frequency of Root Cause", color="#0F172A", fontweight="bold")
     ax1.tick_params(axis="y", labelcolor="#0F172A")
-    ax1.set_xticklabels(truncated_labels, rotation=45, ha="right", fontsize=9)
+    
+    ax1.set_xticks(x_pos)
+    ax1.set_xticklabels(labels, rotation=35, ha="right", fontsize=9)
 
     ax2 = ax1.twinx()
-    ax2.plot(truncated_labels, df["Cumulative_Pct"], color="#DC2626", marker="o", linewidth=2.5)
+    ax2.plot(x_pos, df["Cumulative_Pct"], color="#DC2626", marker="o", linewidth=2.5)
     ax2.set_ylabel("Cumulative Impact Percentage", color="#DC2626", fontweight="bold")
     ax2.set_ylim(0, 110)
     
@@ -704,7 +708,13 @@ def main():
         st.subheader("Structural Risk Debt™: Thematic Extraction")
         fig_pareto = plot_pareto(results["rca_pareto_df"])
         st.pyplot(fig_pareto, use_container_width=True)
-        st.caption("How to read: The blue bars represent raw frequency. The red line proves that remediating the first few themes eliminates the vast majority of operational debt.")
+        
+        pareto_narrative = (
+            "Executive Insight: The Pareto principle dictates that roughly eighty percent of operational instability stems from twenty percent of the underlying causes. "
+            "The themes clustered on the left side of this axis represent your highest leverage remediation targets. "
+            "Funding service improvement programs focused exclusively on these top drivers will mathematically eliminate the vast majority of your structural risk debt while optimizing resource allocation."
+        )
+        st.info(pareto_narrative)
         
         st.dataframe(results["rca_themes_df"], use_container_width=True)
         st.divider()
