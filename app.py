@@ -368,7 +368,7 @@ def radar_chart(domain_scores: dict):
 
 def plot_pareto(df: pd.DataFrame):
     """Generate locked numeric axis Pareto chart for Root Cause Themes"""
-    fig, ax1 = plt.subplots(figsize=(8.0, 4.5), dpi=120)
+    fig, ax1 = plt.subplots(figsize=(8.5, 5.0), dpi=120)
     
     labels = [textwrap.fill(str(x)[:22] + "..." if len(str(x)) > 22 else str(x), width=18) for x in df["Theme"]]
     x_pos = np.arange(len(df))
@@ -378,7 +378,7 @@ def plot_pareto(df: pd.DataFrame):
     ax1.tick_params(axis="y", labelcolor="#0F172A")
     
     ax1.set_xticks(x_pos)
-    ax1.set_xticklabels(labels, rotation=35, ha="right", fontsize=8)
+    ax1.set_xticklabels(labels, rotation=35, ha="right", fontsize=9)
 
     ax2 = ax1.twinx()
     ax2.plot(x_pos, df["Cumulative_Pct"], color="#DC2626", marker="o", linewidth=2.5)
@@ -401,7 +401,7 @@ def plot_impact_matrix(service_risk_df: pd.DataFrame):
         ax.text(0.5, 0.5, 'Insufficient Data for Impact Matrix', ha='center', va='center')
         return fig
 
-    merged = service_risk_df.sort_values("Total_Service_Risk", ascending=False).head(5).copy()
+    merged = service_risk_df.sort_values(by=["Active_Disruption_P1_P2", "Total_Service_Risk"], ascending=[False, False]).head(5).copy()
     
     merged["Active_Disruption_P1_P2"] = pd.to_numeric(merged["Active_Disruption_P1_P2"], errors="coerce").fillna(0)
     merged["Recurrence_Risk"] = pd.to_numeric(merged["Recurrence_Risk"], errors="coerce").fillna(0)
@@ -411,23 +411,31 @@ def plot_impact_matrix(service_risk_df: pd.DataFrame):
     x_pos = np.arange(len(merged))
     labels = [textwrap.fill(str(x)[:20], width=12) for x in merged["Service"]]
     
-    ax1.bar(x_pos, merged["Active_Disruption_P1_P2"], color="#DC2626", width=0.45, alpha=0.9, label="Active Disruption (Count)")
+    bars = ax1.bar(x_pos, merged["Active_Disruption_P1_P2"], color="#DC2626", width=0.45, alpha=0.9, label="Active Disruption (P1/P2 Count)")
     ax1.set_ylabel("Active Disruption Volume (P1 and P2)", color="#DC2626", fontweight="bold", fontsize=9)
     ax1.tick_params(axis="y", labelcolor="#DC2626")
     ax1.set_xticks(x_pos)
     ax1.set_xticklabels(labels, rotation=0, ha="center", fontsize=9, fontweight="bold")
     
+    for bar in bars:
+        yval = bar.get_height()
+        if yval > 0:
+            ax1.text(bar.get_x() + bar.get_width()/2.0, yval + 0.05, f"{int(yval)}", ha='center', va='bottom', color='#DC2626', fontweight='bold', fontsize=10)
+
     max_disruption = float(merged["Active_Disruption_P1_P2"].max())
     if max_disruption < 5:
         ax1.set_ylim(0, 5)
     else:
-        ax1.set_ylim(0, max_disruption * 1.2)
+        ax1.set_ylim(0, max_disruption * 1.3)
 
     ax2 = ax1.twinx()
-    ax2.plot(x_pos, merged["Recurrence_Risk"], color="#0F172A", marker="o", linewidth=2.5, markersize=8, label="Recurrence Risk Score")
+    line = ax2.plot(x_pos, merged["Recurrence_Risk"], color="#0F172A", marker="o", linewidth=2.5, markersize=8, label="Recurrence Risk Score")
     ax2.set_ylabel("Recurrence Risk Score (Zero to 100)", color="#0F172A", fontweight="bold", fontsize=9)
     ax2.tick_params(axis="y", labelcolor="#0F172A")
-    ax2.set_ylim(0, 105)
+    ax2.set_ylim(0, 115)
+    
+    for i, val in enumerate(merged["Recurrence_Risk"]):
+        ax2.text(x_pos[i], val + 3, f"{int(val)}", ha='center', va='bottom', color='#0F172A', fontweight='bold', fontsize=9)
 
     ax1.spines['top'].set_visible(False)
     ax2.spines['top'].set_visible(False)
