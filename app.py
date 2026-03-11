@@ -431,8 +431,9 @@ def _build_pdf_payload(results: dict, tenant_name: str) -> dict:
         "posture": results.get("posture", "Unknown"),
         "as_of": results.get("as_of", ""),
         "executive_interpretation": results.get("exec_text", ""),
-        "voc_signal": results.get("voc_signal", ""),
-        "crit_signal": results.get("crit_signal", ""),
+        "trust_gap_narrative": results.get("trust_gap_narrative", ""),
+        "trust_gap_df": results.get("trust_gap_df", pd.DataFrame()),
+        "rca_themes_df": results.get("rca_themes_df", pd.DataFrame()),
         "domain_scores": results.get("domain_scores", {}),
         "service_risk_top10": results.get("top10", pd.DataFrame()),
         "sip_candidates": results.get("sip_view", pd.DataFrame()),
@@ -599,11 +600,11 @@ def main():
     st.subheader("Executive Interpretation")
     st.write(results["exec_text"])
     
-    st.markdown("#### Critical Business Impact (Active Disruption)")
-    st.error(results["crit_signal"])
+    st.markdown("#### Xentrixus OSIL™ Trust Gap Analysis (P1 to P5)")
+    st.info(results["trust_gap_narrative"])
     
-    st.markdown("#### Voice of the Customer (Emerging Risk)")
-    st.info(results["voc_signal"])
+    if not results["trust_gap_df"].empty:
+        st.dataframe(results["trust_gap_df"], use_container_width=True)
 
     st.divider()
     st.subheader("Operational Stability Profile")
@@ -615,13 +616,19 @@ def main():
         st.caption("How to read: balanced shape indicates aligned governance; collapsed axis indicates maturity gap requiring targeted SIP focus.")
 
     with rc2:
-        st.markdown("### Stability Domain Scores (0-100)")
+        st.markdown("### Stability Domain Scores (0 to 100)")
         st.dataframe(
             pd.DataFrame({"Domain": list(results["domain_scores"].keys()), "Score": list(results["domain_scores"].values())}),
             use_container_width=True,
         )
 
     st.divider()
+    
+    if not results["rca_themes_df"].empty:
+        st.subheader("Structural Risk Debt™: Root Cause Themes")
+        st.caption("Thematic extraction of actual documented root causes per service to bypass administrative tick box governance.")
+        st.dataframe(results["rca_themes_df"], use_container_width=True)
+        st.divider()
 
     service_risk_df = results["service_risk_df"]
     top10 = results["top10"].copy()
@@ -668,7 +675,7 @@ def main():
             except Exception as e:
                 st.warning(f"Could not generate heatmap: {e}")
 
-        st.markdown("**Top 10 Services -- Risk Breakdown**")
+        st.markdown("**Top 10 Services | Risk Breakdown**")
         st.dataframe(top10, use_container_width=True)
     else:
         st.info("No service risk data available.")
@@ -677,20 +684,20 @@ def main():
     render_service_instability_leaders(service_risk_df)
 
     st.divider()
-    st.markdown("### Top SIP Candidates (Next 30 Days)")
+    st.markdown("### Top SIP Candidates (Next Thirty Days)")
     st.dataframe(results["sip_view"], use_container_width=True)
 
     st.divider()
 
-    with st.expander("Preview -- Incidents", expanded=False):
+    with st.expander("Preview | Incidents", expanded=False):
         st.dataframe(incidents_df.head(20), use_container_width=True)
 
     if changes_df is not None and not changes_df.empty:
-        with st.expander("Preview -- Changes", expanded=False):
+        with st.expander("Preview | Changes", expanded=False):
             st.dataframe(changes_df.head(20), use_container_width=True)
 
     if problems_df is not None and not problems_df.empty:
-        with st.expander("Preview -- Problems", expanded=False):
+        with st.expander("Preview | Problems", expanded=False):
             st.dataframe(problems_df.head(20), use_container_width=True)
 
     st.divider()
