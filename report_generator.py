@@ -269,6 +269,89 @@ def _build_heatmap(service_risk_df: pd.DataFrame) -> Optional[io.BytesIO]:
         print(f"Heatmap error: {e}")
         return None
 
+def _build_pareto_image(df: pd.DataFrame) -> Optional[io.BytesIO]:
+    if df.empty:
+        return None
+    try:
+        fig, ax1 = plt.subplots(figsize=(7.5, 4.5), dpi=120)
+        
+        truncated_labels = [str(x)[:20] + "..." if len(str(x)) > 20 else str(x) for x in df["Theme"]]
+        
+        ax1.bar(truncated_labels, df["Frequency"], color="#3B82F6")
+        ax1.set_ylabel("Frequency of Root Cause", color="#0F172A", fontweight="bold")
+        ax1.tick_params(axis="y", labelcolor="#0F172A")
+        ax1.set_xticklabels(truncated_labels, rotation=45, ha="right", fontsize=9)
+
+        ax2 = ax1.twinx()
+        ax2.plot(truncated_labels, df["Cumulative_Pct"], color="#DC2626", marker="o", linewidth=2.5)
+        ax2.set_ylabel("Cumulative Impact Percentage", color="#DC2626", fontweight="bold")
+        ax2.set_ylim(0, 110)
+        
+        ax1.spines['top'].set_visible(False)
+        ax2.spines['top'].set_visible(False)
+        
+        plt.title("Eighty Twenty Rule: Top Structural Risk Themes", fontweight="bold", color="#0F172A", pad=15)
+        plt.tight_layout()
+        
+        img = io.BytesIO()
+        plt.savefig(img, format='png', bbox_inches='tight', facecolor='white', edgecolor='none')
+        plt.close(fig)
+        img.seek(0)
+        return img
+    except Exception as e:
+        print(f"Pareto error: {e}")
+        return None
+
+def _build_impact_matrix_image(service_risk_df: pd.DataFrame, trust_gap_df: pd.DataFrame) -> Optional[io.BytesIO]:
+    if service_risk_df.empty or trust_gap_df.empty:
+        return None
+    try:
+        merged = pd.merge(service_risk_df, trust_gap_df, on="Service", how="inner")
+        if merged.empty:
+            return None
+            
+        fig, ax = plt.subplots(figsize=(7.5, 5.0), dpi=120)
+        
+        x = merged["Recurrence_Risk"].fillna(0)
+        y = merged["Active_Disruption_P1_P2"].fillna(0)
+        sizes = merged["Total_Service_Risk"].fillna(1) * 8 
+        
+        scatter = ax.scatter(x, y, s=sizes, c="#DC2626", alpha=0.6, edgecolors="#7F1D1D", linewidth=1.5)
+        
+        for i, txt in enumerate(merged["Service"]):
+            ax.annotate(str(txt)[:15], (x.iloc[i], y.iloc[i]), fontsize=8, ha="center", va="center", fontweight="bold")
+            
+        ax.set_xlabel("Recurrence Risk Score (Zero to 100)", fontweight="bold", color="#0F172A")
+        ax.set_ylabel("Active Disruption Volume (P1 and P2)", fontweight="bold", color="#0F172A")
+        ax.set_title("Executive Strike Zone: Recurrence versus Disruption", fontweight="bold", color="#0F172A", pad=15)
+        
+        max_y = float(y.max())
+        if max_y < 5:
+            ax.set_ylim(-0.5, 5)
+        else:
+            ax.set_ylim(-0.5, max_y + 2)
+            
+        ax.set_xlim(-5, 105)
+        
+        mean_y = float(y.mean())
+        mean_x = float(x.mean())
+        ax.axhline(mean_y, color="#94A3B8", linestyle="--", alpha=0.5)
+        ax.axvline(mean_x, color="#94A3B8", linestyle="--", alpha=0.5)
+        
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+        
+        plt.tight_layout()
+        
+        img = io.BytesIO()
+        plt.savefig(img, format='png', bbox_inches='tight', facecolor='white', edgecolor='none')
+        plt.close(fig)
+        img.seek(0)
+        return img
+    except Exception as e:
+        print(f"Impact matrix error: {e}")
+        return None
+
 def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
     try:
         styles = _styles()
@@ -292,6 +375,7 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
         sip_candidates = _safe_df(payload.get("sip_candidates"))
         trust_gap_df = _safe_df(payload.get("trust_gap_df"))
         rca_themes_df = _safe_df(payload.get("rca_themes_df"))
+        rca_pareto_df = _safe_df(payload.get("rca_pareto_df"))
         detected_dataset = str(payload.get("detected_dataset", "INCIDENT")).upper()
         service_anchor = str(payload.get("service_anchor_used", "Service"))
         readiness = _safe_float(payload.get("data_readiness_score", 0))
@@ -520,17 +604,16 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
                 sip_table
             ]))
 
-        # NEW PAGE: Business Trust & Root Cause Analytics
         story.append(PageBreak())
+        
         story.append(Paragraph("Business Trust & Root Cause Analytics", styles["PageHeader"]))
         story.append(Paragraph("The Xentrixus OSIL™ framework identifies structural operational gaps by measuring the ratio of silent friction to active disruption, and by extracting true thematic root causes rather than relying on administrative closure flags.", styles["ExecutiveBody"]))
         story.append(Spacer(1, 16))
 
-        story.append(Paragraph("Xentrixus Trust Gap Matrix (P1 to P5)", styles["SectionHeader"]))
-        
-        trust_narrative = _clean_text(payload.get("trust_gap_narrative", "Insufficient priority data to calculate business trust gap."))
-        story.append(Paragraph(trust_narrative, styles["ExecutiveBody"]))
-        story.append(Spacer(1, 12))
+        impact_img = _build_impact_matrix_image(service_risk_df, trust_gap_df)
+        if impact_img:
+            story.append(Image(impact_img, width=6.5*inch, height=4.3*inch))
+            story.append(Spacer(1, 16))
 
         if not trust_gap_df.empty:
             trust_data = [[Paragraph("Service", styles["TableHeader"]), 
@@ -567,11 +650,19 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
             ] + [
                 ('BACKGROUND', (0, i), (-1, i), colors.HexColor("#F8FAFC")) for i in range(2, len(trust_data), 2)
             ]))
-            story.append(trust_table)
-            story.append(Spacer(1, 24))
-
-        story.append(Paragraph("Structural Risk Debt™: Root Cause Themes", styles["SectionHeader"]))
+            
+            story.append(KeepTogether([
+                Paragraph("Xentrixus Trust Gap Matrix (P1 to P5)", styles["SectionHeader"]),
+                trust_table
+            ]))
+            
+        story.append(PageBreak())
         
+        pareto_img = _build_pareto_image(rca_pareto_df)
+        if pareto_img:
+            story.append(Image(pareto_img, width=6.5*inch, height=3.9*inch))
+            story.append(Spacer(1, 16))
+
         if not rca_themes_df.empty:
             rca_data = [[Paragraph("Service", styles["TableHeader"]), 
                          Paragraph("Documented Root Cause Themes", styles["TableHeader"])]]
@@ -601,10 +692,11 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
             ] + [
                 ('BACKGROUND', (0, i), (-1, i), colors.HexColor("#F8FAFC")) for i in range(2, len(rca_data), 2)
             ]))
-            story.append(rca_table)
-        else:
-            story.append(Paragraph("No thematic root cause data was detected. This exposes a severe structural learning gap requiring immediate process review.", styles["ExecutiveBody"]))
-
+            
+            story.append(KeepTogether([
+                Paragraph("Structural Risk Debt™: Root Cause Ledger", styles["SectionHeader"]),
+                rca_table
+            ]))
 
         story.append(PageBreak())
 
