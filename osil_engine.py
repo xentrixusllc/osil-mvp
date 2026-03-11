@@ -402,6 +402,22 @@ def _extract_rca_themes(probs: pd.DataFrame) -> pd.DataFrame:
     
     return grouped.rename(columns={"Service_Anchor": "Service"}).sort_values("Problem_Count", ascending=False)
 
+def _build_rca_pareto(probs: pd.DataFrame) -> pd.DataFrame:
+    """Builds aggregated frequency distribution of root cause themes."""
+    if probs is None or probs.empty or "Root_Cause_Text" not in probs.columns:
+        return pd.DataFrame(columns=["Theme", "Frequency", "Cumulative_Pct"])
+        
+    valid = probs[probs["Root_Cause_Text"].astype(str).str.strip().replace("nan", "") != ""]
+    if valid.empty:
+        return pd.DataFrame(columns=["Theme", "Frequency", "Cumulative_Pct"])
+        
+    valid["Theme"] = valid["Root_Cause_Text"].astype(str).str.strip().str.title()
+    pareto = valid.groupby("Theme").size().reset_index(name="Frequency")
+    pareto = pareto.sort_values("Frequency", ascending=False).head(10).reset_index(drop=True)
+    pareto["Cumulative_Pct"] = (pareto["Frequency"].cumsum() / pareto["Frequency"].sum() * 100).round(1)
+    
+    return pareto
+
 def _analyze_trust_gap(roll: pd.DataFrame) -> Tuple[pd.DataFrame, str]:
     """Analyzes the holistic P1 to P5 distribution to calculate the business trust gap."""
     if roll.empty or "high_urgency_count" not in roll.columns:
@@ -636,6 +652,7 @@ def run_osil(
     domain_scores = _build_domain_scores(service_risk_df)
     
     rca_themes_df = _extract_rca_themes(prb)
+    rca_pareto_df = _build_rca_pareto(prb)
     trust_gap_df, trust_gap_narrative = _analyze_trust_gap(roll)
     
     bvsi = round(float(np.mean(list(domain_scores.values()))), 1) if domain_scores else 0.0
@@ -707,6 +724,7 @@ def run_osil(
         "trust_gap_narrative": trust_gap_narrative,
         "trust_gap_df": trust_gap_df.copy(),
         "rca_themes_df": rca_themes_df.copy(),
+        "rca_pareto_df": rca_pareto_df.copy(),
         "domain_scores": domain_scores,
         "service_risk_df": service_risk_df.copy(),
         "top10": service_risk_df.copy(),
