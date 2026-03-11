@@ -386,6 +386,56 @@ def _problem_signals_by_service(inc: pd.DataFrame, probs: pd.DataFrame) -> pd.Da
         
     return pd.DataFrame(rows)
 
+def _extract_rca_themes(probs: pd.DataFrame) -> pd.DataFrame:
+    """Extracts actual RCA text to map Structural Risk Debt themes."""
+    if probs is None or probs.empty or "Root_Cause_Text" not in probs.columns:
+        return pd.DataFrame(columns=["Service", "Problem_Count", "Documented_Themes"])
+
+    valid = probs[probs["Root_Cause_Text"].astype(str).str.strip().replace("nan", "") != ""]
+    if valid.empty:
+        return pd.DataFrame(columns=["Service", "Problem_Count", "Documented_Themes"])
+
+    grouped = valid.groupby("Service_Anchor").agg(
+        Problem_Count=("Problem_ID", "nunique"),
+        Documented_Themes=("Root_Cause_Text", lambda x: " | ".join(x.astype(str).str.strip().unique()[:3]))
+    ).reset_index()
+    
+    return grouped.rename(columns={"Service_Anchor": "Service"}).sort_values("Problem_Count", ascending=False)
+
+def _analyze_trust_gap(roll: pd.DataFrame) -> Tuple[pd.DataFrame, str]:
+    """Analyzes the holistic P1 to P5 distribution to calculate the business trust gap."""
+    if roll.empty or "high_urgency_count" not in roll.columns:
+        return pd.DataFrame(), "Insufficient priority data to calculate business trust gap."
+
+    df = roll[["Service_Anchor", "high_urgency_count", "low_urgency_count"]].copy()
+    df.rename(columns={
+        "Service_Anchor": "Service",
+        "high_urgency_count": "Active_Disruption_P1_P2",
+        "low_urgency_count": "Silent_Friction_P3_P5"
+    }, inplace=True)
+
+    total_crit = int(df["Active_Disruption_P1_P2"].sum())
+    total_fric = int(df["Silent_Friction_P3_P5"].sum())
+
+    narrative = (
+        f"The Xentrixus OSIL™ framework identifies a perception gap when silent friction outweighs acknowledged disruption. "
+        f"Currently, the business is absorbing {total_fric} low priority (P3 to P5) friction points compared to {total_crit} high priority (P1 and P2) disruptions. "
+    )
+
+    if total_crit == 0 and total_fric > 0:
+         narrative += "This absolute imbalance creates severe risk; technology dashboards show zero disruption while the business bleeds productivity."
+    elif total_fric > (total_crit * 4):
+        narrative += "This massive ratio erodes IT credibility. Operational dashboards report green SLAs while the business experiences ongoing productivity loss."
+    elif total_fric > 0:
+        narrative += "This ratio indicates standard operational load, but services with concentrated low urgency friction must be monitored to protect business trust."
+    else:
+        narrative += "Incident volumes are currently contained with no material perception gap detected."
+
+    df = df[(df["Active_Disruption_P1_P2"] > 0) | (df["Silent_Friction_P3_P5"] > 0)]
+    df["Friction_Ratio"] = (df["Silent_Friction_P3_P5"] / (df["Active_Disruption_P1_P2"] + 1)).round(1)
+
+    return df.sort_values("Friction_Ratio", ascending=False).head(5), narrative
+
 def _build_rollup(inc: pd.DataFrame, changes: pd.DataFrame, probs: pd.DataFrame) -> pd.DataFrame:
     base = inc.groupby("Service_Anchor", dropna=False).agg(
         recurrence=("Service_Anchor", "count"),
@@ -585,6 +635,9 @@ def run_osil(
     service_risk_df = _build_service_risk_df(roll, top_n=10)
     domain_scores = _build_domain_scores(service_risk_df)
     
+    rca_themes_df = _extract_rca_themes(prb)
+    trust_gap_df, trust_gap_narrative = _analyze_trust_gap(roll)
+    
     bvsi = round(float(np.mean(list(domain_scores.values()))), 1) if domain_scores else 0.0
     posture = _operating_posture(bvsi)
     weakest_domain = min(domain_scores.items(), key=lambda x: x[1])[0] if domain_scores else "Service Resilience"
@@ -604,22 +657,6 @@ def run_osil(
         if domain_scores["Change Governance"] >= 70
         else "Change driven instability is contributing to exposure."
     )
-
-    if not roll.empty and "low_urgency_count" in roll.columns and roll["low_urgency_count"].sum() > 0:
-        voc_row = roll.sort_values("low_urgency_count", ascending=False).iloc[0]
-        voc_service = voc_row["Service_Anchor"]
-        voc_count = int(voc_row["low_urgency_count"])
-        voc_signal = f"Alert: {voc_service} is generating significant low urgency friction ({voc_count} brewing incidents). This indicates silent productivity loss and emerging risk from the perspective of the business."
-    else:
-        voc_signal = "Low urgency friction is currently within acceptable tolerances."
-    
-    if not roll.empty and "high_urgency_count" in roll.columns and roll["high_urgency_count"].sum() > 0:
-        crit_row = roll.sort_values("high_urgency_count", ascending=False).iloc[0]
-        crit_service = crit_row["Service_Anchor"]
-        crit_count = int(crit_row["high_urgency_count"])
-        crit_signal = f"Critical Exposure: {crit_service} has generated {crit_count} high priority incidents. This represents active disruption to business operations and direct impact to customer experience."
-    else:
-        crit_signal = "High priority disruption is currently contained with no single service showing critical concentration."
     
     exec_text = _executive_interpretation(
         bvsi,
@@ -667,8 +704,9 @@ def run_osil(
         "gap": weakest_domain,
         "as_of": as_of,
         "exec_text": exec_text,
-        "voc_signal": voc_signal,
-        "crit_signal": crit_signal,
+        "trust_gap_narrative": trust_gap_narrative,
+        "trust_gap_df": trust_gap_df.copy(),
+        "rca_themes_df": rca_themes_df.copy(),
         "domain_scores": domain_scores,
         "service_risk_df": service_risk_df.copy(),
         "top10": service_risk_df.copy(),
