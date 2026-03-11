@@ -290,6 +290,8 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
         domain_scores = payload.get("domain_scores", {}) or {}
         service_risk_df = _safe_df(payload.get("service_risk_top10"))
         sip_candidates = _safe_df(payload.get("sip_candidates"))
+        trust_gap_df = _safe_df(payload.get("trust_gap_df"))
+        rca_themes_df = _safe_df(payload.get("rca_themes_df"))
         detected_dataset = str(payload.get("detected_dataset", "INCIDENT")).upper()
         service_anchor = str(payload.get("service_anchor_used", "Service"))
         readiness = _safe_float(payload.get("data_readiness_score", 0))
@@ -339,32 +341,15 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
         
         strongest = max(domain_scores.items(), key=lambda x: _safe_float(x[1], 0))[0] if domain_scores else "Change Governance"
         weakest = min(domain_scores.items(), key=lambda x: _safe_float(x[1], 0))[0] if domain_scores else "Structural Risk Debt"
-        top_svc = str(sip_candidates.iloc[0].get("Service", "Priority Service")) if not sip_candidates.empty else "Critical Service"
         
         imp_data = [
-            [Paragraph("Executive Signal", styles["TableHeader"]), 
-             Paragraph("Operational Reality", styles["TableHeader"])],
+            [Paragraph("Executive Insight", styles["TableHeader"]), 
+             Paragraph("Leadership Action", styles["TableHeader"])],
             [Paragraph(f"<b>Strength:</b> {strongest}", styles["TableCell"]),
              Paragraph("Leverage mature controls as the enterprise standard and expand successful patterns.", styles["TableCell"])],
             [Paragraph(f"<b>Primary Exposure:</b> {weakest}", styles["TableCell"]),
              Paragraph("Authorize immediate stabilization resourcing for services in the bottom quartile.", styles["TableCell"])],
         ]
-        
-        crit_signal = _clean_text(payload.get("crit_signal", ""))
-        if crit_signal and "currently contained" not in crit_signal:
-            clean_crit = crit_signal.replace("Critical Exposure: ", "")
-            imp_data.append([
-                Paragraph("<b>Active Disruption</b>", styles["TableCell"]),
-                Paragraph(clean_crit, styles["TableCell"])
-            ])
-            
-        voc_signal = _clean_text(payload.get("voc_signal", ""))
-        if voc_signal and "acceptable tolerances" not in voc_signal:
-            clean_voc = voc_signal.replace("Alert: ", "")
-            imp_data.append([
-                Paragraph("<b>Emerging Risk</b>", styles["TableCell"]),
-                Paragraph(clean_voc, styles["TableCell"])
-            ])
         
         imp_table = Table(imp_data, colWidths=[2.0*inch, 5.0*inch])
         imp_table.setStyle(TableStyle([
@@ -534,6 +519,92 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
                 Paragraph("SIP Portfolio", styles["SectionHeader"]),
                 sip_table
             ]))
+
+        # NEW PAGE: Business Trust & Root Cause Analytics
+        story.append(PageBreak())
+        story.append(Paragraph("Business Trust & Root Cause Analytics", styles["PageHeader"]))
+        story.append(Paragraph("The Xentrixus OSIL™ framework identifies structural operational gaps by measuring the ratio of silent friction to active disruption, and by extracting true thematic root causes rather than relying on administrative closure flags.", styles["ExecutiveBody"]))
+        story.append(Spacer(1, 16))
+
+        story.append(Paragraph("Xentrixus Trust Gap Matrix (P1 to P5)", styles["SectionHeader"]))
+        
+        trust_narrative = _clean_text(payload.get("trust_gap_narrative", "Insufficient priority data to calculate business trust gap."))
+        story.append(Paragraph(trust_narrative, styles["ExecutiveBody"]))
+        story.append(Spacer(1, 12))
+
+        if not trust_gap_df.empty:
+            trust_data = [[Paragraph("Service", styles["TableHeader"]), 
+                          Paragraph("Critical Disruption<br/>(P1 and P2)", styles["TableHeader"]),
+                          Paragraph("Silent Friction<br/>(P3 to P5)", styles["TableHeader"]), 
+                          Paragraph("Friction Ratio", styles["TableHeader"])]]
+            
+            for _, row in trust_gap_df.iterrows():
+                svc = str(row.get("Service", ""))
+                crit = str(row.get("Active_Disruption_P1_P2", "0"))
+                fric = str(row.get("Silent_Friction_P3_P5", "0"))
+                ratio = f"{_safe_float(row.get('Friction_Ratio', 0)):.1f}x"
+                
+                trust_data.append([
+                    Paragraph(svc, styles["TableCellBold"]),
+                    Paragraph(crit, ParagraphStyle(name='t1', parent=styles["TableCellBold"], alignment=1)),
+                    Paragraph(fric, ParagraphStyle(name='t2', parent=styles["TableCell"], alignment=1)),
+                    Paragraph(ratio, ParagraphStyle(name='t3', parent=styles["TableCell"], alignment=1))
+                ])
+                
+            trust_table = Table(trust_data, colWidths=[3.0*inch, 1.5*inch, 1.5*inch, 1.0*inch])
+            trust_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#0F172A")),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+                ('ALIGN', (0, 0), (0, -1), 'LEFT'),
+                ('ALIGN', (1, 0), (-1, -1), 'CENTER'),
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                ('LEFTPADDING', (0, 0), (-1, -1), 10),
+                ('TOPPADDING', (0, 0), (-1, -1), 8),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+                ('LINEBELOW', (0, 0), (-1, 0), 2, colors.HexColor("#0F172A")),
+            ] + [
+                ('LINEBELOW', (0, i), (-1, i), 0.5, colors.HexColor("#E2E8F0")) for i in range(1, len(trust_data))
+            ] + [
+                ('BACKGROUND', (0, i), (-1, i), colors.HexColor("#F8FAFC")) for i in range(2, len(trust_data), 2)
+            ]))
+            story.append(trust_table)
+            story.append(Spacer(1, 24))
+
+        story.append(Paragraph("Structural Risk Debt™: Root Cause Themes", styles["SectionHeader"]))
+        
+        if not rca_themes_df.empty:
+            rca_data = [[Paragraph("Service", styles["TableHeader"]), 
+                         Paragraph("Documented Root Cause Themes", styles["TableHeader"])]]
+            
+            for _, row in rca_themes_df.iterrows():
+                svc = str(row.get("Service", ""))
+                themes = str(row.get("Documented_Themes", ""))
+                
+                rca_data.append([
+                    Paragraph(svc, styles["TableCellBold"]),
+                    Paragraph(themes, styles["TableCell"])
+                ])
+                
+            rca_table = Table(rca_data, colWidths=[2.5*inch, 4.5*inch])
+            rca_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#0F172A")),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+                ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+                ('LEFTPADDING', (0, 0), (-1, -1), 10),
+                ('RIGHTPADDING', (0, 0), (-1, -1), 10),
+                ('TOPPADDING', (0, 0), (-1, -1), 8),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+                ('LINEBELOW', (0, 0), (-1, 0), 2, colors.HexColor("#0F172A")),
+            ] + [
+                ('LINEBELOW', (0, i), (-1, i), 0.5, colors.HexColor("#E2E8F0")) for i in range(1, len(rca_data))
+            ] + [
+                ('BACKGROUND', (0, i), (-1, i), colors.HexColor("#F8FAFC")) for i in range(2, len(rca_data), 2)
+            ]))
+            story.append(rca_table)
+        else:
+            story.append(Paragraph("No thematic root cause data was detected. This exposes a severe structural learning gap requiring immediate process review.", styles["ExecutiveBody"]))
+
 
         story.append(PageBreak())
 
