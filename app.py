@@ -1,5 +1,6 @@
 """OSIL Streamlit Application"""
 import os
+import textwrap
 from difflib import get_close_matches
 from typing import Dict, List, Optional, Tuple
 
@@ -369,7 +370,7 @@ def plot_pareto(df: pd.DataFrame):
     """Generate locked numeric axis Pareto chart for Root Cause Themes"""
     fig, ax1 = plt.subplots(figsize=(8.5, 5.0), dpi=120)
     
-    labels = [(str(x)[:25] + "...") if len(str(x)) > 25 else str(x) for x in df["Theme"]]
+    labels = [textwrap.fill(str(x), width=18) for x in df["Theme"]]
     x_pos = np.arange(len(df))
     
     ax1.bar(x_pos, df["Frequency"], color="#3B82F6", width=0.55)
@@ -691,6 +692,8 @@ def main():
             """, unsafe_allow_html=True)
         
         st.dataframe(results["trust_gap_df"], use_container_width=True)
+    else:
+        st.warning("Insufficient priority data to generate Trust Gap Matrix. Ensure Priority mapping distinguishes between critical and low urgency events.")
 
     st.divider()
     st.subheader("Operational Stability Profile")
@@ -709,9 +712,9 @@ def main():
         )
 
     st.divider()
+    st.subheader("Structural Risk Debt™: Thematic Extraction")
     
     if not results["rca_pareto_df"].empty:
-        st.subheader("Structural Risk Debt™: Thematic Extraction")
         fig_pareto = plot_pareto(results["rca_pareto_df"])
         st.pyplot(fig_pareto, use_container_width=True)
         
@@ -722,7 +725,10 @@ def main():
         """, unsafe_allow_html=True)
         
         st.dataframe(results["rca_themes_df"], use_container_width=True)
-        st.divider()
+    else:
+        st.error("No thematic root cause data detected. The engine requires text based root causes to extract operational themes. Relying purely on boolean checkboxes hides the true drivers of structural risk debt.")
+
+    st.divider()
 
     service_risk_df = results["service_risk_df"]
     top10 = results["top10"].copy()
