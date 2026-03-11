@@ -368,9 +368,9 @@ def radar_chart(domain_scores: dict):
 
 def plot_pareto(df: pd.DataFrame):
     """Generate locked numeric axis Pareto chart for Root Cause Themes"""
-    fig, ax1 = plt.subplots(figsize=(8.0, 4.5), dpi=120)
+    fig, ax1 = plt.subplots(figsize=(8.5, 5.0), dpi=120)
     
-    labels = [(str(x)[:22] + "...") if len(str(x)) > 22 else str(x) for x in df["Theme"]]
+    labels = [textwrap.fill(str(x), width=18) for x in df["Theme"]]
     x_pos = np.arange(len(df))
     
     ax1.bar(x_pos, df["Frequency"], color="#3B82F6", width=0.55)
@@ -378,7 +378,7 @@ def plot_pareto(df: pd.DataFrame):
     ax1.tick_params(axis="y", labelcolor="#0F172A")
     
     ax1.set_xticks(x_pos)
-    ax1.set_xticklabels(labels, rotation=35, ha="right", fontsize=8)
+    ax1.set_xticklabels(labels, rotation=35, ha="right", fontsize=9)
 
     ax2 = ax1.twinx()
     ax2.plot(x_pos, df["Cumulative_Pct"], color="#DC2626", marker="o", linewidth=2.5)
@@ -395,7 +395,7 @@ def plot_pareto(df: pd.DataFrame):
     return fig
 
 def plot_impact_matrix(service_risk_df: pd.DataFrame, trust_gap_df: pd.DataFrame):
-    """Generate Bubble Chart for Disruption vs Recurrence using Outlier Labeling"""
+    """Generate Dual Axis Chart for Disruption vs Recurrence (Replaces Bubble Chart)"""
     if service_risk_df.empty or trust_gap_df.empty:
         fig, ax = plt.subplots(figsize=(7, 4.5))
         ax.text(0.5, 0.5, 'Insufficient Data for Impact Matrix', ha='center', va='center')
@@ -407,44 +407,35 @@ def plot_impact_matrix(service_risk_df: pd.DataFrame, trust_gap_df: pd.DataFrame
         ax.text(0.5, 0.5, 'Insufficient Overlap for Impact Matrix', ha='center', va='center')
         return fig
         
-    merged = merged.sort_values("Total_Service_Risk", ascending=False)
+    merged = merged.sort_values("Total_Service_Risk", ascending=False).head(5)
         
-    fig, ax = plt.subplots(figsize=(7.0, 4.5), dpi=120)
+    fig, ax1 = plt.subplots(figsize=(8.0, 5.0), dpi=120)
     
-    x = merged["Recurrence_Risk"].fillna(0)
-    y = merged["Active_Disruption_P1_P2"].fillna(0)
-    sizes = merged["Total_Service_Risk"].fillna(1) * 7 
+    x_pos = np.arange(len(merged))
+    labels = [textwrap.fill(str(x)[:20], width=12) for x in merged["Service"]]
     
-    scatter = ax.scatter(x, y, s=sizes, c="#DC2626", alpha=0.5, edgecolors="#7F1D1D", linewidth=1.0)
+    ax1.bar(x_pos, merged["Active_Disruption_P1_P2"].fillna(0), color="#DC2626", width=0.45, alpha=0.9, label="Active Disruption (Count)")
+    ax1.set_ylabel("Active Disruption Volume (P1 and P2)", color="#DC2626", fontweight="bold", fontsize=9)
+    ax1.tick_params(axis="y", labelcolor="#DC2626")
+    ax1.set_xticks(x_pos)
+    ax1.set_xticklabels(labels, rotation=0, ha="center", fontsize=9, fontweight="bold")
+
+    ax2 = ax1.twinx()
+    ax2.plot(x_pos, merged["Recurrence_Risk"].fillna(0), color="#0F172A", marker="o", linewidth=2.5, markersize=8, label="Recurrence Risk Score")
+    ax2.set_ylabel("Recurrence Risk Score (Zero to 100)", color="#0F172A", fontweight="bold", fontsize=9)
+    ax2.tick_params(axis="y", labelcolor="#0F172A")
+    ax2.set_ylim(0, 105)
+
+    ax1.spines['top'].set_visible(False)
+    ax2.spines['top'].set_visible(False)
     
-    top_n = merged.head(5)
-    for _, row in top_n.iterrows():
-        ax.annotate(
-            str(row["Service"])[:15], 
-            (row["Recurrence_Risk"], row["Active_Disruption_P1_P2"]), 
-            fontsize=8, ha="center", va="center", fontweight="bold", color="#0F172A"
-        )
-            
-    ax.set_xlabel("Recurrence Risk Score (Zero to 100)", fontweight="bold", color="#0F172A", fontsize=9)
-    ax.set_ylabel("Active Disruption Volume (P1 and P2)", fontweight="bold", color="#0F172A", fontsize=9)
-    ax.set_title("Executive Strike Zone: Recurrence versus Disruption", fontweight="bold", color="#0F172A", pad=15)
+    plt.title("Executive Strike Zone: Top 5 Services (Disruption vs Recurrence)", fontweight="bold", color="#0F172A", pad=15)
     
-    max_y = float(y.max())
-    if max_y < 5:
-        ax.set_ylim(-0.5, 5)
-    else:
-        ax.set_ylim(-0.5, max_y + 2)
-        
-    ax.set_xlim(-5, 105)
+    lines_1, labels_1 = ax1.get_legend_handles_labels()
+    lines_2, labels_2 = ax2.get_legend_handles_labels()
+    ax1.legend(lines_1 + lines_2, labels_1 + labels_2, loc='upper center', bbox_to_anchor=(0.5, -0.15), frameon=False, ncol=2, fontsize=9)
     
-    mean_y = float(y.mean())
-    mean_x = float(x.mean())
-    ax.axhline(mean_y, color="#94A3B8", linestyle="--", alpha=0.5)
-    ax.axvline(mean_x, color="#94A3B8", linestyle="--", alpha=0.5)
-    
-    ax.spines['top'].set_visible(False)
-    ax.spines['right'].set_visible(False)
-    
+    plt.gcf().subplots_adjust(bottom=0.25)
     plt.tight_layout()
     return fig
 
@@ -694,7 +685,7 @@ def main():
             
             st.markdown("""
             <div style="background-color: #FEF2F2; border-left: 4px solid #DC2626; padding: 12px 16px; margin-bottom: 24px;">
-                <strong>Executive Insight:</strong> Services in the top right quadrant represent immediate executive danger zones. These services combine high recurrence (structural debt) with critical business disruption (P1 and P2 volume). They require immediate executive sponsorship and capital allocation.
+                <strong>Executive Insight:</strong> Services showing high disruption volumes (red bars) combined with elevated recurrence risk (black lines) represent immediate executive danger zones. These services require immediate executive sponsorship and capital allocation to stop the bleeding.
             </div>
             """, unsafe_allow_html=True)
         
