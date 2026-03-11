@@ -1,6 +1,7 @@
 """OSIL Executive Report Production Design"""
 import io
 import re
+import textwrap
 from typing import Any, Dict, List, Optional
 import matplotlib
 matplotlib.use('Agg')
@@ -275,7 +276,7 @@ def _build_pareto_image(df: pd.DataFrame) -> Optional[io.BytesIO]:
     try:
         fig, ax1 = plt.subplots(figsize=(8.0, 5.0), dpi=120)
         
-        labels = [(str(x)[:25] + "...") if len(str(x)) > 25 else str(x) for x in df["Theme"]]
+        labels = [textwrap.fill(str(x), width=18) for x in df["Theme"]]
         x_pos = np.arange(len(df))
         
         ax1.bar(x_pos, df["Frequency"], color="#3B82F6", width=0.55)
@@ -641,6 +642,11 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
             impact_elements.append(box_table)
             story.append(KeepTogether(impact_elements))
             story.append(Spacer(1, 24))
+        else:
+            story.append(Spacer(1, 12))
+            story.append(Paragraph("Insufficient Data for Executive Strike Zone", styles["SectionHeader"]))
+            story.append(Paragraph("The engine requires distinct Priority mapping separating high urgency events from low urgency friction. Without this, the system cannot calculate the business trust disruption ratio.", styles["ExecutiveBody"]))
+            story.append(Spacer(1, 24))
 
         if not trust_gap_df.empty:
             trust_data = [[Paragraph("Service", styles["TableHeader"]), 
@@ -685,10 +691,11 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
             
         story.append(PageBreak())
         
+        story.append(Paragraph("Structural Risk Debt™: Thematic Extraction", styles["PageHeader"]))
+        
         pareto_img = _build_pareto_image(rca_pareto_df)
         if pareto_img:
             pareto_elements = []
-            pareto_elements.append(Paragraph("Structural Risk Debt™: Thematic Extraction", styles["SectionHeader"]))
             pareto_elements.append(Image(pareto_img, width=6.5*inch, height=4.2*inch))
             pareto_elements.append(Spacer(1, 12))
             
@@ -712,6 +719,28 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
             pareto_elements.append(box_table)
             story.append(KeepTogether(pareto_elements))
             story.append(Spacer(1, 24))
+        else:
+            story.append(Spacer(1, 12))
+            story.append(Paragraph("Insufficient Data for Pareto Analysis", styles["SectionHeader"]))
+            
+            error_narrative = (
+                "<b>Structural Data Void Detected.</b> The engine could not detect structured root cause themes. "
+                "This indicates a severe maturity gap in problem management. Operational teams are likely closing tickets without documenting thematic resolution. "
+                "Relying purely on boolean checkboxes hides the true drivers of structural risk debt."
+            )
+            
+            box_data = [[Paragraph(error_narrative, styles["ExecutiveBody"])]]
+            box_table = Table(box_data, colWidths=[6.5*inch])
+            box_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor("#FEF2F2")),
+                ('BOX', (0, 0), (-1, -1), 1, colors.HexColor("#FCA5A5")),
+                ('LEFTPADDING', (0, 0), (-1, -1), 12),
+                ('RIGHTPADDING', (0, 0), (-1, -1), 12),
+                ('TOPPADDING', (0, 0), (-1, -1), 12),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 12),
+            ]))
+            story.append(box_table)
+            story.append(Spacer(1, 24))
 
         if not rca_themes_df.empty:
             rca_data = [[Paragraph("Service", styles["TableHeader"]), 
@@ -726,7 +755,7 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
                     Paragraph(themes, styles["TableCell"])
                 ])
                 
-            rca_table = Table(rca_data, colWidths=[2.5*inch, 4.5*inch])
+            rca_table = Table(rca_data, colWidths=[2.5*inch, 4.0*inch])
             rca_table.setStyle(TableStyle([
                 ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#0F172A")),
                 ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
@@ -747,6 +776,10 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
                 Paragraph("Structural Risk Debt™: Root Cause Ledger", styles["SectionHeader"]),
                 rca_table
             ]))
+        else:
+            story.append(Paragraph("Structural Risk Debt™: Root Cause Ledger", styles["SectionHeader"]))
+            story.append(Paragraph("No thematic root cause data was detected in the active problem dataset. Ensure the Root Cause Description field is mapped and actively utilized by operational teams.", styles["ExecutiveBody"]))
+
 
         story.append(PageBreak())
 
@@ -757,6 +790,9 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
         hm_img = _build_heatmap(service_risk_df)
         if hm_img:
             story.append(Image(hm_img, width=7.0*inch, height=4.8*inch))
+            story.append(Spacer(1, 20))
+        else:
+            story.append(Paragraph("Insufficient data to generate heatmap. Please ensure Service and Service Tier columns are accurately mapped.", styles["ExecutiveBody"]))
             story.append(Spacer(1, 20))
         
         story.append(KeepTogether([
