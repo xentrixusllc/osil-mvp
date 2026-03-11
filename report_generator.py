@@ -274,9 +274,9 @@ def _build_pareto_image(df: pd.DataFrame) -> Optional[io.BytesIO]:
     if df.empty:
         return None
     try:
-        fig, ax1 = plt.subplots(figsize=(7.5, 4.5), dpi=120)
+        fig, ax1 = plt.subplots(figsize=(7.0, 4.5), dpi=120)
         
-        labels = [textwrap.fill(str(x), width=18) for x in df["Theme"]]
+        labels = [str(x)[:22] + "..." if len(str(x)) > 22 else str(x) for x in df["Theme"]]
         x_pos = np.arange(len(df))
         
         ax1.bar(x_pos, df["Frequency"], color="#3B82F6", width=0.55)
@@ -318,20 +318,29 @@ def _build_impact_matrix_image(service_risk_df: pd.DataFrame, trust_gap_df: pd.D
             return None
             
         merged = merged.sort_values("Total_Service_Risk", ascending=False).head(5)
+        
+        merged["Active_Disruption_P1_P2"] = pd.to_numeric(merged["Active_Disruption_P1_P2"], errors="coerce").fillna(0)
+        merged["Recurrence_Risk"] = pd.to_numeric(merged["Recurrence_Risk"], errors="coerce").fillna(0)
             
         fig, ax1 = plt.subplots(figsize=(7.5, 4.5), dpi=120)
         
         x_pos = np.arange(len(merged))
         labels = [textwrap.fill(str(x)[:20], width=12) for x in merged["Service"]]
         
-        ax1.bar(x_pos, merged["Active_Disruption_P1_P2"].fillna(0), color="#DC2626", width=0.45, alpha=0.9, label="Active Disruption (Count)")
+        ax1.bar(x_pos, merged["Active_Disruption_P1_P2"], color="#DC2626", width=0.45, alpha=0.9, label="Active Disruption (Count)")
         ax1.set_ylabel("Active Disruption Volume (P1 and P2)", color="#DC2626", fontweight="bold", fontsize=9)
         ax1.tick_params(axis="y", labelcolor="#DC2626")
         ax1.set_xticks(x_pos)
         ax1.set_xticklabels(labels, rotation=0, ha="center", fontsize=8, fontweight="bold")
+        
+        max_disruption = merged["Active_Disruption_P1_P2"].max()
+        if max_disruption < 5:
+            ax1.set_ylim(0, 5)
+        else:
+            ax1.set_ylim(0, max_disruption * 1.2)
 
         ax2 = ax1.twinx()
-        ax2.plot(x_pos, merged["Recurrence_Risk"].fillna(0), color="#0F172A", marker="o", linewidth=2.5, markersize=8, label="Recurrence Risk Score")
+        ax2.plot(x_pos, merged["Recurrence_Risk"], color="#0F172A", marker="o", linewidth=2.5, markersize=8, label="Recurrence Risk Score")
         ax2.set_ylabel("Recurrence Risk Score (Zero to 100)", color="#0F172A", fontweight="bold", fontsize=9)
         ax2.tick_params(axis="y", labelcolor="#0F172A")
         ax2.set_ylim(0, 105)
@@ -618,7 +627,7 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
         impact_img = _build_impact_matrix_image(service_risk_df, trust_gap_df)
         if impact_img:
             impact_elements = []
-            impact_elements.append(Image(impact_img, width=6.5*inch, height=4.2*inch))
+            impact_elements.append(Image(impact_img, width=6.0*inch, height=3.8*inch))
             impact_elements.append(Spacer(1, 12))
             
             impact_narrative = (
@@ -694,7 +703,7 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
         pareto_img = _build_pareto_image(rca_pareto_df)
         if pareto_img:
             pareto_elements = []
-            pareto_elements.append(Image(pareto_img, width=6.5*inch, height=4.2*inch))
+            pareto_elements.append(Image(pareto_img, width=6.0*inch, height=3.8*inch))
             pareto_elements.append(Spacer(1, 12))
             
             pareto_narrative = (
