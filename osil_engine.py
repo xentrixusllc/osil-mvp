@@ -40,35 +40,53 @@ def _normalize_0_100(series: pd.Series) -> pd.Series:
         return pd.Series([0.0] * len(s), index=s.index)
     return ((s - mn) / (mx - mn) * 100.0).round(1)
 
-def _priority_weight(priority: Any) -> float:
+def _normalize_priority(priority: Any) -> str:
     p = str(priority).strip().upper()
+    
+    if "P1" in p or "CRIT" in p or "URGENT" in p:
+        return "P1"
+    if "P2" in p or "HIGH" in p:
+        return "P2"
+    if "P3" in p or "MED" in p or "MOD" in p:
+        return "P3"
+    if "P4" in p or "LOW" in p:
+        return "P4"
+    if "P5" in p or "MINOR" in p or "PLAN" in p:
+        return "P5"
+        
+    if "1" in p:
+        return "P1"
+    if "2" in p:
+        return "P2"
+    if "3" in p:
+        return "P3"
+    if "4" in p:
+        return "P4"
+    if "5" in p:
+        return "P5"
+        
+    return "P3"
+
+def _priority_weight(priority: Any) -> float:
+    p = _normalize_priority(priority)
     mapping = {
         "P1": 1.50,
         "P2": 1.25,
         "P3": 1.00,
         "P4": 0.80,
         "P5": 0.60,
-        "1": 1.50,
-        "2": 1.25,
-        "3": 1.00,
-        "4": 0.80,
-        "5": 0.60,
-        "CRITICAL": 1.50,
-        "HIGH": 1.25,
-        "MEDIUM": 1.00,
-        "LOW": 0.80,
     }
     return mapping.get(p, 1.0)
 
 def _is_high_urgency(priority: Any) -> int:
-    p = str(priority).strip().upper()
-    if p in ["P1", "P2", "1", "2", "CRITICAL", "HIGH"]:
+    p = _normalize_priority(priority)
+    if p in ["P1", "P2"]:
         return 1
     return 0
 
 def _is_low_urgency(priority: Any) -> int:
-    p = str(priority).strip().upper()
-    if p in ["P3", "P4", "P5", "3", "4", "5", "MEDIUM", "LOW"]:
+    p = _normalize_priority(priority)
+    if p in ["P3", "P4", "P5"]:
         return 1
     return 0
 
@@ -387,7 +405,6 @@ def _problem_signals_by_service(inc: pd.DataFrame, probs: pd.DataFrame) -> pd.Da
     return pd.DataFrame(rows)
 
 def _extract_rca_themes(probs: pd.DataFrame) -> pd.DataFrame:
-    """Extracts actual RCA text to map Structural Risk Debt themes."""
     if probs is None or probs.empty or "Root_Cause_Text" not in probs.columns:
         return pd.DataFrame(columns=["Service", "Problem_Count", "Documented_Themes"])
 
@@ -403,7 +420,6 @@ def _extract_rca_themes(probs: pd.DataFrame) -> pd.DataFrame:
     return grouped.rename(columns={"Service_Anchor": "Service"}).sort_values("Problem_Count", ascending=False)
 
 def _build_rca_pareto(probs: pd.DataFrame) -> pd.DataFrame:
-    """Builds aggregated frequency distribution of root cause themes."""
     if probs is None or probs.empty or "Root_Cause_Text" not in probs.columns:
         return pd.DataFrame(columns=["Theme", "Frequency", "Cumulative_Pct"])
         
@@ -419,7 +435,6 @@ def _build_rca_pareto(probs: pd.DataFrame) -> pd.DataFrame:
     return pareto
 
 def _analyze_trust_gap(roll: pd.DataFrame) -> Tuple[pd.DataFrame, str]:
-    """Analyzes the holistic P1 to P5 distribution to calculate the business trust gap."""
     if roll.empty or "high_urgency_count" not in roll.columns:
         return pd.DataFrame(), "Insufficient priority data to calculate business trust gap."
 
@@ -435,7 +450,7 @@ def _analyze_trust_gap(roll: pd.DataFrame) -> Tuple[pd.DataFrame, str]:
 
     narrative = (
         f"The Xentrixus OSIL™ framework identifies a perception gap when silent friction outweighs acknowledged disruption. "
-        f"Currently, the business is absorbing {total_fric} low priority (P3 to P5) friction points compared to {total_crit} high priority (P1 and P2) disruptions. "
+        f"Currently, the business is absorbing {total_fric} low priority friction points compared to {total_crit} high priority disruptions. "
     )
 
     if total_crit == 0 and total_fric > 0:
@@ -447,7 +462,7 @@ def _analyze_trust_gap(roll: pd.DataFrame) -> Tuple[pd.DataFrame, str]:
     else:
         narrative += "Incident volumes are currently contained with no material perception gap detected."
 
-    df = df[(df["Active_Disruption_P1_P2"] > 0) | (df["Silent_Friction_P3_P5"] > 0)]
+    df = df[(df["Active_Disruption_P1_P2"] > 0) | (df["Silent_Friction_P3_P5"] > 0)].copy()
     df["Friction_Ratio"] = (df["Silent_Friction_P3_P5"] / (df["Active_Disruption_P1_P2"] + 1)).round(1)
 
     return df.sort_values("Friction_Ratio", ascending=False).head(5), narrative
