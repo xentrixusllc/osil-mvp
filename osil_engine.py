@@ -512,6 +512,7 @@ def _build_service_risk_df(roll: pd.DataFrame, top_n: int = 10) -> pd.DataFrame:
                 "Reopen_Churn_Risk",
                 "Change_Collision_Risk",
                 "Problem_Gap_Risk",
+                "Active_Disruption_P1_P2",
                 "Total_Service_Risk",
             ]
         )
@@ -535,6 +536,7 @@ def _build_service_risk_df(roll: pd.DataFrame, top_n: int = 10) -> pd.DataFrame:
             "Reopen_Churn_Risk": reopen.round(1),
             "Change_Collision_Risk": change.round(1),
             "Problem_Gap_Risk": problem.round(1),
+            "Active_Disruption_P1_P2": roll["high_urgency_count"].fillna(0).astype(int) if "high_urgency_count" in roll.columns else 0
         }
     )
     
