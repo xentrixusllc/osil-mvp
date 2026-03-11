@@ -43,7 +43,7 @@ def _normalize_0_100(series: pd.Series) -> pd.Series:
 def _normalize_priority(priority: Any) -> str:
     p = str(priority).strip().upper()
     
-    if "P1" in p or "CRIT" in p or "URGENT" in p:
+    if "P1" in p or "CRIT" in p or "URGENT" in p or "EMERGENCY" in p:
         return "P1"
     if "P2" in p or "HIGH" in p:
         return "P2"
