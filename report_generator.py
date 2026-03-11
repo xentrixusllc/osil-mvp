@@ -1,7 +1,6 @@
 """OSIL Executive Report Production Design"""
 import io
 import re
-import textwrap
 from typing import Any, Dict, List, Optional
 import matplotlib
 matplotlib.use('Agg')
@@ -274,16 +273,17 @@ def _build_pareto_image(df: pd.DataFrame) -> Optional[io.BytesIO]:
     if df.empty:
         return None
     try:
-        fig, ax1 = plt.subplots(figsize=(7.5, 5.5), dpi=120)
+        fig, ax1 = plt.subplots(figsize=(8.0, 5.0), dpi=120)
         
-        labels = [textwrap.fill(str(x), width=18) for x in df["Theme"]]
+        labels = [(str(x)[:25] + "...") if len(str(x)) > 25 else str(x) for x in df["Theme"]]
         x_pos = np.arange(len(df))
         
-        ax1.bar(x_pos, df["Frequency"], color="#3B82F6")
+        ax1.bar(x_pos, df["Frequency"], color="#3B82F6", width=0.55)
         ax1.set_ylabel("Frequency of Root Cause", color="#0F172A", fontweight="bold")
         ax1.tick_params(axis="y", labelcolor="#0F172A")
+        
         ax1.set_xticks(x_pos)
-        ax1.set_xticklabels(labels, rotation=35, ha="right", fontsize=9)
+        ax1.set_xticklabels(labels, rotation=40, ha="right", fontsize=9)
 
         ax2 = ax1.twinx()
         ax2.plot(x_pos, df["Cumulative_Pct"], color="#DC2626", marker="o", linewidth=2.5)
@@ -294,6 +294,8 @@ def _build_pareto_image(df: pd.DataFrame) -> Optional[io.BytesIO]:
         ax2.spines['top'].set_visible(False)
         
         plt.title("Eighty Twenty Rule: Top Structural Risk Themes", fontweight="bold", color="#0F172A", pad=15)
+        
+        plt.gcf().subplots_adjust(bottom=0.35)
         plt.tight_layout()
         
         img = io.BytesIO()
@@ -313,7 +315,7 @@ def _build_impact_matrix_image(service_risk_df: pd.DataFrame, trust_gap_df: pd.D
         if merged.empty:
             return None
             
-        fig, ax = plt.subplots(figsize=(7.5, 5.0), dpi=120)
+        fig, ax = plt.subplots(figsize=(8.0, 5.0), dpi=120)
         
         x = merged["Recurrence_Risk"].fillna(0)
         y = merged["Active_Disruption_P1_P2"].fillna(0)
@@ -322,7 +324,7 @@ def _build_impact_matrix_image(service_risk_df: pd.DataFrame, trust_gap_df: pd.D
         scatter = ax.scatter(x, y, s=sizes, c="#DC2626", alpha=0.6, edgecolors="#7F1D1D", linewidth=1.5)
         
         for i, txt in enumerate(merged["Service"]):
-            ax.annotate(str(txt)[:15], (x.iloc[i], y.iloc[i]), fontsize=8, ha="center", va="center", fontweight="bold")
+            ax.annotate(str(txt)[:15], (x.iloc[i], y.iloc[i] + 0.3), fontsize=8, ha="center", va="bottom", fontweight="bold")
             
         ax.set_xlabel("Recurrence Risk Score (Zero to 100)", fontweight="bold", color="#0F172A")
         ax.set_ylabel("Active Disruption Volume (P1 and P2)", fontweight="bold", color="#0F172A")
@@ -615,8 +617,30 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
 
         impact_img = _build_impact_matrix_image(service_risk_df, trust_gap_df)
         if impact_img:
-            story.append(Image(impact_img, width=6.5*inch, height=4.3*inch))
-            story.append(Spacer(1, 16))
+            impact_elements = []
+            impact_elements.append(Image(impact_img, width=6.5*inch, height=4.2*inch))
+            impact_elements.append(Spacer(1, 12))
+            
+            impact_narrative = (
+                "<b>Executive Insight:</b> Services in the top right quadrant represent immediate executive danger zones. "
+                "These services combine high recurrence (structural debt) with critical business disruption (P1 and P2 volume). "
+                "They require immediate executive sponsorship and capital allocation."
+            )
+            
+            box_data = [[Paragraph(impact_narrative, styles["ExecutiveBody"])]]
+            box_table = Table(box_data, colWidths=[6.5*inch])
+            box_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor("#FEF2F2")),
+                ('BOX', (0, 0), (-1, -1), 1, colors.HexColor("#FCA5A5")),
+                ('LEFTPADDING', (0, 0), (-1, -1), 12),
+                ('RIGHTPADDING', (0, 0), (-1, -1), 12),
+                ('TOPPADDING', (0, 0), (-1, -1), 12),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 12),
+            ]))
+            
+            impact_elements.append(box_table)
+            story.append(KeepTogether(impact_elements))
+            story.append(Spacer(1, 24))
 
         if not trust_gap_df.empty:
             trust_data = [[Paragraph("Service", styles["TableHeader"]), 
@@ -663,16 +687,31 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
         
         pareto_img = _build_pareto_image(rca_pareto_df)
         if pareto_img:
-            story.append(Image(pareto_img, width=6.5*inch, height=4.7*inch))
-            story.append(Spacer(1, 12))
+            pareto_elements = []
+            pareto_elements.append(Paragraph("Structural Risk Debt™: Thematic Extraction", styles["SectionHeader"]))
+            pareto_elements.append(Image(pareto_img, width=6.5*inch, height=4.2*inch))
+            pareto_elements.append(Spacer(1, 12))
             
             pareto_narrative = (
                 "<b>Executive Insight:</b> The Pareto principle dictates that roughly eighty percent of operational instability stems from twenty percent of the underlying causes. "
                 "The themes clustered on the left side of this axis represent your highest leverage remediation targets. "
                 "Funding service improvement programs focused exclusively on these top drivers will mathematically eliminate the vast majority of your structural risk debt while optimizing resource allocation."
             )
-            story.append(Paragraph(pareto_narrative, styles["ExecutiveBody"]))
-            story.append(Spacer(1, 16))
+            
+            box_data = [[Paragraph(pareto_narrative, styles["ExecutiveBody"])]]
+            box_table = Table(box_data, colWidths=[6.5*inch])
+            box_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor("#F8FAFC")),
+                ('BOX', (0, 0), (-1, -1), 1, colors.HexColor("#CBD5E1")),
+                ('LEFTPADDING', (0, 0), (-1, -1), 12),
+                ('RIGHTPADDING', (0, 0), (-1, -1), 12),
+                ('TOPPADDING', (0, 0), (-1, -1), 12),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 12),
+            ]))
+            
+            pareto_elements.append(box_table)
+            story.append(KeepTogether(pareto_elements))
+            story.append(Spacer(1, 24))
 
         if not rca_themes_df.empty:
             rca_data = [[Paragraph("Service", styles["TableHeader"]), 
