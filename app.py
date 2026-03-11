@@ -368,21 +368,21 @@ def radar_chart(domain_scores: dict):
 
 def plot_pareto(df: pd.DataFrame):
     """Generate locked numeric axis Pareto chart for Root Cause Themes"""
-    fig, ax1 = plt.subplots(figsize=(8.5, 5.0), dpi=120)
+    fig, ax1 = plt.subplots(figsize=(8.0, 4.5), dpi=120)
     
-    labels = [textwrap.fill(str(x), width=18) for x in df["Theme"]]
+    labels = [(str(x)[:22] + "...") if len(str(x)) > 22 else str(x) for x in df["Theme"]]
     x_pos = np.arange(len(df))
     
     ax1.bar(x_pos, df["Frequency"], color="#3B82F6", width=0.55)
-    ax1.set_ylabel("Frequency of Root Cause", color="#0F172A", fontweight="bold")
+    ax1.set_ylabel("Frequency of Root Cause", color="#0F172A", fontweight="bold", fontsize=9)
     ax1.tick_params(axis="y", labelcolor="#0F172A")
     
     ax1.set_xticks(x_pos)
-    ax1.set_xticklabels(labels, rotation=40, ha="right", fontsize=9)
+    ax1.set_xticklabels(labels, rotation=35, ha="right", fontsize=8)
 
     ax2 = ax1.twinx()
     ax2.plot(x_pos, df["Cumulative_Pct"], color="#DC2626", marker="o", linewidth=2.5)
-    ax2.set_ylabel("Cumulative Impact Percentage", color="#DC2626", fontweight="bold")
+    ax2.set_ylabel("Cumulative Impact Percentage", color="#DC2626", fontweight="bold", fontsize=9)
     ax2.set_ylim(0, 110)
     
     ax1.spines['top'].set_visible(False)
@@ -395,31 +395,38 @@ def plot_pareto(df: pd.DataFrame):
     return fig
 
 def plot_impact_matrix(service_risk_df: pd.DataFrame, trust_gap_df: pd.DataFrame):
-    """Generate Bubble Chart for Disruption vs Recurrence"""
+    """Generate Bubble Chart for Disruption vs Recurrence using Outlier Labeling"""
     if service_risk_df.empty or trust_gap_df.empty:
-        fig, ax = plt.subplots(figsize=(7, 5))
+        fig, ax = plt.subplots(figsize=(7, 4.5))
         ax.text(0.5, 0.5, 'Insufficient Data for Impact Matrix', ha='center', va='center')
         return fig
 
     merged = pd.merge(service_risk_df, trust_gap_df, on="Service", how="inner")
     if merged.empty:
-        fig, ax = plt.subplots(figsize=(7, 5))
+        fig, ax = plt.subplots(figsize=(7, 4.5))
         ax.text(0.5, 0.5, 'Insufficient Overlap for Impact Matrix', ha='center', va='center')
         return fig
         
-    fig, ax = plt.subplots(figsize=(8.0, 5.5), dpi=120)
+    merged = merged.sort_values("Total_Service_Risk", ascending=False)
+        
+    fig, ax = plt.subplots(figsize=(7.0, 4.5), dpi=120)
     
     x = merged["Recurrence_Risk"].fillna(0)
     y = merged["Active_Disruption_P1_P2"].fillna(0)
-    sizes = merged["Total_Service_Risk"].fillna(1) * 8 
+    sizes = merged["Total_Service_Risk"].fillna(1) * 7 
     
-    scatter = ax.scatter(x, y, s=sizes, c="#DC2626", alpha=0.6, edgecolors="#7F1D1D", linewidth=1.5)
+    scatter = ax.scatter(x, y, s=sizes, c="#DC2626", alpha=0.5, edgecolors="#7F1D1D", linewidth=1.0)
     
-    for i, txt in enumerate(merged["Service"]):
-        ax.annotate(str(txt)[:15], (x.iloc[i], y.iloc[i] + 0.3), fontsize=8, ha="center", va="bottom", fontweight="bold")
-        
-    ax.set_xlabel("Recurrence Risk Score (Zero to 100)", fontweight="bold", color="#0F172A")
-    ax.set_ylabel("Active Disruption Volume (P1 and P2)", fontweight="bold", color="#0F172A")
+    top_n = merged.head(5)
+    for _, row in top_n.iterrows():
+        ax.annotate(
+            str(row["Service"])[:15], 
+            (row["Recurrence_Risk"], row["Active_Disruption_P1_P2"]), 
+            fontsize=8, ha="center", va="center", fontweight="bold", color="#0F172A"
+        )
+            
+    ax.set_xlabel("Recurrence Risk Score (Zero to 100)", fontweight="bold", color="#0F172A", fontsize=9)
+    ax.set_ylabel("Active Disruption Volume (P1 and P2)", fontweight="bold", color="#0F172A", fontsize=9)
     ax.set_title("Executive Strike Zone: Recurrence versus Disruption", fontweight="bold", color="#0F172A", pad=15)
     
     max_y = float(y.max())
