@@ -394,20 +394,14 @@ def plot_pareto(df: pd.DataFrame):
     plt.tight_layout()
     return fig
 
-def plot_impact_matrix(service_risk_df: pd.DataFrame, trust_gap_df: pd.DataFrame):
-    """Generate Dual Axis Chart for Disruption vs Recurrence (Replaces Bubble Chart)"""
-    if service_risk_df.empty or trust_gap_df.empty:
+def plot_impact_matrix(service_risk_df: pd.DataFrame):
+    """Generate Dual Axis Chart for Disruption vs Recurrence using Service Risk Data directly"""
+    if service_risk_df.empty or "Active_Disruption_P1_P2" not in service_risk_df.columns:
         fig, ax = plt.subplots(figsize=(7, 4.5))
         ax.text(0.5, 0.5, 'Insufficient Data for Impact Matrix', ha='center', va='center')
         return fig
 
-    merged = pd.merge(service_risk_df, trust_gap_df, on="Service", how="inner")
-    if merged.empty:
-        fig, ax = plt.subplots(figsize=(7, 4.5))
-        ax.text(0.5, 0.5, 'Insufficient Overlap for Impact Matrix', ha='center', va='center')
-        return fig
-        
-    merged = merged.sort_values("Total_Service_Risk", ascending=False).head(5)
+    merged = service_risk_df.sort_values("Total_Service_Risk", ascending=False).head(5).copy()
     
     merged["Active_Disruption_P1_P2"] = pd.to_numeric(merged["Active_Disruption_P1_P2"], errors="coerce").fillna(0)
     merged["Recurrence_Risk"] = pd.to_numeric(merged["Recurrence_Risk"], errors="coerce").fillna(0)
@@ -423,7 +417,7 @@ def plot_impact_matrix(service_risk_df: pd.DataFrame, trust_gap_df: pd.DataFrame
     ax1.set_xticks(x_pos)
     ax1.set_xticklabels(labels, rotation=0, ha="center", fontsize=9, fontweight="bold")
     
-    max_disruption = merged["Active_Disruption_P1_P2"].max()
+    max_disruption = float(merged["Active_Disruption_P1_P2"].max())
     if max_disruption < 5:
         ax1.set_ylim(0, 5)
     else:
@@ -688,7 +682,7 @@ def main():
     st.info(results["trust_gap_narrative"])
     
     if not results["trust_gap_df"].empty and not results["service_risk_df"].empty:
-        fig_impact = plot_impact_matrix(results["service_risk_df"], results["trust_gap_df"])
+        fig_impact = plot_impact_matrix(results["service_risk_df"])
         if fig_impact:
             st.pyplot(fig_impact, use_container_width=True)
             
