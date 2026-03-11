@@ -365,6 +365,76 @@ def radar_chart(domain_scores: dict):
     plt.tight_layout()
     return fig
 
+def plot_pareto(df: pd.DataFrame):
+    """Generate Pareto chart for Root Cause Themes"""
+    fig, ax1 = plt.subplots(figsize=(8, 4.5), dpi=120)
+    
+    truncated_labels = [str(x)[:20] + "..." if len(str(x)) > 20 else str(x) for x in df["Theme"]]
+    
+    ax1.bar(truncated_labels, df["Frequency"], color="#3B82F6")
+    ax1.set_ylabel("Frequency of Root Cause", color="#0F172A", fontweight="bold")
+    ax1.tick_params(axis="y", labelcolor="#0F172A")
+    ax1.set_xticklabels(truncated_labels, rotation=45, ha="right", fontsize=9)
+
+    ax2 = ax1.twinx()
+    ax2.plot(truncated_labels, df["Cumulative_Pct"], color="#DC2626", marker="o", linewidth=2.5)
+    ax2.set_ylabel("Cumulative Impact Percentage", color="#DC2626", fontweight="bold")
+    ax2.set_ylim(0, 110)
+    
+    ax1.spines['top'].set_visible(False)
+    ax2.spines['top'].set_visible(False)
+    
+    plt.title("Eighty Twenty Rule: Top Structural Risk Themes", fontweight="bold", color="#0F172A", pad=15)
+    plt.tight_layout()
+    return fig
+
+def plot_impact_matrix(service_risk_df: pd.DataFrame, trust_gap_df: pd.DataFrame):
+    """Generate Bubble Chart for Disruption vs Recurrence"""
+    if service_risk_df.empty or trust_gap_df.empty:
+        fig, ax = plt.subplots(figsize=(7, 5))
+        ax.text(0.5, 0.5, 'Insufficient Data for Impact Matrix', ha='center', va='center')
+        return fig
+
+    merged = pd.merge(service_risk_df, trust_gap_df, on="Service", how="inner")
+    if merged.empty:
+        fig, ax = plt.subplots(figsize=(7, 5))
+        ax.text(0.5, 0.5, 'Insufficient Overlap for Impact Matrix', ha='center', va='center')
+        return fig
+        
+    fig, ax = plt.subplots(figsize=(8, 5.5), dpi=120)
+    
+    x = merged["Recurrence_Risk"].fillna(0)
+    y = merged["Active_Disruption_P1_P2"].fillna(0)
+    sizes = merged["Total_Service_Risk"].fillna(1) * 8 
+    
+    scatter = ax.scatter(x, y, s=sizes, c="#DC2626", alpha=0.6, edgecolors="#7F1D1D", linewidth=1.5)
+    
+    for i, txt in enumerate(merged["Service"]):
+        ax.annotate(str(txt)[:15], (x.iloc[i], y.iloc[i]), fontsize=8, ha="center", va="center", fontweight="bold")
+        
+    ax.set_xlabel("Recurrence Risk Score (Zero to 100)", fontweight="bold", color="#0F172A")
+    ax.set_ylabel("Active Disruption Volume (P1 and P2)", fontweight="bold", color="#0F172A")
+    ax.set_title("Executive Strike Zone: Recurrence versus Disruption", fontweight="bold", color="#0F172A", pad=15)
+    
+    max_y = float(y.max())
+    if max_y < 5:
+        ax.set_ylim(-0.5, 5)
+    else:
+        ax.set_ylim(-0.5, max_y + 2)
+        
+    ax.set_xlim(-5, 105)
+    
+    mean_y = float(y.mean())
+    mean_x = float(x.mean())
+    ax.axhline(mean_y, color="#94A3B8", linestyle="--", alpha=0.5)
+    ax.axvline(mean_x, color="#94A3B8", linestyle="--", alpha=0.5)
+    
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    
+    plt.tight_layout()
+    return fig
+
 def render_service_instability_leaders(service_risk_df: pd.DataFrame) -> None:
     """Render service instability leaders section"""
     st.subheader("Service Instability Leaders (Top 5)")
@@ -434,6 +504,7 @@ def _build_pdf_payload(results: dict, tenant_name: str) -> dict:
         "trust_gap_narrative": results.get("trust_gap_narrative", ""),
         "trust_gap_df": results.get("trust_gap_df", pd.DataFrame()),
         "rca_themes_df": results.get("rca_themes_df", pd.DataFrame()),
+        "rca_pareto_df": results.get("rca_pareto_df", pd.DataFrame()),
         "domain_scores": results.get("domain_scores", {}),
         "service_risk_top10": results.get("top10", pd.DataFrame()),
         "sip_candidates": results.get("sip_view", pd.DataFrame()),
@@ -600,10 +671,15 @@ def main():
     st.subheader("Executive Interpretation")
     st.write(results["exec_text"])
     
-    st.markdown("#### Xentrixus OSIL™ Trust Gap Analysis (P1 to P5)")
+    st.markdown("#### Xentrixus OSIL™ Trust Gap Analysis")
     st.info(results["trust_gap_narrative"])
     
-    if not results["trust_gap_df"].empty:
+    if not results["trust_gap_df"].empty and not results["service_risk_df"].empty:
+        fig_impact = plot_impact_matrix(results["service_risk_df"], results["trust_gap_df"])
+        if fig_impact:
+            st.pyplot(fig_impact, use_container_width=True)
+            st.caption("How to read: Services in the top right quadrant represent immediate executive danger zones combining high recurrence with critical business disruption.")
+        
         st.dataframe(results["trust_gap_df"], use_container_width=True)
 
     st.divider()
@@ -616,7 +692,7 @@ def main():
         st.caption("How to read: balanced shape indicates aligned governance; collapsed axis indicates maturity gap requiring targeted SIP focus.")
 
     with rc2:
-        st.markdown("### Stability Domain Scores (0 to 100)")
+        st.markdown("### Stability Domain Scores (Zero to 100)")
         st.dataframe(
             pd.DataFrame({"Domain": list(results["domain_scores"].keys()), "Score": list(results["domain_scores"].values())}),
             use_container_width=True,
@@ -624,9 +700,12 @@ def main():
 
     st.divider()
     
-    if not results["rca_themes_df"].empty:
-        st.subheader("Structural Risk Debt™: Root Cause Themes")
-        st.caption("Thematic extraction of actual documented root causes per service to bypass administrative tick box governance.")
+    if not results["rca_pareto_df"].empty:
+        st.subheader("Structural Risk Debt™: Thematic Extraction")
+        fig_pareto = plot_pareto(results["rca_pareto_df"])
+        st.pyplot(fig_pareto, use_container_width=True)
+        st.caption("How to read: The blue bars represent raw frequency. The red line proves that remediating the first few themes eliminates the vast majority of operational debt.")
+        
         st.dataframe(results["rca_themes_df"], use_container_width=True)
         st.divider()
 
