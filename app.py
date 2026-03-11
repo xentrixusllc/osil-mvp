@@ -1,6 +1,5 @@
 """OSIL Streamlit Application"""
 import os
-import textwrap
 from difflib import get_close_matches
 from typing import Dict, List, Optional, Tuple
 
@@ -368,17 +367,17 @@ def radar_chart(domain_scores: dict):
 
 def plot_pareto(df: pd.DataFrame):
     """Generate locked numeric axis Pareto chart for Root Cause Themes"""
-    fig, ax1 = plt.subplots(figsize=(8, 5.5), dpi=120)
+    fig, ax1 = plt.subplots(figsize=(8.5, 5.0), dpi=120)
     
-    labels = [textwrap.fill(str(x), width=18) for x in df["Theme"]]
+    labels = [(str(x)[:25] + "...") if len(str(x)) > 25 else str(x) for x in df["Theme"]]
     x_pos = np.arange(len(df))
     
-    ax1.bar(x_pos, df["Frequency"], color="#3B82F6")
+    ax1.bar(x_pos, df["Frequency"], color="#3B82F6", width=0.55)
     ax1.set_ylabel("Frequency of Root Cause", color="#0F172A", fontweight="bold")
     ax1.tick_params(axis="y", labelcolor="#0F172A")
     
     ax1.set_xticks(x_pos)
-    ax1.set_xticklabels(labels, rotation=35, ha="right", fontsize=9)
+    ax1.set_xticklabels(labels, rotation=40, ha="right", fontsize=9)
 
     ax2 = ax1.twinx()
     ax2.plot(x_pos, df["Cumulative_Pct"], color="#DC2626", marker="o", linewidth=2.5)
@@ -389,6 +388,8 @@ def plot_pareto(df: pd.DataFrame):
     ax2.spines['top'].set_visible(False)
     
     plt.title("Eighty Twenty Rule: Top Structural Risk Themes", fontweight="bold", color="#0F172A", pad=15)
+    
+    plt.gcf().subplots_adjust(bottom=0.35)
     plt.tight_layout()
     return fig
 
@@ -405,7 +406,7 @@ def plot_impact_matrix(service_risk_df: pd.DataFrame, trust_gap_df: pd.DataFrame
         ax.text(0.5, 0.5, 'Insufficient Overlap for Impact Matrix', ha='center', va='center')
         return fig
         
-    fig, ax = plt.subplots(figsize=(8, 5.5), dpi=120)
+    fig, ax = plt.subplots(figsize=(8.0, 5.5), dpi=120)
     
     x = merged["Recurrence_Risk"].fillna(0)
     y = merged["Active_Disruption_P1_P2"].fillna(0)
@@ -414,7 +415,7 @@ def plot_impact_matrix(service_risk_df: pd.DataFrame, trust_gap_df: pd.DataFrame
     scatter = ax.scatter(x, y, s=sizes, c="#DC2626", alpha=0.6, edgecolors="#7F1D1D", linewidth=1.5)
     
     for i, txt in enumerate(merged["Service"]):
-        ax.annotate(str(txt)[:15], (x.iloc[i], y.iloc[i]), fontsize=8, ha="center", va="center", fontweight="bold")
+        ax.annotate(str(txt)[:15], (x.iloc[i], y.iloc[i] + 0.3), fontsize=8, ha="center", va="bottom", fontweight="bold")
         
     ax.set_xlabel("Recurrence Risk Score (Zero to 100)", fontweight="bold", color="#0F172A")
     ax.set_ylabel("Active Disruption Volume (P1 and P2)", fontweight="bold", color="#0F172A")
@@ -682,7 +683,12 @@ def main():
         fig_impact = plot_impact_matrix(results["service_risk_df"], results["trust_gap_df"])
         if fig_impact:
             st.pyplot(fig_impact, use_container_width=True)
-            st.caption("How to read: Services in the top right quadrant represent immediate executive danger zones combining high recurrence with critical business disruption.")
+            
+            st.markdown("""
+            <div style="background-color: #FEF2F2; border-left: 4px solid #DC2626; padding: 12px 16px; margin-bottom: 24px;">
+                <strong>Executive Insight:</strong> Services in the top right quadrant represent immediate executive danger zones. These services combine high recurrence (structural debt) with critical business disruption (P1 and P2 volume). They require immediate executive sponsorship and capital allocation.
+            </div>
+            """, unsafe_allow_html=True)
         
         st.dataframe(results["trust_gap_df"], use_container_width=True)
 
@@ -709,12 +715,11 @@ def main():
         fig_pareto = plot_pareto(results["rca_pareto_df"])
         st.pyplot(fig_pareto, use_container_width=True)
         
-        pareto_narrative = (
-            "Executive Insight: The Pareto principle dictates that roughly eighty percent of operational instability stems from twenty percent of the underlying causes. "
-            "The themes clustered on the left side of this axis represent your highest leverage remediation targets. "
-            "Funding service improvement programs focused exclusively on these top drivers will mathematically eliminate the vast majority of your structural risk debt while optimizing resource allocation."
-        )
-        st.info(pareto_narrative)
+        st.markdown("""
+        <div style="background-color: #F8FAFC; border-left: 4px solid #0F172A; padding: 12px 16px; margin-bottom: 24px;">
+            <strong>Executive Insight:</strong> The Pareto principle dictates that roughly eighty percent of operational instability stems from twenty percent of the underlying causes. The themes clustered on the left side of this axis represent your highest leverage remediation targets. Funding service improvement programs focused exclusively on these top drivers will mathematically eliminate the vast majority of your structural risk debt while optimizing resource allocation.
+        </div>
+        """, unsafe_allow_html=True)
         
         st.dataframe(results["rca_themes_df"], use_container_width=True)
         st.divider()
