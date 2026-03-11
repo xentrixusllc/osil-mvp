@@ -274,21 +274,21 @@ def _build_pareto_image(df: pd.DataFrame) -> Optional[io.BytesIO]:
     if df.empty:
         return None
     try:
-        fig, ax1 = plt.subplots(figsize=(8.0, 5.0), dpi=120)
+        fig, ax1 = plt.subplots(figsize=(7.0, 4.5), dpi=120)
         
-        labels = [textwrap.fill(str(x), width=18) for x in df["Theme"]]
+        labels = [str(x)[:22] + "..." if len(str(x)) > 22 else str(x) for x in df["Theme"]]
         x_pos = np.arange(len(df))
         
         ax1.bar(x_pos, df["Frequency"], color="#3B82F6", width=0.55)
-        ax1.set_ylabel("Frequency of Root Cause", color="#0F172A", fontweight="bold")
+        ax1.set_ylabel("Frequency of Root Cause", color="#0F172A", fontweight="bold", fontsize=9)
         ax1.tick_params(axis="y", labelcolor="#0F172A")
         
         ax1.set_xticks(x_pos)
-        ax1.set_xticklabels(labels, rotation=40, ha="right", fontsize=9)
+        ax1.set_xticklabels(labels, rotation=35, ha="right", fontsize=8)
 
         ax2 = ax1.twinx()
         ax2.plot(x_pos, df["Cumulative_Pct"], color="#DC2626", marker="o", linewidth=2.5)
-        ax2.set_ylabel("Cumulative Impact Percentage", color="#DC2626", fontweight="bold")
+        ax2.set_ylabel("Cumulative Impact Percentage", color="#DC2626", fontweight="bold", fontsize=9)
         ax2.set_ylim(0, 110)
         
         ax1.spines['top'].set_visible(False)
@@ -316,20 +316,27 @@ def _build_impact_matrix_image(service_risk_df: pd.DataFrame, trust_gap_df: pd.D
         if merged.empty:
             return None
             
-        fig, ax = plt.subplots(figsize=(8.0, 5.0), dpi=120)
+        merged = merged.sort_values("Total_Service_Risk", ascending=False)
+            
+        fig, ax = plt.subplots(figsize=(7.0, 4.5), dpi=120)
         
         x = merged["Recurrence_Risk"].fillna(0)
         y = merged["Active_Disruption_P1_P2"].fillna(0)
-        sizes = merged["Total_Service_Risk"].fillna(1) * 8 
+        sizes = merged["Total_Service_Risk"].fillna(1) * 6 
         
-        scatter = ax.scatter(x, y, s=sizes, c="#DC2626", alpha=0.6, edgecolors="#7F1D1D", linewidth=1.5)
+        scatter = ax.scatter(x, y, s=sizes, c="#DC2626", alpha=0.5, edgecolors="#7F1D1D", linewidth=1.0)
         
-        for i, txt in enumerate(merged["Service"]):
-            ax.annotate(str(txt)[:15], (x.iloc[i], y.iloc[i] + 0.3), fontsize=8, ha="center", va="bottom", fontweight="bold")
+        top_n = merged.head(5)
+        for _, row in top_n.iterrows():
+            ax.annotate(
+                str(row["Service"])[:15], 
+                (row["Recurrence_Risk"], row["Active_Disruption_P1_P2"]), 
+                fontsize=7, ha="center", va="center", fontweight="bold", color="#0F172A"
+            )
             
-        ax.set_xlabel("Recurrence Risk Score (Zero to 100)", fontweight="bold", color="#0F172A")
-        ax.set_ylabel("Active Disruption Volume (P1 and P2)", fontweight="bold", color="#0F172A")
-        ax.set_title("Executive Strike Zone: Recurrence versus Disruption", fontweight="bold", color="#0F172A", pad=15)
+        ax.set_xlabel("Recurrence Risk Score (Zero to 100)", fontweight="bold", color="#0F172A", fontsize=9)
+        ax.set_ylabel("Active Disruption Volume (P1 and P2)", fontweight="bold", color="#0F172A", fontsize=9)
+        ax.set_title("Executive Strike Zone: Recurrence versus Disruption", fontweight="bold", color="#0F172A", pad=10)
         
         max_y = float(y.max())
         if max_y < 5:
@@ -619,7 +626,7 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
         impact_img = _build_impact_matrix_image(service_risk_df, trust_gap_df)
         if impact_img:
             impact_elements = []
-            impact_elements.append(Image(impact_img, width=6.5*inch, height=4.2*inch))
+            impact_elements.append(Image(impact_img, width=6.0*inch, height=3.8*inch))
             impact_elements.append(Spacer(1, 12))
             
             impact_narrative = (
@@ -696,7 +703,7 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
         pareto_img = _build_pareto_image(rca_pareto_df)
         if pareto_img:
             pareto_elements = []
-            pareto_elements.append(Image(pareto_img, width=6.5*inch, height=4.2*inch))
+            pareto_elements.append(Image(pareto_img, width=6.0*inch, height=3.8*inch))
             pareto_elements.append(Spacer(1, 12))
             
             pareto_narrative = (
