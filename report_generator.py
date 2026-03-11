@@ -1,6 +1,7 @@
 """OSIL Executive Report Production Design"""
 import io
 import re
+import textwrap
 from typing import Any, Dict, List, Optional
 import matplotlib
 matplotlib.use('Agg')
@@ -273,17 +274,19 @@ def _build_pareto_image(df: pd.DataFrame) -> Optional[io.BytesIO]:
     if df.empty:
         return None
     try:
-        fig, ax1 = plt.subplots(figsize=(7.5, 4.5), dpi=120)
+        fig, ax1 = plt.subplots(figsize=(7.5, 5.5), dpi=120)
         
-        truncated_labels = [str(x)[:20] + "..." if len(str(x)) > 20 else str(x) for x in df["Theme"]]
+        labels = [textwrap.fill(str(x), width=18) for x in df["Theme"]]
+        x_pos = np.arange(len(df))
         
-        ax1.bar(truncated_labels, df["Frequency"], color="#3B82F6")
+        ax1.bar(x_pos, df["Frequency"], color="#3B82F6")
         ax1.set_ylabel("Frequency of Root Cause", color="#0F172A", fontweight="bold")
         ax1.tick_params(axis="y", labelcolor="#0F172A")
-        ax1.set_xticklabels(truncated_labels, rotation=45, ha="right", fontsize=9)
+        ax1.set_xticks(x_pos)
+        ax1.set_xticklabels(labels, rotation=35, ha="right", fontsize=9)
 
         ax2 = ax1.twinx()
-        ax2.plot(truncated_labels, df["Cumulative_Pct"], color="#DC2626", marker="o", linewidth=2.5)
+        ax2.plot(x_pos, df["Cumulative_Pct"], color="#DC2626", marker="o", linewidth=2.5)
         ax2.set_ylabel("Cumulative Impact Percentage", color="#DC2626", fontweight="bold")
         ax2.set_ylim(0, 110)
         
@@ -660,7 +663,15 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
         
         pareto_img = _build_pareto_image(rca_pareto_df)
         if pareto_img:
-            story.append(Image(pareto_img, width=6.5*inch, height=3.9*inch))
+            story.append(Image(pareto_img, width=6.5*inch, height=4.7*inch))
+            story.append(Spacer(1, 12))
+            
+            pareto_narrative = (
+                "<b>Executive Insight:</b> The Pareto principle dictates that roughly eighty percent of operational instability stems from twenty percent of the underlying causes. "
+                "The themes clustered on the left side of this axis represent your highest leverage remediation targets. "
+                "Funding service improvement programs focused exclusively on these top drivers will mathematically eliminate the vast majority of your structural risk debt while optimizing resource allocation."
+            )
+            story.append(Paragraph(pareto_narrative, styles["ExecutiveBody"]))
             story.append(Spacer(1, 16))
 
         if not rca_themes_df.empty:
