@@ -180,27 +180,24 @@ def _build_radar_chart(domain_scores: Dict[str, float]) -> Optional[io.BytesIO]:
         values += values[:1]
         angles += angles[:1]
         
-        fig, ax = plt.subplots(figsize=(6.5, 5.5), subplot_kw=dict(projection='polar'))
+        fig, ax = plt.subplots(figsize=(4.0, 3.5), subplot_kw=dict(projection='polar'))
         ax.set_theta_offset(np.pi / 2)
         ax.set_theta_direction(-1)
         
         ax.fill(angles, values, color='#3B82F6', alpha=0.2)
-        ax.plot(angles, values, color='#2563EB', linewidth=3, marker='o', markersize=6)
+        ax.plot(angles, values, color='#2563EB', linewidth=2.5, marker='o', markersize=5)
         
         ax.set_xticks(angles[:-1])
-        ax.set_xticklabels(labels, fontsize=11, fontweight='bold', color='#0F172A')
+        ax.set_xticklabels(labels, fontsize=9, fontweight='bold', color='#0F172A')
         ax.set_ylim(0, 100)
         ax.set_yticks([20, 40, 60, 80, 100])
-        ax.set_yticklabels(['20', '40', '60', '80', '100'], fontsize=9, color='#64748B')
+        ax.set_yticklabels(['20', '40', '60', '80', '100'], fontsize=7, color='#64748B')
         ax.grid(True, linestyle='solid', alpha=0.2, color='#94A3B8')
-        
-        ax.set_title("Operational Stability Profile", fontsize=14, fontweight='bold', 
-                    color='#0F172A', pad=25, y=1.08)
         
         plt.tight_layout()
         img = io.BytesIO()
         plt.savefig(img, format='png', bbox_inches='tight', facecolor='white', 
-                   edgecolor='none', pad_inches=0.3)
+                   edgecolor='none', pad_inches=0.1)
         plt.close(fig)
         img.seek(0)
         return img
@@ -274,7 +271,7 @@ def _build_pareto_image(df: pd.DataFrame) -> Optional[io.BytesIO]:
     if df.empty:
         return None
     try:
-        fig, ax1 = plt.subplots(figsize=(7.5, 4.5), dpi=120)
+        fig, ax1 = plt.subplots(figsize=(7.0, 4.5), dpi=120)
         
         labels = [textwrap.fill(str(x)[:22] + "..." if len(str(x)) > 22 else str(x), width=18) for x in df["Theme"]]
         x_pos = np.arange(len(df))
@@ -369,6 +366,34 @@ def _build_impact_matrix_image(service_risk_df: pd.DataFrame) -> Optional[io.Byt
     except Exception as e:
         print(f"Impact matrix error: {e}")
         return None
+
+def _build_domain_insight_box(domain_scores: dict, styles: Any) -> Table:
+    weakest_domain = min(domain_scores.items(), key=lambda x: _safe_float(x[1], 0))[0] if domain_scores else "Service Resilience"
+
+    if "Resilience" in weakest_domain:
+        insight = "<b>Cost of Inaction:</b> Prolonged recovery times and high reopen rates actively degrade business productivity and erode end user trust. Engineering teams are trapped in reactive firefighting.<br/><br/><b>Mandate:</b> Automate runbook execution and enforce strict incident closure criteria."
+    elif "Governance" in weakest_domain:
+        insight = "<b>Cost of Inaction:</b> High collision rates expose the enterprise to self inflicted outages, directly threatening revenue generating hours. Current release controls are failing to predict impact.<br/><br/><b>Mandate:</b> Institute mandatory peer reviews and freeze non emergency deployments for high risk services."
+    elif "Debt" in weakest_domain:
+        insight = "<b>Cost of Inaction:</b> Recurring issues are closed without root cause remediation, creating a compounding tax on IT capacity. This hidden debt prevents scale and innovation.<br/><br/><b>Mandate:</b> Shift engineering capacity from feature development directly to technical debt paydown."
+    else:
+        insight = "<b>Cost of Inaction:</b> The overall trajectory of operational stability is decaying. Despite existing controls, systemic friction is increasing across the portfolio.<br/><br/><b>Mandate:</b> Execute a holistic, top down review of the service management lifecycle to reverse this trend."
+
+    title = Paragraph(f"Primary Exposure: {weakest_domain}", styles["TableHeader"])
+    body = Paragraph(insight, styles["TableCell"])
+
+    box = Table([[title], [body]], colWidths=[3.2*inch])
+    box.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#D97706")), 
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('BACKGROUND', (0, 1), (-1, 1), colors.HexColor("#FFFBEB")), 
+        ('BOX', (0, 0), (-1, -1), 1, colors.HexColor("#D97706")),
+        ('LEFTPADDING', (0, 0), (-1, -1), 10),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 10),
+        ('TOPPADDING', (0, 0), (-1, -1), 8),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+    ]))
+    return box
 
 def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
     try:
@@ -479,12 +504,11 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
 
         story.append(PageBreak())
 
+        # DUAL COLUMN LAYOUT FOR STABILITY PROFILE
         story.append(Paragraph("Operational Stability Profile", styles["PageHeader"]))
+        story.append(Spacer(1, 12))
         
         radar_img = _build_radar_chart(domain_scores)
-        if radar_img:
-            story.append(Image(radar_img, width=5.5*inch, height=4.5*inch))
-            story.append(Spacer(1, 16))
         
         domain_rows = [[Paragraph("Domain", styles["TableHeader"]), 
                        Paragraph("Score", styles["TableHeader"]), 
@@ -503,7 +527,7 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
                 Paragraph(assessment, styles["TableCellBold"])
             ])
         
-        domain_table = Table(domain_rows, colWidths=[3.0*inch, 1.5*inch, 2.5*inch])
+        domain_table = Table(domain_rows, colWidths=[1.6*inch, 0.6*inch, 1.0*inch])
         domain_table.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#0F172A")),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
@@ -511,9 +535,9 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
             ('ALIGN', (1, 0), (1, -1), 'CENTER'),
             ('ALIGN', (2, 0), (2, -1), 'CENTER'),
             ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-            ('LEFTPADDING', (0, 0), (-1, -1), 12),
-            ('TOPPADDING', (0, 0), (-1, -1), 10),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 10),
+            ('LEFTPADDING', (0, 0), (-1, -1), 10),
+            ('TOPPADDING', (0, 0), (-1, -1), 8),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
             ('LINEBELOW', (0, 0), (-1, 0), 2, colors.HexColor("#0F172A")),
         ] + [
             ('LINEBELOW', (0, i), (-1, i), 0.5, colors.HexColor("#E2E8F0")) for i in range(1, len(domain_rows))
@@ -521,12 +545,26 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
             ('BACKGROUND', (0, i), (-1, i), colors.HexColor("#F8FAFC")) for i in range(2, len(domain_rows), 2)
         ]))
         
-        story.append(KeepTogether([
+        right_col_elements = [
             Paragraph("Domain Scorecard", styles["SectionHeader"]),
             domain_table,
-            Spacer(1, 10),
-            Paragraph("Scoring: 80 to 100 Strong | 60 to 79 Controlled | 40 to 59 Weakness | Below 40 Fragility", styles["Caption"])
-        ]))
+            Spacer(1, 8),
+            Paragraph("Scoring: 80 to 100 Strong | 60 to 79 Controlled | <60 Weakness", styles["Caption"]),
+            Spacer(1, 16),
+            _build_domain_insight_box(domain_scores, styles)
+        ]
+
+        if radar_img:
+            radar_flowable = Image(radar_img, width=3.7*inch, height=3.2*inch)
+            layout_table = Table([[radar_flowable, right_col_elements]], colWidths=[3.7*inch, 3.3*inch])
+            layout_table.setStyle(TableStyle([
+                ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+                ('LEFTPADDING', (0, 0), (-1, -1), 0),
+                ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+            ]))
+            story.append(KeepTogether([layout_table]))
+        else:
+            story.append(KeepTogether(right_col_elements))
 
         story.append(PageBreak())
 
@@ -628,7 +666,7 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
         story.append(Paragraph("The Xentrixus OSIL™ framework identifies structural operational gaps by measuring the ratio of silent friction to active disruption, and by extracting true thematic root causes rather than relying on administrative closure flags.", styles["ExecutiveBody"]))
         story.append(Spacer(1, 16))
 
-        impact_img = _build_impact_matrix_image(service_risk_df)
+        impact_img = _build_impact_matrix_image(service_risk_df, trust_gap_df)
         if impact_img:
             impact_elements = []
             impact_elements.append(Image(impact_img, width=6.5*inch, height=4.2*inch))
@@ -707,7 +745,7 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
         pareto_img = _build_pareto_image(rca_pareto_df)
         if pareto_img:
             pareto_elements = []
-            pareto_elements.append(Image(pareto_img, width=6.5*inch, height=4.2*inch))
+            pareto_elements.append(Image(pareto_img, width=6.0*inch, height=3.8*inch))
             pareto_elements.append(Spacer(1, 12))
             
             pareto_narrative = (
