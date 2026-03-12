@@ -5,7 +5,7 @@ from typing import Any, Dict, Optional, Tuple
 import numpy as np
 import pandas as pd
 
-INCIDENT_REQUIRED_COLUMNS = ["Service", "Opened_Date", "Priority"]
+INCIDENT_REQUIRED_COLUMNS = ["Service", "Opened_Date", "Priority", "State", "Assignment_Group"]
 
 def _safe_float(val: Any, default: float = 0.0) -> float:
     try:
@@ -146,6 +146,15 @@ def _prepare_incidents(df: pd.DataFrame) -> Tuple[pd.DataFrame, str]:
         out["Closed_Date"] = pd.to_datetime(out["Closed_Date"], errors="coerce")
     else:
         out["Closed_Date"] = pd.NaT
+
+    # FALSE POSITIVE FILTER: Strip out canceled or duplicate incidents
+    if "State" in out.columns:
+        invalid_states = ["canceled", "cancelled", "duplicate", "withdrawn", "rejected"]
+        out = out[~out["State"].astype(str).str.lower().isin(invalid_states)].copy()
+
+    if "Assignment_Group" not in out.columns:
+        out["Assignment_Group"] = "Unassigned"
+    out["Assignment_Group"] = out["Assignment_Group"].fillna("Unassigned").astype(str)
         
     close_col = (
         "Resolved_Date"
@@ -202,20 +211,27 @@ def _prepare_changes(df: Optional[pd.DataFrame]) -> pd.DataFrame:
         out["Service_Anchor"].astype(str).str.strip().replace("", "Unknown").fillna("Unknown")
     )
     
-    out["Change_Start"] = (
-        pd.to_datetime(out["Change_Start"], errors="coerce")
-        if "Change_Start" in out.columns
-        else pd.NaT
-    )
-    
-    out["Change_End"] = (
-        pd.to_datetime(out["Change_End"], errors="coerce")
-        if "Change_End" in out.columns
-        else pd.NaT
-    )
+    # Use Actual Start/End if available, fallback to Planned if necessary
+    if "Actual_Start" in out.columns:
+        out["Change_Start"] = pd.to_datetime(out["Actual_Start"], errors="coerce")
+    elif "Change_Start" in out.columns:
+        out["Change_Start"] = pd.to_datetime(out["Change_Start"], errors="coerce")
+    else:
+        out["Change_Start"] = pd.NaT
+
+    if "Actual_End" in out.columns:
+        out["Change_End"] = pd.to_datetime(out["Actual_End"], errors="coerce")
+    elif "Change_End" in out.columns:
+        out["Change_End"] = pd.to_datetime(out["Change_End"], errors="coerce")
+    else:
+        out["Change_End"] = pd.NaT
     
     if "Change_ID" not in out.columns:
         out["Change_ID"] = [f"CHG {i+1}" for i in range(len(out))]
+
+    if "Change_Type" not in out.columns:
+        out["Change_Type"] = "Normal"
+    out["Change_Type"] = out["Change_Type"].fillna("Normal").astype(str)
         
     if "Failed_Flag" not in out.columns:
         out["Failed_Flag"] = 0
@@ -288,6 +304,9 @@ def _prepare_problems(df: Optional[pd.DataFrame]) -> pd.DataFrame:
         
     if "Contributing_Cause_Text" not in out.columns:
         out["Contributing_Cause_Text"] = ""
+
+    if "Assignment_Group" not in out.columns:
+        out["Assignment_Group"] = "Unassigned"
         
     return out
 
@@ -710,15 +729,17 @@ def run_osil(
     as_of = str(max(close_candidates).date()) if close_candidates else date.today().isoformat()
     
     readiness_checks = 0
-    readiness_total = 9
+    readiness_total = 10
     readiness_checks += 1 if "Service" in inc.columns or "Service_Anchor" in inc.columns else 0
     readiness_checks += 1 if "Opened_Date" in inc.columns else 0
     readiness_checks += 1 if "Priority" in inc.columns else 0
-    readiness_checks += 1 if ("Resolved_Date" in inc.columns or "Closed_Date" in inc.columns) else 0
-    readiness_checks += 1 if "Reopened_Flag" in inc.columns else 0
+    readiness_checks += 1 if "State" in inc.columns else 0
+    readiness_checks += 1 if "Assignment_Group" in inc.columns else 0
     readiness_checks += 1 if changes_df is not None and not changes_df.empty else 0
+    readiness_checks += 1 if changes_df is not None and not changes_df.empty and "Change_Type" in changes_df.columns else 0
     readiness_checks += 1 if problems_df is not None and not problems_df.empty else 0
     readiness_checks += 1 if problems_df is not None and not problems_df.empty and "Root_Cause_Text" in problems_df.columns else 0
+    readiness_checks += 1 if problems_df is not None and not problems_df.empty and "Assignment_Group" in problems_df.columns else 0
     
     readiness_score = round((readiness_checks / readiness_total) * 100, 1)
     
