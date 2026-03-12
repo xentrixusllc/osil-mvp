@@ -273,7 +273,7 @@ def _build_pareto_image(df: pd.DataFrame) -> Optional[io.BytesIO]:
     try:
         fig, ax1 = plt.subplots(figsize=(7.0, 4.5), dpi=120)
         
-        labels = [textwrap.fill(str(x)[:22] + "..." if len(str(x)) > 22 else str(x), width=18) for x in df["Theme"]]
+        labels = [str(x)[:22] + "..." if len(str(x)) > 22 else str(x) for x in df["Theme"]]
         x_pos = np.arange(len(df))
         
         ax1.bar(x_pos, df["Frequency"], color="#3B82F6", width=0.55)
@@ -504,7 +504,6 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
 
         story.append(PageBreak())
 
-        # DUAL COLUMN LAYOUT FOR STABILITY PROFILE
         story.append(Paragraph("Operational Stability Profile", styles["PageHeader"]))
         story.append(Spacer(1, 12))
         
@@ -666,7 +665,7 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
         story.append(Paragraph("The Xentrixus OSIL™ framework identifies structural operational gaps by measuring the ratio of silent friction to active disruption, and by extracting true thematic root causes rather than relying on administrative closure flags.", styles["ExecutiveBody"]))
         story.append(Spacer(1, 16))
 
-        impact_img = _build_impact_matrix_image(service_risk_df, trust_gap_df)
+        impact_img = _build_impact_matrix_image(service_risk_df)
         if impact_img:
             impact_elements = []
             impact_elements.append(Image(impact_img, width=6.5*inch, height=4.2*inch))
@@ -745,7 +744,7 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
         pareto_img = _build_pareto_image(rca_pareto_df)
         if pareto_img:
             pareto_elements = []
-            pareto_elements.append(Image(pareto_img, width=6.0*inch, height=3.8*inch))
+            pareto_elements.append(Image(pareto_img, width=6.5*inch, height=4.2*inch))
             pareto_elements.append(Spacer(1, 12))
             
             pareto_narrative = (
