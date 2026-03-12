@@ -368,7 +368,13 @@ def _build_impact_matrix_image(service_risk_df: pd.DataFrame) -> Optional[io.Byt
         return None
 
 def _build_domain_insight_box(domain_scores: dict, styles: Any) -> Table:
-    weakest_domain = min(domain_scores.items(), key=lambda x: _safe_float(x[1], 0))[0] if domain_scores else "Service Resilience"
+    weakest_domain = "Service Resilience"
+    if domain_scores:
+        lowest_val = 101.0
+        for key, val in domain_scores.items():
+            if float(val) < lowest_val:
+                lowest_val = float(val)
+                weakest_domain = key
 
     if "Resilience" in weakest_domain:
         insight = "<b>Cost of Inaction:</b> Prolonged recovery times and high reopen rates actively degrade business productivity and erode end user trust. Engineering teams are trapped in reactive firefighting.<br/><br/><b>Mandate:</b> Automate runbook execution and enforce strict incident closure criteria."
@@ -382,7 +388,7 @@ def _build_domain_insight_box(domain_scores: dict, styles: Any) -> Table:
     title = Paragraph(f"Primary Exposure: {weakest_domain}", styles["TableHeader"])
     body = Paragraph(insight, styles["TableCell"])
 
-    box = Table([[title], [body]], colWidths=[3.2*inch])
+    box = Table([[title], [body]], colWidths=[3.9*inch])
     box.setStyle(TableStyle([
         ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#D97706")), 
         ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
@@ -467,7 +473,7 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
         story.append(Paragraph("Strategic Imperatives", styles["SectionHeader"]))
         
         strongest = max(domain_scores.items(), key=lambda x: _safe_float(x[1], 0))[0] if domain_scores else "Change Governance"
-        weakest = min(domain_scores.items(), key=lambda x: _safe_float(x[1], 0))[0] if domain_scores else "Structural Risk Debt"
+        weakest = min(domain_scores.items(), key=lambda x: float(x[1]))[0] if domain_scores else "Structural Risk Debt"
         
         imp_data = [
             [Paragraph("Executive Insight", styles["TableHeader"]), 
@@ -504,6 +510,7 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
 
         story.append(PageBreak())
 
+        # DUAL COLUMN LAYOUT FOR STABILITY PROFILE
         story.append(Paragraph("Operational Stability Profile", styles["PageHeader"]))
         story.append(Spacer(1, 12))
         
@@ -513,20 +520,21 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
                        Paragraph("Score", styles["TableHeader"]), 
                        Paragraph("Assessment", styles["TableHeader"])]]
         
-        for key in ["Service Resilience", "Change Governance", "Structural Risk Debt", "Reliability Momentum"]:
-            display = "Structural Risk Debt™" if key == "Structural Risk Debt" else key
-            score = _safe_float(domain_scores.get(key, domain_scores.get(key + "™", 0)), 0)
+        domain_keys = ["Service Resilience", "Change Governance", "Structural Risk Debt™", "Reliability Momentum"]
+        for key in domain_keys:
+            # Fallback handling in case the exact key with TM is not present, though it is usually populated correctly by engine
+            score = _safe_float(domain_scores.get(key, domain_scores.get(key.replace("™", ""), 0)), 0)
             assessment = "Strong" if score >= 80 else "Improving" if score >= 60 else "At Risk" if score >= 40 else "Critical"
             
             score_color = colors.HexColor("#059669") if score >= 70 else colors.HexColor("#D97706") if score >= 55 else colors.HexColor("#DC2626")
             
             domain_rows.append([
-                Paragraph(display, styles["TableCell"]),
+                Paragraph(key, styles["TableCell"]),
                 Paragraph(f"{score:.1f}", ParagraphStyle(name='score', parent=styles["TableCell"], textColor=score_color, fontName='Helvetica-Bold')),
                 Paragraph(assessment, styles["TableCellBold"])
             ])
         
-        domain_table = Table(domain_rows, colWidths=[1.6*inch, 0.6*inch, 1.0*inch])
+        domain_table = Table(domain_rows, colWidths=[2.0*inch, 0.6*inch, 1.3*inch])
         domain_table.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#0F172A")),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
@@ -534,7 +542,8 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
             ('ALIGN', (1, 0), (1, -1), 'CENTER'),
             ('ALIGN', (2, 0), (2, -1), 'CENTER'),
             ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-            ('LEFTPADDING', (0, 0), (-1, -1), 10),
+            ('LEFTPADDING', (0, 0), (-1, -1), 6),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 6),
             ('TOPPADDING', (0, 0), (-1, -1), 8),
             ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
             ('LINEBELOW', (0, 0), (-1, 0), 2, colors.HexColor("#0F172A")),
@@ -554,12 +563,14 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
         ]
 
         if radar_img:
-            radar_flowable = Image(radar_img, width=3.7*inch, height=3.2*inch)
-            layout_table = Table([[radar_flowable, right_col_elements]], colWidths=[3.7*inch, 3.3*inch])
+            radar_flowable = Image(radar_img, width=3.1*inch, height=2.7*inch)
+            layout_table = Table([[radar_flowable, right_col_elements]], colWidths=[3.1*inch, 3.9*inch])
             layout_table.setStyle(TableStyle([
                 ('VALIGN', (0, 0), (-1, -1), 'TOP'),
                 ('LEFTPADDING', (0, 0), (-1, -1), 0),
                 ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
+                ('TOPPADDING', (0, 0), (-1, -1), 0),
             ]))
             story.append(KeepTogether([layout_table]))
         else:
