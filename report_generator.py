@@ -214,10 +214,11 @@ def _build_heatmap(service_risk_df: pd.DataFrame) -> Optional[io.BytesIO]:
     if not all(c in df.columns for c in required):
         return None
     
-    risk_cols = ["Recurrence_Risk", "MTTR_Drag_Risk", "Reopen_Churn_Risk", "Change_Collision_Risk"]
+    risk_cols = ["Recurrence_Risk", "MTTR_Drag_Risk", "Execution_Churn_Risk", "Reopen_Churn_Risk", "Change_Collision_Risk"]
     display_names = {
         "Recurrence_Risk": "Recurrence",
         "MTTR_Drag_Risk": "MTTR Drag", 
+        "Execution_Churn_Risk": "Exec Churn",
         "Reopen_Churn_Risk": "Reopen",
         "Change_Collision_Risk": "Change"
     }
@@ -377,7 +378,7 @@ def _build_domain_insight_box(domain_scores: dict, styles: Any) -> Table:
                 weakest_domain = key
 
     if "Resilience" in weakest_domain:
-        insight = "<b>Cost of Inaction:</b> Prolonged recovery times and high reopen rates actively degrade business productivity and erode end user trust. Engineering teams are trapped in reactive firefighting.<br/><br/><b>Mandate:</b> Automate runbook execution and enforce strict incident closure criteria."
+        insight = "<b>Cost of Inaction:</b> Prolonged recovery times, execution churn, and high reopen rates actively degrade business productivity and erode end user trust. Engineering teams are trapped in reactive firefighting.<br/><br/><b>Mandate:</b> Automate runbook execution and enforce strict incident closure criteria."
     elif "Governance" in weakest_domain:
         insight = "<b>Cost of Inaction:</b> High collision rates expose the enterprise to self inflicted outages, directly threatening revenue generating hours. Current release controls are failing to predict impact.<br/><br/><b>Mandate:</b> Institute mandatory peer reviews and freeze non emergency deployments for high risk services."
     elif "Debt" in weakest_domain:
@@ -522,7 +523,6 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
         
         domain_keys = ["Service Resilience", "Change Governance", "Structural Risk Debt™", "Reliability Momentum"]
         for key in domain_keys:
-            # Fallback handling in case the exact key with TM is not present, though it is usually populated correctly by engine
             score = _safe_float(domain_scores.get(key, domain_scores.get(key.replace("™", ""), 0)), 0)
             assessment = "Strong" if score >= 80 else "Improving" if score >= 60 else "At Risk" if score >= 40 else "Critical"
             
@@ -859,6 +859,7 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
             Paragraph(
                 "<b>Recurrence:</b> Frequency of repeated incidents indicating unresolved root causes.<br/>"
                 "<b>MTTR Drag:</b> Recovery time exceeds target levels.<br/>"
+                "<b>Execution Churn:</b> Frequency of ticket reassignment (ping-pong effect) indicating broken routing.<br/>"
                 "<b>Reopen:</b> Incidents closed prematurely.<br/>"
                 "<b>Change:</b> Instability correlated with deployment windows.", 
                 styles["ExecutiveBody"]
