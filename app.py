@@ -395,7 +395,7 @@ def plot_pareto(df: pd.DataFrame):
     return fig
 
 def plot_impact_matrix(service_risk_df: pd.DataFrame):
-    """Generate Dual Axis Chart for Disruption vs Recurrence"""
+    """Generate Dual Axis Chart for Disruption vs Recurrence using Service Risk Data directly"""
     if service_risk_df.empty or "Active_Disruption_P1_P2" not in service_risk_df.columns:
         fig, ax = plt.subplots(figsize=(7, 4.5))
         ax.text(0.5, 0.5, 'Insufficient Data for Impact Matrix', ha='center', va='center')
@@ -721,7 +721,7 @@ def main():
         )
         
         domain_scores = results["domain_scores"]
-        weakest_domain = min(domain_scores.items(), key=lambda x: _safe_float(x[1], 0))[0] if domain_scores else "Service Resilience"
+        weakest_domain = min(domain_scores.items(), key=lambda x: float(x[1]))[0] if domain_scores else "Service Resilience"
 
         if "Resilience" in weakest_domain:
             insight = "<b>Cost of Inaction:</b> Prolonged recovery times and high reopen rates actively degrade business productivity and erode end user trust. Engineering teams are trapped in reactive firefighting.<br/><br/><b>Mandate:</b> Automate runbook execution and enforce strict incident closure criteria."
