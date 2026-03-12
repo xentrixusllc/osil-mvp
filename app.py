@@ -395,7 +395,7 @@ def plot_pareto(df: pd.DataFrame):
     return fig
 
 def plot_impact_matrix(service_risk_df: pd.DataFrame):
-    """Generate Dual Axis Chart for Disruption vs Recurrence using Service Risk Data directly"""
+    """Generate Dual Axis Chart for Disruption vs Recurrence"""
     if service_risk_df.empty or "Active_Disruption_P1_P2" not in service_risk_df.columns:
         fig, ax = plt.subplots(figsize=(7, 4.5))
         ax.text(0.5, 0.5, 'Insufficient Data for Impact Matrix', ha='center', va='center')
@@ -719,6 +719,25 @@ def main():
             pd.DataFrame({"Domain": list(results["domain_scores"].keys()), "Score": list(results["domain_scores"].values())}),
             use_container_width=True,
         )
+        
+        domain_scores = results["domain_scores"]
+        weakest_domain = min(domain_scores.items(), key=lambda x: _safe_float(x[1], 0))[0] if domain_scores else "Service Resilience"
+
+        if "Resilience" in weakest_domain:
+            insight = "<b>Cost of Inaction:</b> Prolonged recovery times and high reopen rates actively degrade business productivity and erode end user trust. Engineering teams are trapped in reactive firefighting.<br/><br/><b>Mandate:</b> Automate runbook execution and enforce strict incident closure criteria."
+        elif "Governance" in weakest_domain:
+            insight = "<b>Cost of Inaction:</b> High collision rates expose the enterprise to self inflicted outages, directly threatening revenue generating hours. Current release controls are failing to predict impact.<br/><br/><b>Mandate:</b> Institute mandatory peer reviews and freeze non emergency deployments for high risk services."
+        elif "Debt" in weakest_domain:
+            insight = "<b>Cost of Inaction:</b> Recurring issues are closed without root cause remediation, creating a compounding tax on IT capacity. This hidden debt prevents scale and innovation.<br/><br/><b>Mandate:</b> Shift engineering capacity from feature development directly to technical debt paydown."
+        else:
+            insight = "<b>Cost of Inaction:</b> The overall trajectory of operational stability is decaying. Despite existing controls, systemic friction is increasing across the portfolio.<br/><br/><b>Mandate:</b> Execute a holistic, top down review of the service management lifecycle to reverse this trend."
+
+        st.markdown(f'''
+        <div style="background-color: #F8FAFC; border-left: 4px solid #D97706; padding: 16px; margin-top: 16px; border-radius: 4px;">
+            <div style="font-size: 14px; font-weight: bold; color: #0F172A; margin-bottom: 8px;">Primary Domain Exposure: {weakest_domain}</div>
+            <div style="font-size: 13px; color: #334155; line-height: 1.5;">{insight}</div>
+        </div>
+        ''', unsafe_allow_html=True)
 
     st.divider()
     st.subheader("Structural Risk Debt™: Thematic Extraction")
