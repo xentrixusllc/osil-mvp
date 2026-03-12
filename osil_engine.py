@@ -147,7 +147,6 @@ def _prepare_incidents(df: pd.DataFrame) -> Tuple[pd.DataFrame, str]:
     else:
         out["Closed_Date"] = pd.NaT
 
-    # FALSE POSITIVE FILTER: Strip out canceled or duplicate incidents
     if "State" in out.columns:
         invalid_states = ["canceled", "cancelled", "duplicate", "withdrawn", "rejected"]
         out = out[~out["State"].astype(str).str.lower().isin(invalid_states)].copy()
@@ -155,6 +154,10 @@ def _prepare_incidents(df: pd.DataFrame) -> Tuple[pd.DataFrame, str]:
     if "Assignment_Group" not in out.columns:
         out["Assignment_Group"] = "Unassigned"
     out["Assignment_Group"] = out["Assignment_Group"].fillna("Unassigned").astype(str)
+
+    if "Reassignment_Count" not in out.columns:
+        out["Reassignment_Count"] = 0
+    out["Reassignment_Count"] = pd.to_numeric(out["Reassignment_Count"], errors="coerce").fillna(0)
         
     close_col = (
         "Resolved_Date"
@@ -211,7 +214,6 @@ def _prepare_changes(df: Optional[pd.DataFrame]) -> pd.DataFrame:
         out["Service_Anchor"].astype(str).str.strip().replace("", "Unknown").fillna("Unknown")
     )
     
-    # Use Actual Start/End if available, fallback to Planned if necessary
     if "Actual_Start" in out.columns:
         out["Change_Start"] = pd.to_datetime(out["Actual_Start"], errors="coerce")
     elif "Change_Start" in out.columns:
@@ -494,6 +496,7 @@ def _build_rollup(inc: pd.DataFrame, changes: pd.DataFrame, probs: pd.DataFrame)
         reopen_rate=("Reopened_Flag", "mean"),
         change_collision_rate=("Change_Collision_Flag", "mean"),
         mttr_hours=("MTTR_Hours", "mean"),
+        reassignment_mean=("Reassignment_Count", "mean"),
         avg_priority_weight=("Priority_Weight", "mean"),
         tier=("Service_Tier", lambda x: _first_non_null_mode(x, "Unspecified")),
         category=("Category", lambda x: _first_non_null_mode(x, "Stability Improvement")),
@@ -528,6 +531,7 @@ def _build_service_risk_df(roll: pd.DataFrame, top_n: int = 10) -> pd.DataFrame:
                 "Service_Tier",
                 "Recurrence_Risk",
                 "MTTR_Drag_Risk",
+                "Execution_Churn_Risk",
                 "Reopen_Churn_Risk",
                 "Change_Collision_Risk",
                 "Problem_Gap_Risk",
@@ -539,6 +543,8 @@ def _build_service_risk_df(roll: pd.DataFrame, top_n: int = 10) -> pd.DataFrame:
     rec = _normalize_0_100(roll["recurrence"] * roll["avg_priority_weight"])
     mttr = _normalize_0_100(roll["mttr_hours"])
     reopen = _normalize_0_100(roll["reopen_rate"] * 100)
+    exec_churn = np.clip(roll["reassignment_mean"] * 33.3, 0, 100) 
+    
     change = _normalize_0_100(
         (roll["change_collision_rate"] * 70)
         + (roll["failed_change_rate"] * 20)
@@ -552,6 +558,7 @@ def _build_service_risk_df(roll: pd.DataFrame, top_n: int = 10) -> pd.DataFrame:
             "Service_Tier": roll["tier"].fillna("Unspecified").astype(str),
             "Recurrence_Risk": rec.round(1),
             "MTTR_Drag_Risk": mttr.round(1),
+            "Execution_Churn_Risk": exec_churn.round(1),
             "Reopen_Churn_Risk": reopen.round(1),
             "Change_Collision_Risk": change.round(1),
             "Problem_Gap_Risk": problem.round(1),
@@ -560,11 +567,12 @@ def _build_service_risk_df(roll: pd.DataFrame, top_n: int = 10) -> pd.DataFrame:
     )
     
     out["Total_Service_Risk"] = (
-        0.28 * out["Recurrence_Risk"]
-        + 0.24 * out["MTTR_Drag_Risk"]
-        + 0.14 * out["Reopen_Churn_Risk"]
-        + 0.17 * out["Change_Collision_Risk"]
-        + 0.17 * out["Problem_Gap_Risk"]
+        0.25 * out["Recurrence_Risk"]
+        + 0.15 * out["MTTR_Drag_Risk"]
+        + 0.15 * out["Execution_Churn_Risk"]
+        + 0.10 * out["Reopen_Churn_Risk"]
+        + 0.15 * out["Change_Collision_Risk"]
+        + 0.20 * out["Problem_Gap_Risk"]
     ).round(1)
     
     return out.sort_values("Total_Service_Risk", ascending=False).head(top_n).reset_index(drop=True)
@@ -579,7 +587,7 @@ def _build_domain_scores(service_risk_df: pd.DataFrame) -> Dict[str, float]:
         }
         
     service_resilience = np.clip(
-        100 - (0.60 * service_risk_df["MTTR_Drag_Risk"].mean() + 0.40 * service_risk_df["Reopen_Churn_Risk"].mean()),
+        100 - (0.40 * service_risk_df["MTTR_Drag_Risk"].mean() + 0.30 * service_risk_df["Reopen_Churn_Risk"].mean() + 0.30 * service_risk_df["Execution_Churn_Risk"].mean()),
         0,
         100,
     )
@@ -593,8 +601,9 @@ def _build_domain_scores(service_risk_df: pd.DataFrame) -> Dict[str, float]:
         100
         - (
             0.35 * service_risk_df["Recurrence_Risk"].mean()
-            + 0.30 * service_risk_df["MTTR_Drag_Risk"].mean()
-            + 0.15 * service_risk_df["Reopen_Churn_Risk"].mean()
+            + 0.25 * service_risk_df["MTTR_Drag_Risk"].mean()
+            + 0.10 * service_risk_df["Execution_Churn_Risk"].mean()
+            + 0.10 * service_risk_df["Reopen_Churn_Risk"].mean()
             + 0.20 * service_risk_df["Change_Collision_Risk"].mean()
         ),
         0,
@@ -645,7 +654,9 @@ def _build_sip_candidates(service_risk_df: pd.DataFrame, roll: pd.DataFrame, top
         parts = []
         if _safe_float(row.get("Recurrence_Risk", 0)) >= 60:
             parts.append("high recurrence")
-        if _safe_float(row.get("MTTR_Drag_Risk", 0)) >= 60:
+        if _safe_float(row.get("Execution_Churn_Risk", 0)) >= 60:
+            parts.append("high assignment churn")
+        elif _safe_float(row.get("MTTR_Drag_Risk", 0)) >= 60:
             parts.append("MTTR drag")
         if _safe_float(row.get("Change_Collision_Risk", 0)) >= 60:
             parts.append("change instability")
@@ -698,7 +709,7 @@ def run_osil(
     incident_signal = (
         "Incident restoration efficiency appears controlled."
         if domain_scores["Service Resilience"] >= 70
-        else "Incident restoration signals show visible drag."
+        else "Incident restoration signals show visible drag and execution churn."
     )
     problem_signal = (
         "Structural learning signals are improving."
