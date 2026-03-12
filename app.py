@@ -351,7 +351,7 @@ def radar_chart(domain_scores: dict):
     values_loop = values + [values[0]]
     angles_loop = angles + [angles[0]]
 
-    fig = plt.figure(figsize=(6.2, 5.0), dpi=160)
+    fig = plt.figure(figsize=(5.5, 4.5), dpi=160)
     ax = plt.subplot(111, polar=True)
     ax.set_theta_offset(np.pi / 2)
     ax.set_theta_direction(-1)
@@ -706,7 +706,9 @@ def main():
 
     st.divider()
     st.subheader("Operational Stability Profile")
-    rc1, rc2 = st.columns([1.15, 1.0])
+    
+    # Rebalanced column weights to give the table and mandate more width
+    rc1, rc2 = st.columns([1.0, 1.3])
 
     with rc1:
         fig_radar = radar_chart(results["domain_scores"])
@@ -721,7 +723,15 @@ def main():
         )
         
         domain_scores = results["domain_scores"]
-        weakest_domain = min(domain_scores.items(), key=lambda x: float(x[1]))[0] if domain_scores else "Service Resilience"
+        
+        # Calculate weakest domain using pure Python math
+        weakest_domain = "Service Resilience"
+        if domain_scores:
+            lowest_val = 101.0
+            for key, val in domain_scores.items():
+                if float(val) < lowest_val:
+                    lowest_val = float(val)
+                    weakest_domain = key
 
         if "Resilience" in weakest_domain:
             insight = "<b>Cost of Inaction:</b> Prolonged recovery times and high reopen rates actively degrade business productivity and erode end user trust. Engineering teams are trapped in reactive firefighting.<br/><br/><b>Mandate:</b> Automate runbook execution and enforce strict incident closure criteria."
