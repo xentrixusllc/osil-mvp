@@ -74,6 +74,11 @@ INCIDENT_MAPPING_SPEC = {
         "required": True,
         "aliases": ["Assignment Group", "Assignment_Group", "Resolver Group", "Assigned Group", "Support Group"],
     },
+    "Reassignment_Count": {
+        "label": "Reassignment Count / Bounces (optional)",
+        "required": False,
+        "aliases": ["Reassignment Count", "Reassignment_Count", "Assignment Count", "Hop Count", "Reassignments"],
+    },
     "Resolution_Code": {
         "label": "Resolution Code / Close Code (optional)",
         "required": False,
@@ -462,6 +467,7 @@ def render_service_instability_leaders(service_risk_df: pd.DataFrame) -> None:
         risks = {
             "Recurrence": float(row.get("Recurrence_Risk", 0.0)),
             "MTTR Drag": float(row.get("MTTR_Drag_Risk", 0.0)),
+            "Execution Churn": float(row.get("Execution_Churn_Risk", 0.0)),
             "Reopen Churn": float(row.get("Reopen_Churn_Risk", 0.0)),
             "Change Collision": float(row.get("Change_Collision_Risk", 0.0)),
         }
@@ -475,6 +481,9 @@ def render_service_instability_leaders(service_risk_df: pd.DataFrame) -> None:
         elif primary == "MTTR Drag":
             meaning = "Recovery times are longer than expected, indicating response coordination gaps, unclear ownership, or weak runbooks."
             action = "Start a SIP focused on recovery execution: playbooks, escalation pathways, and targeted automation to reduce recovery time."
+        elif primary == "Execution Churn":
+            meaning = "Frequent ticket bouncing between resolver groups indicates siloed knowledge, poor tier-one routing, and broken execution pathways."
+            action = "Start a SIP focused on shift-left knowledge management and enforcing strict automated routing rules."
         elif primary == "Reopen Churn":
             meaning = "High reopen rates suggest incomplete resolution or fixes that do not hold under operational load."
             action = "Start a SIP focused on fix quality: improve validation, tighten closure criteria, and drive problem investigations for repeat patterns."
@@ -725,7 +734,7 @@ def main():
                     weakest_domain = key
 
         if "Resilience" in weakest_domain:
-            insight = "<b>Cost of Inaction:</b> Prolonged recovery times and high reopen rates actively degrade business productivity and erode end user trust. Engineering teams are trapped in reactive firefighting.<br/><br/><b>Mandate:</b> Automate runbook execution and enforce strict incident closure criteria."
+            insight = "<b>Cost of Inaction:</b> Prolonged recovery times, execution churn, and high reopen rates actively degrade business productivity and erode end user trust. Engineering teams are trapped in reactive firefighting.<br/><br/><b>Mandate:</b> Automate runbook execution and enforce strict incident closure criteria."
         elif "Governance" in weakest_domain:
             insight = "<b>Cost of Inaction:</b> High collision rates expose the enterprise to self inflicted outages, directly threatening revenue generating hours. Current release controls are failing to predict impact.<br/><br/><b>Mandate:</b> Institute mandatory peer reviews and freeze non emergency deployments for high risk services."
         elif "Debt" in weakest_domain:
@@ -771,6 +780,7 @@ def main():
             required_risk_cols = [
                 "Recurrence_Risk",
                 "MTTR_Drag_Risk",
+                "Execution_Churn_Risk",
                 "Reopen_Churn_Risk",
                 "Change_Collision_Risk",
             ]
@@ -786,6 +796,7 @@ def main():
                     columns={
                         "Recurrence_Risk": "Recurrence",
                         "MTTR_Drag_Risk": "MTTR Drag",
+                        "Execution_Churn_Risk": "Execution Churn",
                         "Reopen_Churn_Risk": "Reopen Churn",
                         "Change_Collision_Risk": "Change Collision",
                     }
