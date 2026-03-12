@@ -59,10 +59,25 @@ INCIDENT_MAPPING_SPEC = {
         "required": False,
         "aliases": ["Closed_Date", "Closed", "Closed_At", "Close Date", "Closed At"],
     },
+    "State": {
+        "label": "Incident State / Status",
+        "required": True,
+        "aliases": ["State", "Status", "Incident State", "Phase"],
+    },
     "Priority": {
         "label": "Priority / Severity",
         "required": True,
         "aliases": ["Priority", "Severity", "Impact/Priority", "Incident Priority", "Urgency"],
+    },
+    "Assignment_Group": {
+        "label": "Assignment Group / Resolver Group",
+        "required": True,
+        "aliases": ["Assignment Group", "Assignment_Group", "Resolver Group", "Assigned Group", "Support Group"],
+    },
+    "Resolution_Code": {
+        "label": "Resolution Code / Close Code (optional)",
+        "required": False,
+        "aliases": ["Resolution Code", "Resolution_Code", "Close Code", "Closure Code"],
     },
     "Reopened_Flag": {
         "label": "Reopened Flag (optional)",
@@ -101,20 +116,23 @@ CHANGE_MAPPING_SPEC = {
         "required": False,
         "aliases": ["Change_ID", "Change", "RFC", "Change Number", "RFC Number"],
     },
-    "Change_Start": {
-        "label": "Change Start Date",
+    "Change_Type": {
+        "label": "Change Type / Class",
+        "required": True,
+        "aliases": ["Type", "Change Type", "Change_Type", "Class", "Change Class"],
+    },
+    "Actual_Start": {
+        "label": "Actual Start Date",
         "required": True,
         "aliases": [
-            "Change_Start", "Change_Start_Date", "Start_Date", "Planned_Start",
-            "Implemented_Date", "Implementation Start", "Start", "Planned Start"
+            "Actual Start", "Actual_Start", "Actual Start Date", "Work Start", "Implementation Start"
         ],
     },
-    "Change_End": {
-        "label": "Change End Date (optional)",
+    "Actual_End": {
+        "label": "Actual End Date (optional)",
         "required": False,
         "aliases": [
-            "Change_End", "Change_End_Date", "End_Date", "Planned_End",
-            "Completed_Date", "Implementation End", "End", "Planned End"
+            "Actual End", "Actual_End", "Actual End Date", "Work End", "Implementation End", "Completed_Date"
         ],
     },
     "Change_Status": {
@@ -131,11 +149,6 @@ CHANGE_MAPPING_SPEC = {
         "label": "Risk (optional)",
         "required": False,
         "aliases": ["Risk", "Risk_Level", "Risk Level"],
-    },
-    "Category": {
-        "label": "Change Category / Type (optional)",
-        "required": False,
-        "aliases": ["Category", "Type", "Change_Type", "Change Category"],
     },
 }
 
@@ -154,20 +167,15 @@ PROBLEM_MAPPING_SPEC = {
         "required": True,
         "aliases": ["Problem_ID", "Problem", "Problem Number", "PRB Number"],
     },
+    "Assignment_Group": {
+        "label": "Assignment Group / Resolver Group",
+        "required": False,
+        "aliases": ["Assignment Group", "Assignment_Group", "Resolver Group", "Assigned Group", "Support Group"],
+    },
     "Opened_Date": {
         "label": "Problem Opened Date (optional)",
         "required": False,
         "aliases": ["Opened_Date", "Opened", "Created", "Opened At"],
-    },
-    "Resolved_Date": {
-        "label": "Problem Resolved Date (optional)",
-        "required": False,
-        "aliases": ["Resolved_Date", "Resolved", "Resolved At"],
-    },
-    "Closed_Date": {
-        "label": "Problem Closed Date (optional)",
-        "required": False,
-        "aliases": ["Closed_Date", "Closed", "Closed At"],
     },
     "State": {
         "label": "Problem State / Status (optional)",
@@ -184,25 +192,10 @@ PROBLEM_MAPPING_SPEC = {
         "required": False,
         "aliases": ["Known_Error_Flag", "Known_Error", "Known Error"],
     },
-    "Priority": {
-        "label": "Problem Priority (optional)",
-        "required": False,
-        "aliases": ["Priority", "Severity", "Urgency"],
-    },
-    "Category": {
-        "label": "Problem Category (optional)",
-        "required": False,
-        "aliases": ["Category", "Type", "Problem Category"],
-    },
     "Root_Cause_Text": {
         "label": "Root Cause Description (optional)",
         "required": False,
         "aliases": ["Root Cause", "Root_Cause", "RCA Details", "RCA Description", "Cause", "Primary Cause"],
-    },
-    "Contributing_Cause_Text": {
-        "label": "Contributing Cause Description (optional)",
-        "required": False,
-        "aliases": ["Contributing Cause", "Contributing_Cause", "Sub Cause", "Secondary Cause"],
     },
 }
 
@@ -239,7 +232,7 @@ def _load_demo_triplet() -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
 def _required_template_text() -> str:
     """Get required column template"""
     cols = ",".join(INCIDENT_REQUIRED_COLUMNS)
-    example = "Customer Portal,Tier 1,2026-01-05 08:00,P2"
+    example = "Customer Portal,2026-01-05 08:00,P2,Closed,Network Services"
     return f"{cols}\n{example}"
 
 def _normalize_col_name(x: str) -> str:
@@ -707,7 +700,6 @@ def main():
     st.divider()
     st.subheader("Operational Stability Profile")
     
-    # Rebalanced column weights to give the table and mandate more width
     rc1, rc2 = st.columns([1.0, 1.3])
 
     with rc1:
@@ -724,7 +716,6 @@ def main():
         
         domain_scores = results["domain_scores"]
         
-        # Calculate weakest domain using pure Python math
         weakest_domain = "Service Resilience"
         if domain_scores:
             lowest_val = 101.0
