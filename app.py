@@ -19,10 +19,44 @@ st.set_page_config(
     layout="wide",
 )
 
-APP_TITLE = "Xentrixus OSIL™ • Stability Intelligence MVP"
+def check_password() -> bool:
+    """Returns True if the user enters the correct master password."""
+    def password_entered():
+        # Change this string to your preferred secure password
+        if st.session_state["password"] == "Xentrixus2026!":
+            st.session_state["password_correct"] = True
+            del st.session_state["password"]  
+        else:
+            st.session_state["password_correct"] = False
+
+    if "password_correct" not in st.session_state:
+        st.markdown("### Xentrixus OSIL™")
+        st.markdown("##### Authorized Personnel Only")
+        st.text_input(
+            "Enter Executive Master Key", 
+            type="password", 
+            on_change=password_entered, 
+            key="password"
+        )
+        return False
+    
+    elif not st.session_state["password_correct"]:
+        st.markdown("### Xentrixus OSIL™")
+        st.markdown("##### Authorized Personnel Only")
+        st.text_input(
+            "Enter Executive Master Key", 
+            type="password", 
+            on_change=password_entered, 
+            key="password"
+        )
+        st.error("Access Denied. Incorrect Master Key.")
+        return False
+        
+    return True
+
+APP_TITLE = "Xentrixus OSIL™ • Stability Intelligence Engine"
 APP_SUB = (
-    "Upload Incident / Change / Problem exports to get BVSI™, Structural Risk Debt™, "
-    "SIP priorities, and executive interpretation."
+    "Proprietary framework for Business Value Stability Index (BVSI™) and Structural Risk Debt™ generation."
 )
 
 DEMO_INCIDENTS = "data/demo_incidents.csv"
@@ -533,6 +567,10 @@ def _build_pdf_payload(results: dict, tenant_name: str) -> dict:
 
 def main():
     """Main application function"""
+    
+    if not check_password():
+        return
+        
     st.title(APP_TITLE)
     st.caption(APP_SUB)
 
