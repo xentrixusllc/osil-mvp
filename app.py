@@ -22,7 +22,6 @@ st.set_page_config(
 def check_password() -> bool:
     """Returns True if the user enters the correct master password."""
     def password_entered():
-        # Change this string to your preferred secure password
         if st.session_state["password"] == "Xentrixus2026!":
             st.session_state["password_correct"] = True
             del st.session_state["password"]  
@@ -516,8 +515,8 @@ def render_service_instability_leaders(service_risk_df: pd.DataFrame) -> None:
             meaning = "Recovery times are longer than expected, indicating response coordination gaps, unclear ownership, or weak runbooks."
             action = "Start a SIP focused on recovery execution: playbooks, escalation pathways, and targeted automation to reduce recovery time."
         elif primary == "Execution Churn":
-            meaning = "Frequent ticket bouncing between resolver groups indicates siloed knowledge, poor tier-one routing, and broken execution pathways."
-            action = "Start a SIP focused on shift-left knowledge management and enforcing strict automated routing rules."
+            meaning = "Frequent ticket bouncing between resolver groups indicates siloed knowledge, poor tier one routing, and broken execution pathways."
+            action = "Start a SIP focused on shift left knowledge management and enforcing strict automated routing rules."
         elif primary == "Reopen Churn":
             meaning = "High reopen rates suggest incomplete resolution or fixes that do not hold under operational load."
             action = "Start a SIP focused on fix quality: improve validation, tighten closure criteria, and drive problem investigations for repeat patterns."
@@ -568,9 +567,17 @@ def _build_pdf_payload(results: dict, tenant_name: str) -> dict:
 def main():
     """Main application function"""
     
+    # Execute the master key validation
     if not check_password():
         return
         
+    # Build the secure sidebar with manual kill switch
+    with st.sidebar:
+        st.markdown("### Executive Controls")
+        if st.button("Log Out / Lock Engine", use_container_width=True):
+            st.session_state["password_correct"] = False
+            st.rerun()
+            
     st.title(APP_TITLE)
     st.caption(APP_SUB)
 
