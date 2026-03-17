@@ -1,7 +1,7 @@
-Service,Service_Tier,Problem_Opened_Date,Problem_Closed_Date,Root_Cause
-Customer Portal,Tier 1,2026-01-11,2026-01-25,Code Defect
-Payments API,Tier 1,2026-02-08,2026-02-28,Integration Failure
-Mobile Banking,Tier 1,2026-03-04,2026-03-20,Code Defect
-Internal HR System,Tier 2,2026-03-12,2026-03-22,Configuration Drift
-Service Desk Portal,Tier 2,2026-03-23,2026-04-05,Capacity Constraint
-Core Banking,Tier 1,2026-03-26,2026-04-10,Integration Failure
+Service,Service_Tier,Problem_Opened_Date,Problem_Closed_Date,Root_Cause,Root_Cause_Details
+Customer Portal,Tier 1,2026-01-11,2026-01-25,Code Defect,Recent deployment introduced a regression in authentication module due to insufficient test coverage and lack of rollback validation.
+Payments API,Tier 1,2026-02-08,2026-02-28,Integration Failure,Third-party payment gateway timeout issues caused transaction failures due to lack of retry logic and weak dependency monitoring.
+Mobile Banking,Tier 1,2026-03-04,2026-03-20,Code Defect,Mobile app crash linked to unhandled exception in API response parsing introduced during feature enhancement.
+Internal HR System,Tier 2,2026-03-12,2026-03-22,Configuration Drift,Environment mismatch between staging and production led to incorrect access control behavior due to manual configuration changes.
+Service Desk Portal,Tier 2,2026-03-23,2026-04-05,Capacity Constraint,Increased ticket volume overwhelmed backend services due to lack of auto-scaling and capacity planning gaps.
+Core Banking,Tier 1,2026-03-26,2026-04-10,Integration Failure,Data synchronization failure between core banking and reporting system caused by outdated API contracts and missing schema validation.
