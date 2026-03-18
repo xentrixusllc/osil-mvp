@@ -1,7 +1,101 @@
-Service,Service_Tier,Problem_Opened_Date,Problem_Closed_Date,Root_Cause,Root_Cause_Details
-Customer Portal,Tier 1,2026-01-11,2026-01-25,Code Defect,Recent deployment introduced a regression in authentication module due to insufficient test coverage and lack of rollback validation.
-Payments API,Tier 1,2026-02-08,2026-02-28,Integration Failure,Third-party payment gateway timeout issues caused transaction failures due to lack of retry logic and weak dependency monitoring.
-Mobile Banking,Tier 1,2026-03-04,2026-03-20,Code Defect,Mobile app crash linked to unhandled exception in API response parsing introduced during feature enhancement.
-Internal HR System,Tier 2,2026-03-12,2026-03-22,Configuration Drift,Environment mismatch between staging and production led to incorrect access control behavior due to manual configuration changes.
-Service Desk Portal,Tier 2,2026-03-23,2026-04-05,Capacity Constraint,Increased ticket volume overwhelmed backend services due to lack of auto-scaling and capacity planning gaps.
-Core Banking,Tier 1,2026-03-26,2026-04-10,Integration Failure,Data synchronization failure between core banking and reporting system caused by outdated API contracts and missing schema validation.
+Service,Problem_ID,State,Opened_Date,RCA_Completed_Flag,Known_Error_Flag,Root_Cause_Text,Assignment_Group
+Mobile App,PRB1001,Closed,2025-03-26 17:07:01,1,1,Legacy TLS Handshake Failure,Network Sec
+Customer Portal,PRB1002,Open,2025-12-29 15:31:25,1,0,Database Connection Pool Exhaustion,DBA Core
+Customer Portal,PRB1003,Closed,2025-06-09 21:51:13,1,0,Database Connection Pool Exhaustion,DBA Core
+Payment Gateway,PRB1004,Closed,2025-12-14 08:49:21,1,0,Third Party API Timeout,Integration Ops
+Reporting Engine,PRB1005,Closed,2025-03-19 12:34:22,1,0,Stale Redis Cache,Platform Eng
+Customer Portal,PRB1006,Closed,2026-01-07 12:16:51,1,1,Database Connection Pool Exhaustion,DBA Core
+Inventory System,PRB1007,Closed,2025-11-06 11:08:04,1,0,Stale Redis Cache,Platform Eng
+Reporting Engine,PRB1008,Closed,2025-08-11 00:11:46,1,0,Hardware Node Failure,Data Center Ops
+Mobile App,PRB1009,Closed,2025-12-15 15:05:07,1,0,Legacy TLS Handshake Failure,Network Sec
+Reporting Engine,PRB1010,Closed,2026-02-12 04:08:20,1,1,Hardware Node Failure,Data Center Ops
+Customer Portal,PRB1011,Closed,2025-08-01 23:21:46,1,0,Database Connection Pool Exhaustion,DBA Core
+Mobile App,PRB1012,Closed,2025-11-08 13:30:44,1,1,Legacy TLS Handshake Failure,Network Sec
+Mobile App,PRB1013,Open,2025-06-29 20:05:45,1,0,Legacy TLS Handshake Failure,Network Sec
+Payment Gateway,PRB1014,Closed,2026-02-07 07:56:57,1,0,Third Party API Timeout,Integration Ops
+Reporting Engine,PRB1015,Closed,2025-08-19 19:07:36,1,0,Stale Redis Cache,Platform Eng
+Customer Portal,PRB1016,Closed,2025-09-26 21:10:21,0,0,,DBA Core
+Customer Portal,PRB1017,Closed,2025-06-20 18:44:05,1,0,Database Connection Pool Exhaustion,DBA Core
+Mobile App,PRB1018,Closed,2025-10-29 14:55:15,1,0,Legacy TLS Handshake Failure,Network Sec
+Mobile App,PRB1019,Closed,2025-04-21 07:20:13,1,1,Legacy TLS Handshake Failure,Network Sec
+Customer Portal,PRB1020,Closed,2025-12-06 06:32:40,1,0,Database Connection Pool Exhaustion,DBA Core
+Inventory System,PRB1021,Closed,2025-10-08 11:42:11,1,0,Hardware Node Failure,Data Center Ops
+Payment Gateway,PRB1022,Closed,2025-10-11 12:55:34,1,0,Third Party API Timeout,Integration Ops
+Customer Portal,PRB1023,Closed,2025-05-17 10:08:13,0,0,,DBA Core
+Customer Portal,PRB1024,Closed,2025-09-27 09:48:02,1,1,Database Connection Pool Exhaustion,DBA Core
+Mobile App,PRB1025,Closed,2026-02-06 20:55:36,1,1,Legacy TLS Handshake Failure,Network Sec
+Payment Gateway,PRB1026,Open,2025-10-12 11:22:36,0,0,,Integration Ops
+Mobile App,PRB1027,Closed,2025-09-22 18:08:07,0,0,,Network Sec
+Inventory System,PRB1028,Closed,2025-07-14 10:14:21,1,0,Stale Redis Cache,Platform Eng
+Customer Portal,PRB1029,Open,2025-09-21 17:45:33,0,0,,DBA Core
+Customer Portal,PRB1030,Closed,2025-11-28 05:19:24,1,1,Database Connection Pool Exhaustion,DBA Core
+Inventory System,PRB1031,Open,2025-08-28 07:55:53,0,0,,Platform Eng
+Payment Gateway,PRB1032,Open,2025-08-18 22:52:39,1,0,Third Party API Timeout,Integration Ops
+Mobile App,PRB1033,Closed,2025-05-02 23:50:27,1,1,Legacy TLS Handshake Failure,Network Sec
+Mobile App,PRB1034,Closed,2025-10-31 12:39:33,1,0,Legacy TLS Handshake Failure,Network Sec
+Customer Portal,PRB1035,Open,2025-03-29 04:47:23,1,1,Database Connection Pool Exhaustion,DBA Core
+Payment Gateway,PRB1036,Closed,2025-06-08 04:49:54,1,0,Third Party API Timeout,Integration Ops
+Mobile App,PRB1037,Closed,2025-06-19 08:53:54,1,1,Legacy TLS Handshake Failure,Network Sec
+Customer Portal,PRB1038,Closed,2025-08-31 09:41:17,1,0,Database Connection Pool Exhaustion,DBA Core
+Customer Portal,PRB1039,Open,2025-11-25 18:38:47,1,0,Database Connection Pool Exhaustion,DBA Core
+Customer Portal,PRB1040,Closed,2026-02-14 15:22:12,1,0,Database Connection Pool Exhaustion,DBA Core
+Customer Portal,PRB1041,Closed,2025-05-27 06:13:56,1,0,Database Connection Pool Exhaustion,DBA Core
+Mobile App,PRB1042,Open,2026-02-14 12:21:19,1,0,Legacy TLS Handshake Failure,Network Sec
+Mobile App,PRB1043,Open,2025-03-22 17:33:11,0,0,,Network Sec
+Customer Portal,PRB1044,Closed,2025-09-21 14:30:12,1,0,Database Connection Pool Exhaustion,DBA Core
+Customer Portal,PRB1045,Open,2025-03-17 20:05:22,1,0,Database Connection Pool Exhaustion,DBA Core
+Mobile App,PRB1046,Closed,2025-08-28 06:42:55,1,0,Legacy TLS Handshake Failure,Network Sec
+Payment Gateway,PRB1047,Closed,2025-09-22 00:06:22,1,0,Third Party API Timeout,Integration Ops
+Mobile App,PRB1048,Closed,2025-10-13 13:37:32,1,1,Legacy TLS Handshake Failure,Network Sec
+Mobile App,PRB1049,Closed,2026-02-11 03:55:31,1,0,Legacy TLS Handshake Failure,Network Sec
+Inventory System,PRB1050,Closed,2025-04-12 14:39:54,1,1,Stale Redis Cache,Platform Eng
+Reporting Engine,PRB1051,Closed,2025-10-24 05:45:34,1,0,Memory Leak,Platform Eng
+Payment Gateway,PRB1052,Closed,2025-10-22 12:17:48,0,1,,Integration Ops
+Payment Gateway,PRB1053,Closed,2025-06-17 16:42:51,1,0,Third Party API Timeout,Integration Ops
+Mobile App,PRB1054,Open,2026-01-02 23:53:05,1,0,Legacy TLS Handshake Failure,Network Sec
+Mobile App,PRB1055,Closed,2025-04-24 19:53:34,1,1,Legacy TLS Handshake Failure,Network Sec
+Reporting Engine,PRB1056,Open,2025-04-12 17:10:53,1,1,Memory Leak,Platform Eng
+Mobile App,PRB1057,Closed,2026-01-24 10:43:00,1,0,Legacy TLS Handshake Failure,Network Sec
+Customer Portal,PRB1058,Closed,2025-11-29 15:13:51,1,1,Database Connection Pool Exhaustion,DBA Core
+Reporting Engine,PRB1059,Closed,2025-12-30 07:49:30,1,0,Stale Redis Cache,Platform Eng
+Customer Portal,PRB1060,Open,2025-11-18 07:31:34,1,1,Database Connection Pool Exhaustion,DBA Core
+Inventory System,PRB1061,Closed,2025-04-05 17:28:48,1,1,Memory Leak,Platform Eng
+Customer Portal,PRB1062,Closed,2025-05-06 19:19:39,1,0,Database Connection Pool Exhaustion,DBA Core
+Mobile App,PRB1063,Closed,2025-08-30 02:19:51,1,0,Legacy TLS Handshake Failure,Network Sec
+Payment Gateway,PRB1064,Closed,2025-05-13 21:17:11,1,0,Third Party API Timeout,Integration Ops
+Customer Portal,PRB1065,Closed,2025-05-05 11:52:42,1,0,Database Connection Pool Exhaustion,DBA Core
+Inventory System,PRB1066,Open,2025-04-01 11:50:49,1,1,Hardware Node Failure,Data Center Ops
+Customer Portal,PRB1067,Open,2025-10-20 10:29:33,1,0,Database Connection Pool Exhaustion,DBA Core
+Customer Portal,PRB1068,Open,2025-06-16 22:33:06,0,0,,DBA Core
+Reporting Engine,PRB1069,Closed,2025-03-26 15:01:32,0,0,,Platform Eng
+Inventory System,PRB1070,Open,2025-12-27 11:13:58,1,0,Stale Redis Cache,Platform Eng
+Customer Portal,PRB1071,Open,2025-04-01 00:56:22,1,0,Database Connection Pool Exhaustion,DBA Core
+Mobile App,PRB1072,Open,2025-07-13 12:35:06,1,1,Legacy TLS Handshake Failure,Network Sec
+Payment Gateway,PRB1073,Closed,2025-08-18 17:58:19,1,0,Third Party API Timeout,Integration Ops
+Customer Portal,PRB1074,Closed,2025-11-21 03:02:35,1,0,Database Connection Pool Exhaustion,DBA Core
+Customer Portal,PRB1075,Closed,2025-03-27 17:15:20,0,1,,DBA Core
+Reporting Engine,PRB1076,Closed,2025-06-28 02:19:33,1,0,Hardware Node Failure,Data Center Ops
+Mobile App,PRB1077,Closed,2025-10-01 14:48:30,1,1,Legacy TLS Handshake Failure,Network Sec
+Customer Portal,PRB1078,Closed,2025-09-02 08:21:02,0,0,,DBA Core
+Payment Gateway,PRB1079,Closed,2025-12-30 03:28:33,1,0,Third Party API Timeout,Integration Ops
+Reporting Engine,PRB1080,Closed,2025-07-23 05:41:14,1,1,Memory Leak,Platform Eng
+Mobile App,PRB1081,Closed,2025-11-30 23:53:32,1,1,Legacy TLS Handshake Failure,Network Sec
+Customer Portal,PRB1082,Closed,2025-08-27 06:50:37,1,0,Database Connection Pool Exhaustion,DBA Core
+Customer Portal,PRB1083,Closed,2025-10-24 00:26:43,1,1,Database Connection Pool Exhaustion,DBA Core
+Customer Portal,PRB1084,Closed,2025-08-30 22:50:52,1,0,Database Connection Pool Exhaustion,DBA Core
+Mobile App,PRB1085,Closed,2025-12-04 09:18:08,1,0,Legacy TLS Handshake Failure,Network Sec
+Payment Gateway,PRB1086,Closed,2025-05-21 21:38:18,1,0,Third Party API Timeout,Integration Ops
+Mobile App,PRB1087,Open,2025-04-22 06:25:54,1,0,Legacy TLS Handshake Failure,Network Sec
+Customer Portal,PRB1088,Closed,2025-06-02 08:01:31,1,0,Database Connection Pool Exhaustion,DBA Core
+Mobile App,PRB1089,Closed,2026-01-09 10:50:23,1,0,Legacy TLS Handshake Failure,Network Sec
+Customer Portal,PRB1090,Closed,2025-12-12 10:29:31,1,1,Database Connection Pool Exhaustion,DBA Core
+Payment Gateway,PRB1091,Open,2026-01-02 15:29:46,1,0,Third Party API Timeout,Integration Ops
+Customer Portal,PRB1092,Open,2026-01-23 06:50:49,1,1,Database Connection Pool Exhaustion,DBA Core
+Customer Portal,PRB1093,Closed,2026-02-09 11:04:04,1,0,Database Connection Pool Exhaustion,DBA Core
+Mobile App,PRB1094,Closed,2025-10-20 01:33:40,0,0,,Network Sec
+Mobile App,PRB1095,Open,2025-12-21 08:07:09,1,0,Legacy TLS Handshake Failure,Network Sec
+Mobile App,PRB1096,Closed,2025-05-17 19:27:33,1,1,Legacy TLS Handshake Failure,Network Sec
+Customer Portal,PRB1097,Closed,2025-11-19 15:26:07,1,0,Database Connection Pool Exhaustion,DBA Core
+Customer Portal,PRB1098,Closed,2025-09-03 19:54:35,1,1,Database Connection Pool Exhaustion,DBA Core
+Customer Portal,PRB1099,Closed,2025-10-12 18:35:01,1,0,Database Connection Pool Exhaustion,DBA Core
+Customer Portal,PRB1100,Closed,2025-06-08 02:11:07,1,0,Database Connection Pool Exhaustion,DBA Core
