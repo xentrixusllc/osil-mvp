@@ -354,23 +354,36 @@ def _validate_mapping(mapping: Dict[str, Optional[str]], spec: Dict[str, Dict[st
     return missing
 
 def heatmap_chart(hm: pd.DataFrame):
-    """Generate heatmap chart for Streamlit display"""
-    fig = plt.figure(figsize=(10, 5), dpi=160)
+    """Generate heavily upgraded, enterprise-ready heatmap chart"""
+    # Increased figsize and DPI for wider, sharper rendering
+    fig = plt.figure(figsize=(12, 6), dpi=200) 
     ax = plt.gca()
-    im = ax.imshow(hm.values, aspect="auto", vmin=0, vmax=100)
+    
+    # Swapped default colormap to RdYlGn_r (Red = Bad/100, Green = Good/0)
+    im = ax.imshow(hm.values, aspect="auto", vmin=0, vmax=100, cmap="RdYlGn_r")
+    
+    # Upgraded font sizes and weights for readability
     ax.set_xticks(range(len(hm.columns)))
-    ax.set_xticklabels(list(hm.columns), fontsize=9)
+    ax.set_xticklabels(list(hm.columns), fontsize=11, fontweight='bold', color='#0F172A')
+    
     ax.set_yticks(range(len(hm.index)))
-    ax.set_yticklabels(list(hm.index), fontsize=9)
-    ax.set_title("Service Stability Heatmap", fontsize=12)
+    ax.set_yticklabels(list(hm.index), fontsize=11, fontweight='bold', color='#334155')
+    
+    ax.set_title("Service Risk Concentration Matrix", fontsize=16, fontweight='bold', color='#0F172A', pad=20)
 
+    # Injecting smart-contrast text into the cells
     for i in range(hm.shape[0]):
         for j in range(hm.shape[1]):
-            ax.text(j, i, f"{int(round(float(hm.iat[i, j]), 0))}", ha="center", va="center", fontsize=8)
+            val = int(round(float(hm.iat[i, j]), 0))
+            # If the background is extreme red (>80) or extreme green (<20), use white text. Otherwise black.
+            text_color = "white" if (val > 80 or val < 20) else "#0F172A"
+            ax.text(j, i, f"{val}", ha="center", va="center", fontsize=12, fontweight='bold', color=text_color)
 
-    cbar = plt.colorbar(im, ax=ax, fraction=0.03, pad=0.02)
-    cbar.set_label("Risk Score", fontsize=8)
-    cbar.ax.tick_params(labelsize=7)
+    # Scale the colorbar
+    cbar = plt.colorbar(im, ax=ax, fraction=0.03, pad=0.03)
+    cbar.set_label("Risk Score", fontsize=11, fontweight='bold', color='#0F172A')
+    cbar.ax.tick_params(labelsize=10)
+    
     plt.tight_layout()
     return fig
 
@@ -818,7 +831,6 @@ def main():
 
     if top10 is not None and not top10.empty:
         
-        # --- THE NEW CONFIDENCE LENS EXPLANATION BLOCK ---
         st.markdown("""
         <div style="background-color: #F8FAFC; border-left: 4px solid #0F172A; padding: 12px 16px; margin-bottom: 24px;">
             <h4 style="margin-top:0px;">The Executive Confidence Lens</h4>
@@ -862,11 +874,14 @@ def main():
                 )
                 hm = hm.apply(pd.to_numeric, errors="coerce").replace([np.inf, -np.inf], np.nan).fillna(0.0)
 
+                # --- UPGRADED HEATMAP RENDERING BLOCK ---
                 st.markdown("### Service Stability Heatmap (Top 10 Services by Risk)")
                 hm_fig = heatmap_chart(hm)
-                hc1, hc2, hc3 = st.columns([1, 2, 1])
-                with hc2:
-                    st.pyplot(hm_fig, use_container_width=False)
+                
+                # Removed the constraining layout columns (hc1, hc2, hc3)
+                # Setting use_container_width=True allows the chart to breathe across the screen
+                st.pyplot(hm_fig, use_container_width=True)
+                
                 st.caption(
                     "How to read: services with consistently high values across multiple columns usually represent the strongest candidates "
                     "for leadership attention or SIP execution."
@@ -875,8 +890,6 @@ def main():
                 st.warning(f"Could not generate heatmap: {e}")
 
         st.markdown("**Top 10 Services | Risk and Confidence Breakdown**")
-        
-        # Display the dataframe with the new Confidence column visible
         display_cols = ["Service", "Total_Service_Risk", "Data_Confidence"] + [c for c in top10.columns if c not in ["Service", "Total_Service_Risk", "Data_Confidence"]]
         st.dataframe(top10[display_cols], use_container_width=True)
     else:
