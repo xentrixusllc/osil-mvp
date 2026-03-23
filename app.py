@@ -817,6 +817,20 @@ def main():
     top10 = results["top10"].copy()
 
     if top10 is not None and not top10.empty:
+        
+        # --- THE NEW CONFIDENCE LENS EXPLANATION BLOCK ---
+        st.markdown("""
+        <div style="background-color: #F8FAFC; border-left: 4px solid #0F172A; padding: 12px 16px; margin-bottom: 24px;">
+            <h4 style="margin-top:0px;">The Executive Confidence Lens</h4>
+            <strong>Context:</strong> A high instability score is only actionable if the underlying data is accurate. The <strong>Data Confidence</strong> metric grades the hygiene of the service telemetry (e.g., missing assignment groups, empty root cause fields, unlinked problem records).<br><br>
+            <ul>
+                <li><strong>High:</strong> The data is pristine. Trust the risk score entirely.</li>
+                <li><strong>Medium / Low:</strong> The instability signal is clouded by poor ticket logging.</li>
+            </ul>
+            <strong>The Mandate:</strong> If a failing service shows Low Data Confidence, do not initiate a technical code rewrite. The immediate mandate is to enforce strict data hygiene standards for that engineering team.
+        </div>
+        """, unsafe_allow_html=True)
+
         heatmap_df = top10.copy()
         if "Service" in heatmap_df.columns:
             if "Service_Tier" not in heatmap_df.columns:
@@ -860,8 +874,11 @@ def main():
             except Exception as e:
                 st.warning(f"Could not generate heatmap: {e}")
 
-        st.markdown("**Top 10 Services | Risk Breakdown**")
-        st.dataframe(top10, use_container_width=True)
+        st.markdown("**Top 10 Services | Risk and Confidence Breakdown**")
+        
+        # Display the dataframe with the new Confidence column visible
+        display_cols = ["Service", "Total_Service_Risk", "Data_Confidence"] + [c for c in top10.columns if c not in ["Service", "Total_Service_Risk", "Data_Confidence"]]
+        st.dataframe(top10[display_cols], use_container_width=True)
     else:
         st.info("No service risk data available.")
 
