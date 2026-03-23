@@ -154,6 +154,9 @@ def _prepare_incidents(df: pd.DataFrame) -> Tuple[pd.DataFrame, str]:
     if "Assignment_Group" not in out.columns:
         out["Assignment_Group"] = "Unassigned"
     out["Assignment_Group"] = out["Assignment_Group"].fillna("Unassigned").astype(str)
+    
+    # NEW LOGIC: Check for assignment hygiene
+    out["Is_Assigned"] = (~out["Assignment_Group"].str.lower().isin(["unassigned", ""])).astype(int)
 
     if "Reassignment_Count" not in out.columns:
         out["Reassignment_Count"] = 0
@@ -357,6 +360,8 @@ def _problem_signals_by_service(inc: pd.DataFrame, probs: pd.DataFrame) -> pd.Da
             else pd.DataFrame()
         )
         
+        rca_fidelity = 0.5 # Default confidence value
+        
         if prob_svc.empty:
             rca_rate = known_error_rate = workaround_rate = permanent_fix_rate = open_problem_penalty = empty_rca_penalty = 0.0
         else:
@@ -403,6 +408,19 @@ def _problem_signals_by_service(inc: pd.DataFrame, probs: pd.DataFrame) -> pd.Da
                 else 0.0
             )
             
+            # NEW LOGIC: Calculate actual RCA Fidelity for Data Confidence Lens
+            closed_mask = state.isin(["closed", "resolved", "complete", "completed"])
+            closed_prbs = prob_svc[closed_mask]
+            
+            if not closed_prbs.empty:
+                if "Root_Cause_Text" in closed_prbs.columns:
+                    populated = closed_prbs["Root_Cause_Text"].astype(str).str.strip() != ""
+                    rca_fidelity = populated.mean()
+                else:
+                    rca_fidelity = 0.0
+            elif not prob_svc.empty:
+                rca_fidelity = 0.5
+            
         missing_problem_penalty = (1.0 - linked_ratio) * min(incident_count * 0.08, 1.0)
         missing_rca_penalty = 1.0 - rca_rate
         weak_fix_penalty = 1.0 - max(permanent_fix_rate, workaround_rate, known_error_rate)
@@ -420,6 +438,7 @@ def _problem_signals_by_service(inc: pd.DataFrame, probs: pd.DataFrame) -> pd.Da
                 "Service_Anchor": svc,
                 "Problem_Gap_Risk": round(float(min(problem_gap_risk, 100.0)), 1),
                 "RCA_Completion_Rate": round(float(rca_rate * 100.0), 1),
+                "RCA_Fidelity": rca_fidelity, # Injected for Confidence Lens
             }
         )
         
@@ -448,7 +467,7 @@ def _build_rca_pareto(probs: pd.DataFrame) -> pd.DataFrame:
     if valid.empty:
         return pd.DataFrame(columns=["Theme", "Frequency", "Cumulative_Pct"])
         
-    valid["Theme"] = valid["Root_Cause_Text"].astype(str).str.strip().str.title()
+    valid.loc[:, "Theme"] = valid["Root_Cause_Text"].astype(str).str.strip().str.title()
     pareto = valid.groupby("Theme").size().reset_index(name="Frequency")
     pareto = pareto.sort_values("Frequency", ascending=False).head(10).reset_index(drop=True)
     pareto["Cumulative_Pct"] = (pareto["Frequency"].cumsum() / pareto["Frequency"].sum() * 100).round(1)
@@ -500,6 +519,7 @@ def _build_rollup(inc: pd.DataFrame, changes: pd.DataFrame, probs: pd.DataFrame)
         avg_priority_weight=("Priority_Weight", "mean"),
         tier=("Service_Tier", lambda x: _first_non_null_mode(x, "Unspecified")),
         category=("Category", lambda x: _first_non_null_mode(x, "Stability Improvement")),
+        assignment_hygiene=("Is_Assigned", "mean"), # Injected for Confidence Lens
     ).reset_index()
     
     if changes is not None and not changes.empty:
@@ -536,6 +556,7 @@ def _build_service_risk_df(roll: pd.DataFrame, top_n: int = 10) -> pd.DataFrame:
                 "Change_Collision_Risk",
                 "Problem_Gap_Risk",
                 "Active_Disruption_P1_P2",
+                "Data_Confidence",
                 "Total_Service_Risk",
             ]
         )
@@ -552,6 +573,21 @@ def _build_service_risk_df(roll: pd.DataFrame, top_n: int = 10) -> pd.DataFrame:
     )
     problem = _normalize_0_100(roll["Problem_Gap_Risk"])
     
+    # NEW LOGIC: Calculate Data Confidence Score
+    if "RCA_Fidelity" not in roll.columns:
+        roll["RCA_Fidelity"] = 0.5
+    if "assignment_hygiene" not in roll.columns:
+        roll["assignment_hygiene"] = 1.0
+
+    conf_score = (roll["assignment_hygiene"].fillna(1.0) * 50.0) + (roll["RCA_Fidelity"].fillna(0.5) * 50.0)
+    
+    def _get_conf_label(s: float) -> str:
+        if s >= 85.0: return "High"
+        elif s >= 60.0: return "Medium"
+        return "Low"
+        
+    data_confidence = conf_score.apply(_get_conf_label)
+    
     out = pd.DataFrame(
         {
             "Service": roll["Service_Anchor"].astype(str),
@@ -562,7 +598,8 @@ def _build_service_risk_df(roll: pd.DataFrame, top_n: int = 10) -> pd.DataFrame:
             "Reopen_Churn_Risk": reopen.round(1),
             "Change_Collision_Risk": change.round(1),
             "Problem_Gap_Risk": problem.round(1),
-            "Active_Disruption_P1_P2": roll["high_urgency_count"].fillna(0).astype(int) if "high_urgency_count" in roll.columns else 0
+            "Active_Disruption_P1_P2": roll["high_urgency_count"].fillna(0).astype(int) if "high_urgency_count" in roll.columns else 0,
+            "Data_Confidence": data_confidence # Injected Data Confidence
         }
     )
     
@@ -627,6 +664,7 @@ def _build_sip_candidates(service_risk_df: pd.DataFrame, roll: pd.DataFrame, top
                 "SIP_Priority_Score",
                 "Priority_Label",
                 "Why_Flagged",
+                "Data_Hygiene_Check",
             ]
         )
         
@@ -667,6 +705,7 @@ def _build_sip_candidates(service_risk_df: pd.DataFrame, roll: pd.DataFrame, top
     merged["Priority_Label"] = merged["SIP_Priority_Score"].apply(_label)
     merged["Suggested_Theme"] = merged["category"].fillna("Stability Improvement").astype(str)
     merged["Why_Flagged"] = merged.apply(_why, axis=1)
+    merged["Data_Hygiene_Check"] = merged["Data_Confidence"] # Carry the Confidence Lens into the SIP view
     
     return (
         merged[
@@ -677,6 +716,7 @@ def _build_sip_candidates(service_risk_df: pd.DataFrame, roll: pd.DataFrame, top
                 "SIP_Priority_Score",
                 "Priority_Label",
                 "Why_Flagged",
+                "Data_Hygiene_Check",
             ]
         ]
         .sort_values("SIP_Priority_Score", ascending=False)
