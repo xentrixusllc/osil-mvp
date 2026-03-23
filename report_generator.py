@@ -518,8 +518,8 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
         radar_img = _build_radar_chart(domain_scores)
         
         domain_rows = [[Paragraph("Domain", styles["TableHeader"]), 
-                       Paragraph("Score", styles["TableHeader"]), 
-                       Paragraph("Assessment", styles["TableHeader"])]]
+                        Paragraph("Score", styles["TableHeader"]), 
+                        Paragraph("Assessment", styles["TableHeader"])]]
         
         domain_keys = ["Service Resilience", "Change Governance", "Structural Risk Debt™", "Reliability Momentum"]
         for key in domain_keys:
@@ -578,31 +578,49 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
 
         story.append(PageBreak())
 
-        story.append(Paragraph("Service Improvement Priorities", styles["PageHeader"]))
-        story.append(Paragraph("Priority SIPs require executive sponsorship. These services represent the highest concentration of operational risk.", styles["ExecutiveBody"]))
+        # --- NEW CODE: CONFIDENCE LENS IN THE SIP SECTION ---
+        story.append(Paragraph("Service Improvement Priorities & Confidence Lens", styles["PageHeader"]))
+        
+        lens_text = (
+            "<b>The Executive Confidence Lens:</b> A high instability score is actionable only if underlying data is accurate. "
+            "The <b>Data Confidence</b> metric grades telemetry hygiene. <br/>"
+            "<b>High:</b> Trust the risk score entirely. <br/>"
+            "<b>Medium/Low:</b> The instability signal is clouded by poor ticket logging. The immediate mandate is enforcing data hygiene, not technical rewrites."
+        )
+        
+        box_data = [[Paragraph(lens_text, styles["ExecutiveBody"])]]
+        box_table = Table(box_data, colWidths=[7.0*inch])
+        box_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor("#F8FAFC")),
+            ('BOX', (0, 0), (-1, -1), 1, colors.HexColor("#0F172A")),
+            ('LEFTPADDING', (0, 0), (-1, -1), 12),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 12),
+            ('TOPPADDING', (0, 0), (-1, -1), 12),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 12),
+        ]))
+        story.append(box_table)
         story.append(Spacer(1, 16))
         
         if not sip_candidates.empty:
             top3_data = [[Paragraph("Service", styles["TableHeader"]), 
-                         Paragraph("Tier", styles["TableHeader"]),
-                         Paragraph("Risk Driver", styles["TableHeader"]), 
-                         Paragraph("Decision", styles["TableHeader"])]]
+                         Paragraph("Focus Area", styles["TableHeader"]),
+                         Paragraph("Data Conf.", styles["TableHeader"]), 
+                         Paragraph("Mandate", styles["TableHeader"])]]
             
             for idx, (_, row) in enumerate(sip_candidates.head(3).iterrows(), 1):
                 svc = str(row.get("Service", "Unknown"))
-                tier = str(row.get("Service_Tier", ""))
-                why = str(row.get("Why_Flagged", "Risk"))
-                why_short = (why[:45] + "...") if len(why) > 45 else why
-                action = "Activate SIP" if idx == 1 else "Monitor" if idx == 2 else "Plan"
+                focus = str(row.get("Primary_Focus", str(row.get("Why_Flagged", "Risk"))))
+                confidence = str(row.get("Data_Hygiene_Check", str(row.get("Data_Confidence", "Unknown"))))
+                action = str(row.get("Mandate", "Activate SIP" if idx == 1 else "Monitor"))
                 
                 top3_data.append([
                     Paragraph(svc, styles["TableCellBold"]),
-                    Paragraph(tier, ParagraphStyle(name='center', parent=styles["TableCell"], alignment=1)),
-                    Paragraph(why_short, styles["TableCell"]),
+                    Paragraph(focus, styles["TableCell"]),
+                    Paragraph(confidence, ParagraphStyle(name='center', parent=styles["TableCell"], alignment=1)),
                     Paragraph(action, ParagraphStyle(name='center', parent=styles["TableCellBold"], alignment=1))
                 ])
             
-            top3_table = Table(top3_data, colWidths=[2.0*inch, 0.8*inch, 3.0*inch, 1.2*inch])
+            top3_table = Table(top3_data, colWidths=[2.2*inch, 2.6*inch, 1.0*inch, 1.2*inch])
             top3_table.setStyle(TableStyle([
                 ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#0F172A")),
                 ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
@@ -628,26 +646,26 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
             
             sip_data = [[Paragraph("Service", styles["TableHeader"]), 
                         Paragraph("Tier", styles["TableHeader"]),
-                        Paragraph("Theme", styles["TableHeader"]),
-                        Paragraph("Priority", styles["TableHeader"]),
-                        Paragraph("Score", styles["TableHeader"])]]
+                        Paragraph("Focus / Theme", styles["TableHeader"]),
+                        Paragraph("Data Conf.", styles["TableHeader"]),
+                        Paragraph("Action", styles["TableHeader"])]]
             
             for _, row in sip_candidates.iterrows():
                 svc = str(row.get("Service", ""))
-                tier = str(row.get("Service_Tier", ""))
-                theme = str(row.get("Suggested_Theme", "Stability"))
-                priority = str(row.get("Priority_Label", ""))
-                score = _safe_float(row.get("SIP_Priority_Score", row.get("sip_priority_score", 0)), 0)
+                tier = str(row.get("Service_Tier", "N/A"))
+                theme = str(row.get("Primary_Focus", row.get("Suggested_Theme", "Stability")))
+                confidence = str(row.get("Data_Hygiene_Check", "Unknown"))
+                action = str(row.get("Mandate", row.get("Priority_Label", "Monitor")))
                 
                 sip_data.append([
                     Paragraph(svc, styles["TableCellBold"]),
                     Paragraph(tier, ParagraphStyle(name='c1', parent=styles["TableCell"], alignment=1)),
                     Paragraph(theme, ParagraphStyle(name='c2', parent=styles["TableCell"], alignment=1)),
-                    Paragraph(priority, ParagraphStyle(name='c3', parent=styles["TableCell"], alignment=1)),
-                    Paragraph(f"{score:.1f}", ParagraphStyle(name='c4', parent=styles["TableCellBold"], alignment=1))
+                    Paragraph(confidence, ParagraphStyle(name='c3', parent=styles["TableCellBold"], alignment=1)),
+                    Paragraph(action, ParagraphStyle(name='c4', parent=styles["TableCellBold"], alignment=1))
                 ])
             
-            sip_table = Table(sip_data, colWidths=[2.1*inch, 0.7*inch, 2.0*inch, 1.1*inch, 1.1*inch])
+            sip_table = Table(sip_data, colWidths=[1.8*inch, 0.6*inch, 2.3*inch, 1.1*inch, 1.2*inch])
             sip_table.setStyle(TableStyle([
                 ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#0F172A")),
                 ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
@@ -660,13 +678,10 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
                 ('LINEBELOW', (0, 0), (-1, 0), 2, colors.HexColor("#0F172A")),
             ] + [
                 ('LINEBELOW', (0, i), (-1, i), 0.5, colors.HexColor("#E2E8F0")) for i in range(1, len(sip_data))
-            ] + [
-                ('BACKGROUND', (0, i), (-1, i), colors.HexColor("#FEF3C7")) 
-                for i in range(1, len(sip_data)) if sip_data[i][3].text == "Next SIP"
             ]))
             
             story.append(KeepTogether([
-                Paragraph("SIP Portfolio", styles["SectionHeader"]),
+                Paragraph("Full SIP Portfolio", styles["SectionHeader"]),
                 sip_table
             ]))
 
