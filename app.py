@@ -880,6 +880,8 @@ def main():
     )
 
     if not history_df.empty and len(history_df) > 1:
+        history_df = history_df.tail(12)
+        
         st.divider()
         st.subheader("Executive Trend Intelligence")
         st.markdown(
