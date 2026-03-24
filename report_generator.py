@@ -716,7 +716,7 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
         else:
             story.append(Paragraph("Insufficient Channel or Service Request data to calculate automation deficits. Map these intake sources to reveal manual effort waste.", styles["ExecutiveBody"]))
             
-        story.append(Spacer(1, 24))
+        story.append(PageBreak()) # FORCE PAGE BREAK HERE TO FIX ORPHAN HEADING
         
         story.append(Paragraph("Business Trust & Root Cause Analytics", styles["PageHeader"]))
         story.append(Paragraph("The Xentrixus OSIL™ framework identifies structural operational gaps by measuring the ratio of silent friction to active disruption, and by extracting true thematic root causes rather than relying on administrative closure flags.", styles["ExecutiveBody"]))
@@ -982,7 +982,7 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
             risk_table
         ]))
         
-        story.append(Spacer(1, 24))
+        story.append(PageBreak()) # FORCE PAGE BREAK HERE TO KEEP ABOUT SECTION CLEAN
         
         about_text = (
             f"The Operational Stability Intelligence Layer (OSIL™) is an enterprise advisory platform developed exclusively by Xentrixus. "
