@@ -61,6 +61,7 @@ APP_SUB = (
 DEMO_INCIDENTS = "data/demo_incidents.csv"
 DEMO_CHANGES = "data/demo_changes.csv"
 DEMO_PROBLEMS = "data/demo_problems.csv"
+DEMO_REQUESTS = "data/demo_requests.csv" # Added Demo Requests
 
 INCIDENT_MAPPING_SPEC = {
     "Service": {
@@ -283,12 +284,13 @@ def _safe_read_csv(path: str) -> pd.DataFrame:
         return safe_read_csv(path)
     return pd.DataFrame()
 
-def _load_demo_triplet() -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-    """Load demo data files"""
+def _load_demo_data() -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """Load demo data files including the new Requests CSV"""
     inc = _safe_read_csv(DEMO_INCIDENTS)
     chg = _safe_read_csv(DEMO_CHANGES)
     prb = _safe_read_csv(DEMO_PROBLEMS)
-    return inc, chg, prb
+    req = _safe_read_csv(DEMO_REQUESTS)
+    return inc, chg, prb, req
 
 def _required_template_text() -> str:
     """Get required column template"""
@@ -630,7 +632,8 @@ def main():
 
     if mode == "Run with Demo Data":
         if st.button("Run Demo Analysis", use_container_width=True):
-            incidents_df, changes_df, problems_df = _load_demo_triplet()
+            # Unpacks all 4 demo files now
+            incidents_df, changes_df, problems_df, requests_df = _load_demo_data()
             if incidents_df.empty:
                 st.error("Demo load failed: data/demo_incidents.csv was not found or is empty.")
                 return
@@ -760,7 +763,7 @@ def main():
             incidents_df=incidents_df,
             changes_df=changes_df,
             problems_df=problems_df,
-            requests_df=requests_df,
+            requests_df=requests_df, # Successfully passing requests to engine
         )
         results["source_label"] = source_label
         results["tenant_name"] = tenant_name
@@ -937,7 +940,6 @@ def main():
     st.markdown("### Top SIP Candidates (Next Thirty Days)")
     st.dataframe(results["sip_view"], use_container_width=True)
     
-    # --- AUTOMATION STRIKE ZONE UI ---
     st.divider()
     st.markdown("### Automation Strike Zone (AIOps Readiness)")
     st.markdown("Identify massive manual effort waste. Use these findings to deploy orchestration scripts and automated remediation.")
