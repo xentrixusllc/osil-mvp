@@ -629,8 +629,8 @@ def render_service_instability_leaders(service_risk_df: pd.DataFrame) -> None:
             unsafe_allow_html=True,
         )
 
-def _build_pdf_payload(results: dict, tenant_name: str) -> dict:
-    """Build payload for PDF generator with all required fields"""
+def _build_pdf_payload(results: dict, tenant_name: str, history_df: pd.DataFrame) -> dict:
+    """Build payload for PDF generator with all required fields including historical ledger"""
     return {
         "bvsi": results.get("bvsi", 0.0),
         "posture": results.get("posture", "Unknown"),
@@ -648,6 +648,7 @@ def _build_pdf_payload(results: dict, tenant_name: str) -> dict:
         "service_anchor_used": results.get("anchor_used", "None"),
         "detected_dataset": results.get("practice_type", "unknown"),
         "tenant_name": tenant_name,
+        "history_df": history_df,
     }
 
 def main():
@@ -1084,7 +1085,7 @@ def main():
 
     st.markdown("### Executive PDF Report")
     try:
-        payload = _build_pdf_payload(results, tenant_name)
+        payload = _build_pdf_payload(results, tenant_name, history_df)
         pdf_bytes = build_osil_pdf_report(payload)
 
         st.download_button(
