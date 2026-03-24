@@ -59,14 +59,17 @@ def get_tenant_history(tenant_name: str) -> pd.DataFrame:
         
     conn = sqlite3.connect(DB_PATH)
     
-    query = """
-        SELECT run_date, bvsi_score, resilience_score, governance_score, debt_score, momentum_score 
-        FROM tenant_history 
-        WHERE tenant_name = ? 
-        ORDER BY run_date ASC
-    """
-    
-    df = pd.read_sql_query(query, conn, params=(tenant_name,))
+    try:
+        query = """
+            SELECT run_date, bvsi_score, resilience_score, governance_score, debt_score, momentum_score 
+            FROM tenant_history 
+            WHERE tenant_name = ? 
+            ORDER BY run_date ASC
+        """
+        df = pd.read_sql_query(query, conn, params=(tenant_name,))
+    except sqlite3.OperationalError:
+        df = pd.DataFrame()
+        
     conn.close()
     
     if not df.empty:
@@ -74,3 +77,22 @@ def get_tenant_history(tenant_name: str) -> pd.DataFrame:
         df = df.drop_duplicates(subset=["run_date"], keep="last")
         
     return df
+
+def get_all_tenants() -> list:
+    """Retrieve a list of unique tenant names to populate the workspace dropdown."""
+    if not os.path.exists(DB_PATH):
+        return []
+        
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    
+    try:
+        query = "SELECT DISTINCT tenant_name FROM tenant_history ORDER BY tenant_name ASC"
+        cursor.execute(query)
+        rows = cursor.fetchall()
+    except sqlite3.OperationalError:
+        rows = []
+    
+    conn.close()
+    
+    return [row[0] for row in rows]
