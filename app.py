@@ -642,7 +642,7 @@ def main():
     st.title(APP_TITLE)
     st.caption(APP_SUB)
 
-    tenant_name = st.text_input("Organization / Tenant Name", value="Wajax")
+    tenant_name = st.text_input("Organization / Tenant Name", value="Demo Tenant")
 
     st.subheader("Run Options")
     mode = st.radio(
