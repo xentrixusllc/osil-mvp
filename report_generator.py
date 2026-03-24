@@ -137,11 +137,9 @@ def plot_impact_matrix(df: pd.DataFrame):
     return img_data
 
 def df_to_table(df: pd.DataFrame, col_widths=None) -> Table:
-    """Restored: Native String Tables for maximum PDF stability"""
     if df.empty:
         return Table([["No Data Available"]])
         
-    # Convert all dataframe contents to native strings
     data = [df.columns.tolist()] + df.astype(str).values.tolist()
     
     t = Table(data, colWidths=col_widths)
@@ -174,7 +172,6 @@ def build_osil_pdf_report(payload: dict) -> bytes:
     automation_df = payload.get("automation_df", pd.DataFrame())
     readiness_score = payload.get("data_readiness_score", 0.0)
     tenant_name = payload.get("tenant_name", "Organization")
-    history_df = payload.get("history_df", pd.DataFrame())
 
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(
@@ -228,59 +225,6 @@ def build_osil_pdf_report(payload: dict) -> bytes:
     story.append(Paragraph("Executive Interpretation", styles['Heading2']))
     story.append(Paragraph(exec_text.replace('\n', '<br/>'), styles['Normal']))
     story.append(Spacer(1, 20))
-
-    # --- EXECUTIVE TREND INTELLIGENCE SECTION ---
-    # Only draw this if the user has executed at least two historical runs.
-    if not history_df.empty and len(history_df) > 1:
-        story.append(PageBreak())
-        story.append(Paragraph("Executive Trend Intelligence", styles['Heading1']))
-        
-        narrative = (
-            "Mathematical proof of execution. The Macro Trajectory tracks the absolute success of the operation, "
-            "proving that business value stability is rising while operational friction collapses. The Diagnostic "
-            "Trajectory isolates the specific underlying domains driving that overarching success."
-        )
-        story.append(Paragraph(narrative, styles['Normal']))
-        story.append(Spacer(1, 12))
-        
-        # 1. Generate Macro Chart
-        fig_macro, ax_macro = plt.subplots(figsize=(6.5, 3.5), dpi=200)
-        ax_macro.plot(history_df["run_date"], history_df["bvsi_score"], marker='o', linewidth=3.0, color='#0F172A', label='Global Stability (BVSI™)')
-        ax_macro.plot(history_df["run_date"], history_df["debt_score"], marker='s', linewidth=2.0, color='#DC2626', linestyle='--', label='Structural Risk Debt™')
-        ax_macro.set_ylim(0, 110)
-        ax_macro.spines['top'].set_visible(False)
-        ax_macro.spines['right'].set_visible(False)
-        plt.setp(ax_macro.xaxis.get_majorticklabels(), rotation=30, ha='right', fontsize=8)
-        ax_macro.set_title("Macro Trajectory: Stability vs. Debt", fontweight='bold', pad=10)
-        ax_macro.legend(frameon=False, loc='upper center', bbox_to_anchor=(0.5, -0.2), ncol=2, fontsize=8)
-        plt.tight_layout()
-        
-        img_data_macro = io.BytesIO()
-        plt.savefig(img_data_macro, format='png', bbox_inches='tight')
-        plt.close(fig_macro)
-        img_data_macro.seek(0)
-        story.append(Image(img_data_macro, width=450, height=240))
-        story.append(Spacer(1, 20))
-        
-        # 2. Generate Micro Chart
-        fig_micro, ax_micro = plt.subplots(figsize=(6.5, 3.5), dpi=200)
-        ax_micro.plot(history_df["run_date"], history_df["resilience_score"], marker='^', linewidth=1.5, color='#2563EB', label='Resilience')
-        ax_micro.plot(history_df["run_date"], history_df["governance_score"], marker='d', linewidth=1.5, color='#059669', label='Governance')
-        ax_micro.plot(history_df["run_date"], history_df["momentum_score"], marker='*', linewidth=1.5, color='#D97706', label='Momentum')
-        ax_micro.plot(history_df["run_date"], history_df["debt_score"], marker='s', linewidth=1.5, color='#DC2626', linestyle=':', label='Risk Debt')
-        ax_micro.set_ylim(0, 110)
-        ax_micro.spines['top'].set_visible(False)
-        ax_micro.spines['right'].set_visible(False)
-        plt.setp(ax_micro.xaxis.get_majorticklabels(), rotation=30, ha='right', fontsize=8)
-        ax_micro.set_title("Diagnostic Trajectory: Domain Breakdown", fontweight='bold', pad=10)
-        ax_micro.legend(frameon=False, loc='upper center', bbox_to_anchor=(0.5, -0.2), ncol=4, fontsize=8)
-        plt.tight_layout()
-        
-        img_data_micro = io.BytesIO()
-        plt.savefig(img_data_micro, format='png', bbox_inches='tight')
-        plt.close(fig_micro)
-        img_data_micro.seek(0)
-        story.append(Image(img_data_micro, width=450, height=240))
         
     story.append(PageBreak())
 
