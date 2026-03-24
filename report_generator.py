@@ -307,7 +307,6 @@ def _build_pareto_image(df: pd.DataFrame) -> Optional[io.BytesIO]:
         return None
 
 def _build_impact_matrix_image(service_risk_df: pd.DataFrame) -> Optional[io.BytesIO]:
-    """Generate Dual Axis Chart for Disruption vs Recurrence using Service Risk Data directly"""
     if service_risk_df.empty or "Active_Disruption_P1_P2" not in service_risk_df.columns:
         return None
     try:
@@ -390,9 +389,9 @@ def _build_macro_trend_image(history_df: pd.DataFrame) -> Optional[io.BytesIO]:
 
         ax.set_title("Macro Trajectory: Stability vs. Debt", fontweight='bold', color='#0F172A', pad=15, fontsize=12)
 
-        ax.legend(frameon=False, loc='upper center', bbox_to_anchor=(0.5, -0.25), ncol=2, fontsize=9)
-        plt.gcf().subplots_adjust(bottom=0.30)
-        plt.tight_layout()
+        # Force legend downward and create padding
+        ax.legend(frameon=False, loc='upper center', bbox_to_anchor=(0.5, -0.40), ncol=2, fontsize=9)
+        plt.tight_layout(rect=[0, 0.1, 1, 1])
 
         img = io.BytesIO()
         plt.savefig(img, format='png', bbox_inches='tight', facecolor='white', edgecolor='none')
@@ -426,9 +425,9 @@ def _build_micro_trend_image(history_df: pd.DataFrame) -> Optional[io.BytesIO]:
 
         ax.set_title("Diagnostic Trajectory: Domain Breakdown", fontweight='bold', color='#0F172A', pad=15, fontsize=12)
 
-        ax.legend(frameon=False, loc='upper center', bbox_to_anchor=(0.5, -0.25), ncol=4, fontsize=9)
-        plt.gcf().subplots_adjust(bottom=0.30)
-        plt.tight_layout()
+        # Force legend downward and create padding
+        ax.legend(frameon=False, loc='upper center', bbox_to_anchor=(0.5, -0.40), ncol=4, fontsize=9)
+        plt.tight_layout(rect=[0, 0.1, 1, 1])
 
         img = io.BytesIO()
         plt.savefig(img, format='png', bbox_inches='tight', facecolor='white', edgecolor='none')
@@ -584,7 +583,7 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
 
         story.append(PageBreak())
 
-        # NEW: EXECUTIVE TREND INTELLIGENCE SECTION
+        # EXECUTIVE TREND INTELLIGENCE SECTION
         if not history_df.empty and len(history_df) > 1:
             story.append(Paragraph("Executive Trend Intelligence", styles["PageHeader"]))
             
