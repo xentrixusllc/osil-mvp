@@ -108,7 +108,7 @@ def _executive_interpretation(
     practice_text: str,
 ) -> str:
     return (
-        f"Your organization is operating in a {posture} posture (BVSI™ {bvsi:.1f}). "
+        f"Your organization is operating in a {posture} posture (BVSI {bvsi:.1f}). "
         f"Current stability signals suggest the greatest exposure sits in {weakest_domain}. "
         f"{practice_text}"
     )
@@ -155,7 +155,6 @@ def _prepare_incidents(df: pd.DataFrame) -> Tuple[pd.DataFrame, str]:
         out["Assignment_Group"] = "Unassigned"
     out["Assignment_Group"] = out["Assignment_Group"].fillna("Unassigned").astype(str)
     
-    # NEW LOGIC: Check for assignment hygiene
     out["Is_Assigned"] = (~out["Assignment_Group"].str.lower().isin(["unassigned", ""])).astype(int)
 
     if "Reassignment_Count" not in out.columns:
@@ -194,6 +193,10 @@ def _prepare_incidents(df: pd.DataFrame) -> Tuple[pd.DataFrame, str]:
     if "Change_Related_Flag" not in out.columns:
         out["Change_Related_Flag"] = 0
     out["Change_Related_Flag"] = _to_bool_series(out["Change_Related_Flag"])
+
+    if "Channel" not in out.columns:
+        out["Channel"] = "Unknown"
+    out["Channel"] = out["Channel"].fillna("Unknown").astype(str)
     
     if "Problem_ID" not in out.columns:
         out["Problem_ID"] = np.nan
@@ -315,6 +318,16 @@ def _prepare_problems(df: Optional[pd.DataFrame]) -> pd.DataFrame:
         
     return out
 
+def _prepare_requests(df: Optional[pd.DataFrame]) -> pd.DataFrame:
+    if df is None or df.empty:
+        return pd.DataFrame()
+        
+    out = df.copy()
+    if "Item" not in out.columns:
+        out["Item"] = "General Request"
+    out["Item"] = out["Item"].fillna("General Request").astype(str)
+    return out
+
 def _detect_change_collision(inc: pd.DataFrame, changes: pd.DataFrame) -> pd.DataFrame:
     out = inc.copy()
     out["Change_Collision_Flag"] = out["Change_Related_Flag"].copy()
@@ -360,7 +373,7 @@ def _problem_signals_by_service(inc: pd.DataFrame, probs: pd.DataFrame) -> pd.Da
             else pd.DataFrame()
         )
         
-        rca_fidelity = 0.5 # Default confidence value
+        rca_fidelity = 0.5 
         
         if prob_svc.empty:
             rca_rate = known_error_rate = workaround_rate = permanent_fix_rate = open_problem_penalty = empty_rca_penalty = 0.0
@@ -408,7 +421,6 @@ def _problem_signals_by_service(inc: pd.DataFrame, probs: pd.DataFrame) -> pd.Da
                 else 0.0
             )
             
-            # NEW LOGIC: Calculate actual RCA Fidelity for Data Confidence Lens
             closed_mask = state.isin(["closed", "resolved", "complete", "completed"])
             closed_prbs = prob_svc[closed_mask]
             
@@ -438,7 +450,7 @@ def _problem_signals_by_service(inc: pd.DataFrame, probs: pd.DataFrame) -> pd.Da
                 "Service_Anchor": svc,
                 "Problem_Gap_Risk": round(float(min(problem_gap_risk, 100.0)), 1),
                 "RCA_Completion_Rate": round(float(rca_rate * 100.0), 1),
-                "RCA_Fidelity": rca_fidelity, # Injected for Confidence Lens
+                "RCA_Fidelity": rca_fidelity, 
             }
         )
         
@@ -489,7 +501,7 @@ def _analyze_trust_gap(roll: pd.DataFrame) -> Tuple[pd.DataFrame, str]:
     total_fric = int(df["Silent_Friction_P3_P5"].sum())
 
     narrative = (
-        f"The Xentrixus OSIL™ framework identifies a perception gap when silent friction outweighs acknowledged disruption. "
+        f"The Xentrixus OSIL framework identifies a perception gap when silent friction outweighs acknowledged disruption. "
         f"Currently, the business is absorbing {total_fric} low priority friction points compared to {total_crit} high priority disruptions. "
     )
 
@@ -507,6 +519,42 @@ def _analyze_trust_gap(roll: pd.DataFrame) -> Tuple[pd.DataFrame, str]:
 
     return df.sort_values("Friction_Ratio", ascending=False).head(5), narrative
 
+def _build_automation_strike_zone(inc: pd.DataFrame, req: pd.DataFrame) -> pd.DataFrame:
+    rows = []
+    
+    if "Channel" in inc.columns:
+        alerts = inc[inc["Channel"].astype(str).str.lower().isin(["alert", "event", "system", "integration"])]
+        if not alerts.empty:
+            alert_grouped = alerts.groupby("Service_Anchor").size().reset_index(name="Volume")
+            alert_grouped = alert_grouped.sort_values("Volume", ascending=False).head(3)
+            for _, r in alert_grouped.iterrows():
+                rows.append({
+                    "Target_Service": r["Service_Anchor"],
+                    "Automation_Type": "Automated Remediation",
+                    "Signal_Source": "System Alerts",
+                    "Volume": r["Volume"],
+                    "Wasted_Hours": round(r["Volume"] * 0.25, 1), 
+                    "Mandate": "Implement AIOps capacity scaling or script automated service restarts."
+                })
+                
+    if req is not None and not req.empty and "Item" in req.columns:
+        req_grouped = req.groupby("Item").size().reset_index(name="Volume")
+        req_grouped = req_grouped.sort_values("Volume", ascending=False).head(3)
+        for _, r in req_grouped.iterrows():
+            rows.append({
+                "Target_Service": r["Item"],
+                "Automation_Type": "Fulfillment Orchestration",
+                "Signal_Source": "Service Requests",
+                "Volume": r["Volume"],
+                "Wasted_Hours": round(r["Volume"] * 0.5, 1), 
+                "Mandate": "Build zero touch orchestration scripts to fulfill automatically."
+            })
+            
+    df = pd.DataFrame(rows)
+    if df.empty:
+        return pd.DataFrame(columns=["Target_Service", "Automation_Type", "Signal_Source", "Volume", "Wasted_Hours", "Mandate"])
+    return df.sort_values("Wasted_Hours", ascending=False)
+
 def _build_rollup(inc: pd.DataFrame, changes: pd.DataFrame, probs: pd.DataFrame) -> pd.DataFrame:
     base = inc.groupby("Service_Anchor", dropna=False).agg(
         recurrence=("Service_Anchor", "count"),
@@ -519,7 +567,7 @@ def _build_rollup(inc: pd.DataFrame, changes: pd.DataFrame, probs: pd.DataFrame)
         avg_priority_weight=("Priority_Weight", "mean"),
         tier=("Service_Tier", lambda x: _first_non_null_mode(x, "Unspecified")),
         category=("Category", lambda x: _first_non_null_mode(x, "Stability Improvement")),
-        assignment_hygiene=("Is_Assigned", "mean"), # Injected for Confidence Lens
+        assignment_hygiene=("Is_Assigned", "mean"), 
     ).reset_index()
     
     if changes is not None and not changes.empty:
@@ -573,7 +621,6 @@ def _build_service_risk_df(roll: pd.DataFrame, top_n: int = 10) -> pd.DataFrame:
     )
     problem = _normalize_0_100(roll["Problem_Gap_Risk"])
     
-    # NEW LOGIC: Calculate Data Confidence Score
     if "RCA_Fidelity" not in roll.columns:
         roll["RCA_Fidelity"] = 0.5
     if "assignment_hygiene" not in roll.columns:
@@ -599,7 +646,7 @@ def _build_service_risk_df(roll: pd.DataFrame, top_n: int = 10) -> pd.DataFrame:
             "Change_Collision_Risk": change.round(1),
             "Problem_Gap_Risk": problem.round(1),
             "Active_Disruption_P1_P2": roll["high_urgency_count"].fillna(0).astype(int) if "high_urgency_count" in roll.columns else 0,
-            "Data_Confidence": data_confidence # Injected Data Confidence
+            "Data_Confidence": data_confidence 
         }
     )
     
@@ -619,7 +666,7 @@ def _build_domain_scores(service_risk_df: pd.DataFrame) -> Dict[str, float]:
         return {
             "Service Resilience": 0.0,
             "Change Governance": 0.0,
-            "Structural Risk Debt™": 0.0,
+            "Structural Risk Debt": 0.0,
             "Reliability Momentum": 0.0,
         }
         
@@ -650,7 +697,7 @@ def _build_domain_scores(service_risk_df: pd.DataFrame) -> Dict[str, float]:
     return {
         "Service Resilience": round(float(service_resilience), 1),
         "Change Governance": round(float(change_governance), 1),
-        "Structural Risk Debt™": round(float(structural_risk_debt), 1),
+        "Structural Risk Debt": round(float(structural_risk_debt), 1),
         "Reliability Momentum": round(float(reliability_momentum), 1),
     }
 
@@ -705,7 +752,7 @@ def _build_sip_candidates(service_risk_df: pd.DataFrame, roll: pd.DataFrame, top
     merged["Priority_Label"] = merged["SIP_Priority_Score"].apply(_label)
     merged["Suggested_Theme"] = merged["category"].fillna("Stability Improvement").astype(str)
     merged["Why_Flagged"] = merged.apply(_why, axis=1)
-    merged["Data_Hygiene_Check"] = merged["Data_Confidence"] # Carry the Confidence Lens into the SIP view
+    merged["Data_Hygiene_Check"] = merged["Data_Confidence"] 
     
     return (
         merged[
@@ -728,10 +775,12 @@ def run_osil(
     incidents_df: pd.DataFrame,
     changes_df: Optional[pd.DataFrame] = None,
     problems_df: Optional[pd.DataFrame] = None,
+    requests_df: Optional[pd.DataFrame] = None,
 ) -> Dict[str, Any]:
     inc, anchor_used = _prepare_incidents(incidents_df)
     chg = _prepare_changes(changes_df)
     prb = _prepare_problems(problems_df)
+    req = _prepare_requests(requests_df)
     
     inc = _detect_change_collision(inc, chg)
     roll = _build_rollup(inc, chg, prb)
@@ -741,6 +790,7 @@ def run_osil(
     rca_themes_df = _extract_rca_themes(prb)
     rca_pareto_df = _build_rca_pareto(prb)
     trust_gap_df, trust_gap_narrative = _analyze_trust_gap(roll)
+    automation_df = _build_automation_strike_zone(inc, req)
     
     bvsi = round(float(np.mean(list(domain_scores.values()))), 1) if domain_scores else 0.0
     posture = _operating_posture(bvsi)
@@ -753,7 +803,7 @@ def run_osil(
     )
     problem_signal = (
         "Structural learning signals are improving."
-        if domain_scores["Structural Risk Debt™"] >= 70
+        if domain_scores["Structural Risk Debt"] >= 70
         else "Structural learning signals remain inconsistent."
     )
     change_signal = (
@@ -780,7 +830,7 @@ def run_osil(
     as_of = str(max(close_candidates).date()) if close_candidates else date.today().isoformat()
     
     readiness_checks = 0
-    readiness_total = 10
+    readiness_total = 11
     readiness_checks += 1 if "Service" in inc.columns or "Service_Anchor" in inc.columns else 0
     readiness_checks += 1 if "Opened_Date" in inc.columns else 0
     readiness_checks += 1 if "Priority" in inc.columns else 0
@@ -791,6 +841,7 @@ def run_osil(
     readiness_checks += 1 if problems_df is not None and not problems_df.empty else 0
     readiness_checks += 1 if problems_df is not None and not problems_df.empty and "Root_Cause_Text" in problems_df.columns else 0
     readiness_checks += 1 if problems_df is not None and not problems_df.empty and "Assignment_Group" in problems_df.columns else 0
+    readiness_checks += 1 if requests_df is not None and not requests_df.empty else 0
     
     readiness_score = round((readiness_checks / readiness_total) * 100, 1)
     
@@ -799,6 +850,8 @@ def run_osil(
         practice_parts.append("CHANGE")
     if problems_df is not None and not problems_df.empty:
         practice_parts.append("PROBLEM")
+    if requests_df is not None and not requests_df.empty:
+        practice_parts.append("REQUEST")
         
     return {
         "source_label": "",
@@ -818,6 +871,7 @@ def run_osil(
         "service_risk_df": service_risk_df.copy(),
         "top10": service_risk_df.copy(),
         "sip_view": sip_view.copy(),
+        "automation_df": automation_df.copy(),
         "tenant_name": "Default",
         "preview_df": inc.head(20).copy(),
         "incidents_enriched": inc.copy(),
