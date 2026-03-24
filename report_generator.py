@@ -423,6 +423,7 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
         domain_scores = payload.get("domain_scores", {}) or {}
         service_risk_df = _safe_df(payload.get("service_risk_top10"))
         sip_candidates = _safe_df(payload.get("sip_candidates"))
+        automation_df = _safe_df(payload.get("automation_df"))
         trust_gap_df = _safe_df(payload.get("trust_gap_df"))
         rca_themes_df = _safe_df(payload.get("rca_themes_df"))
         rca_pareto_df = _safe_df(payload.get("rca_pareto_df"))
@@ -578,7 +579,6 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
 
         story.append(PageBreak())
 
-        # --- NEW CODE: CONFIDENCE LENS IN THE SIP SECTION ---
         story.append(Paragraph("Service Improvement Priorities & Confidence Lens", styles["PageHeader"]))
         
         lens_text = (
@@ -686,6 +686,37 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
             ]))
 
         story.append(PageBreak())
+        
+        story.append(Paragraph("Automation Strike Zone (AIOps Readiness)", styles["PageHeader"]))
+        
+        if not automation_df.empty:
+            story.append(Paragraph("The OSIL engine has identified specific workflows causing excessive manual toil. Deploy automated remediation scripts and orchestration workflows to eliminate this operational friction.", styles["ExecutiveBody"]))
+            
+            auto_data = [[Paragraph("Target Workflow", styles["TableHeader"]), Paragraph("Type", styles["TableHeader"]), Paragraph("Wasted Hours", styles["TableHeader"])]]
+            for _, row in automation_df.iterrows():
+                auto_data.append([
+                    Paragraph(str(row.get("Target_Service", "")), styles["TableCellBold"]),
+                    Paragraph(str(row.get("Automation_Type", "")), styles["TableCell"]),
+                    Paragraph(str(row.get("Wasted_Hours", "")), styles["TableCellBold"])
+                ])
+            auto_table = Table(auto_data, colWidths=[3.0*inch, 2.5*inch, 1.5*inch])
+            auto_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#DC2626")),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+                ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                ('LEFTPADDING', (0, 0), (-1, -1), 10),
+                ('TOPPADDING', (0, 0), (-1, -1), 8),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+                ('LINEBELOW', (0, 0), (-1, 0), 2, colors.HexColor("#0F172A")),
+            ] + [
+                ('LINEBELOW', (0, i), (-1, i), 0.5, colors.HexColor("#E2E8F0")) for i in range(1, len(auto_data))
+            ]))
+            story.append(auto_table)
+        else:
+            story.append(Paragraph("Insufficient Channel or Service Request data to calculate automation deficits. Map these intake sources to reveal manual effort waste.", styles["ExecutiveBody"]))
+            
+        story.append(Spacer(1, 24))
         
         story.append(Paragraph("Business Trust & Root Cause Analytics", styles["PageHeader"]))
         story.append(Paragraph("The Xentrixus OSIL™ framework identifies structural operational gaps by measuring the ratio of silent friction to active disruption, and by extracting true thematic root causes rather than relying on administrative closure flags.", styles["ExecutiveBody"]))
