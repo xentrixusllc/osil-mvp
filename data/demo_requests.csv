@@ -1,32 +1,86 @@
 Service,Item,State,Opened_Date
-Enterprise Identity,Active Directory Group Access,Closed,2026-02-01
-Enterprise Identity,Active Directory Group Access,Closed,2026-02-02
+Enterprise Identity,Active Directory Group Access,Closed,2025-09-02
+Enterprise Identity,Active Directory Group Access,Closed,2025-09-05
+Enterprise Identity,Active Directory Group Access,Closed,2025-09-08
+Enterprise Identity,Active Directory Group Access,Closed,2025-09-12
+Enterprise Identity,Active Directory Group Access,Closed,2025-09-15
+Enterprise Identity,Active Directory Group Access,Closed,2025-09-19
+Enterprise Identity,Active Directory Group Access,Closed,2025-09-22
+Enterprise Identity,Active Directory Group Access,Closed,2025-09-26
+Enterprise Identity,Active Directory Group Access,Closed,2025-10-03
+Enterprise Identity,Active Directory Group Access,Closed,2025-10-07
+Enterprise Identity,Active Directory Group Access,Closed,2025-10-10
+Enterprise Identity,Active Directory Group Access,Closed,2025-10-14
+Enterprise Identity,Active Directory Group Access,Closed,2025-10-17
+Enterprise Identity,Active Directory Group Access,Closed,2025-10-21
+Enterprise Identity,Active Directory Group Access,Closed,2025-10-24
+Enterprise Identity,Active Directory Group Access,Closed,2025-10-28
+Enterprise Identity,Active Directory Group Access,Closed,2025-11-04
+Enterprise Identity,Active Directory Group Access,Closed,2025-11-06
+Enterprise Identity,Active Directory Group Access,Closed,2025-11-11
+Enterprise Identity,Active Directory Group Access,Closed,2025-11-15
+Enterprise Identity,Active Directory Group Access,Closed,2025-11-19
+Enterprise Identity,Active Directory Group Access,Closed,2025-11-21
+Enterprise Identity,Active Directory Group Access,Closed,2025-11-25
+Enterprise Identity,Active Directory Group Access,Closed,2025-12-02
+Enterprise Identity,Active Directory Group Access,Closed,2025-12-05
+Enterprise Identity,Active Directory Group Access,Closed,2025-12-09
+Enterprise Identity,Active Directory Group Access,Closed,2025-12-12
+Enterprise Identity,Active Directory Group Access,Closed,2025-12-16
+Enterprise Identity,Active Directory Group Access,Closed,2025-12-19
+Enterprise Identity,Active Directory Group Access,Closed,2026-01-05
+Enterprise Identity,Active Directory Group Access,Closed,2026-01-08
+Enterprise Identity,Active Directory Group Access,Closed,2026-01-12
+Enterprise Identity,Active Directory Group Access,Closed,2026-01-15
+Enterprise Identity,Active Directory Group Access,Closed,2026-01-20
+Enterprise Identity,Active Directory Group Access,Closed,2026-01-23
+Enterprise Identity,Active Directory Group Access,Closed,2026-01-27
 Enterprise Identity,Active Directory Group Access,Closed,2026-02-03
-Enterprise Identity,Active Directory Group Access,Closed,2026-02-04
-Enterprise Identity,Active Directory Group Access,Closed,2026-02-05
-Enterprise Identity,Active Directory Group Access,Closed,2026-02-05
 Enterprise Identity,Active Directory Group Access,Closed,2026-02-06
-Enterprise Identity,Active Directory Group Access,Closed,2026-02-07
-Enterprise Identity,Active Directory Group Access,Closed,2026-02-08
-Enterprise Identity,Active Directory Group Access,Closed,2026-02-09
 Enterprise Identity,Active Directory Group Access,Closed,2026-02-10
-Enterprise Identity,Active Directory Group Access,Closed,2026-02-11
-Enterprise Identity,Active Directory Group Access,Closed,2026-02-12
 Enterprise Identity,Active Directory Group Access,Closed,2026-02-13
-Enterprise Identity,Active Directory Group Access,Closed,2026-02-14
-Enterprise Identity,Active Directory Group Access,Closed,2026-02-15
-Software Licensing,Provision MS Project License,Closed,2026-02-01
-Software Licensing,Provision MS Project License,Closed,2026-02-03
-Software Licensing,Provision MS Project License,Closed,2026-02-05
-Software Licensing,Provision MS Project License,Closed,2026-02-07
-Software Licensing,Provision MS Project License,Closed,2026-02-09
-Software Licensing,Provision MS Project License,Closed,2026-02-11
-Software Licensing,Provision MS Project License,Closed,2026-02-13
-Software Licensing,Provision MS Project License,Closed,2026-02-15
-Software Licensing,Provision MS Project License,Closed,2026-02-16
-Software Licensing,Provision MS Project License,Closed,2026-02-18
-Cloud Infrastructure,AWS Sandbox Spin-Up,Closed,2026-02-02
-Cloud Infrastructure,AWS Sandbox Spin-Up,Closed,2026-02-06
-Cloud Infrastructure,AWS Sandbox Spin-Up,Closed,2026-02-10
-Cloud Infrastructure,AWS Sandbox Spin-Up,Closed,2026-02-14
-Cloud Infrastructure,AWS Sandbox Spin-Up,Closed,2026-02-18
+Enterprise Identity,Active Directory Group Access,Closed,2026-02-17
+Enterprise Identity,Active Directory Group Access,Closed,2026-02-20
+Software Licensing,Provision MS Project License,Closed,2025-09-04
+Software Licensing,Provision MS Project License,Closed,2025-09-14
+Software Licensing,Provision MS Project License,Closed,2025-09-24
+Software Licensing,Provision MS Project License,Closed,2025-10-02
+Software Licensing,Provision MS Project License,Closed,2025-10-12
+Software Licensing,Provision MS Project License,Closed,2025-10-22
+Software Licensing,Provision MS Project License,Closed,2025-11-05
+Software Licensing,Provision MS Project License,Closed,2025-11-15
+Software Licensing,Provision MS Project License,Closed,2025-11-25
+Software Licensing,Provision MS Project License,Closed,2025-12-03
+Software Licensing,Provision MS Project License,Closed,2025-12-13
+Software Licensing,Provision MS Project License,Closed,2026-01-06
+Software Licensing,Provision MS Project License,Closed,2026-01-14
+Software Licensing,Provision MS Project License,Closed,2026-01-22
+Software Licensing,Provision MS Project License,Closed,2026-02-04
+Software Licensing,Provision MS Project License,Closed,2026-02-12
+Software Licensing,Provision MS Project License,Closed,2026-02-19
+Software Licensing,Provision Adobe Creative Cloud,Closed,2025-09-10
+Software Licensing,Provision Adobe Creative Cloud,Closed,2025-10-08
+Software Licensing,Provision Adobe Creative Cloud,Closed,2025-11-12
+Software Licensing,Provision Adobe Creative Cloud,Closed,2025-12-10
+Software Licensing,Provision Adobe Creative Cloud,Closed,2026-01-15
+Software Licensing,Provision Adobe Creative Cloud,Closed,2026-02-08
+Network Services,Guest Wi-Fi Access Provisioning,Closed,2025-09-03
+Network Services,Guest Wi-Fi Access Provisioning,Closed,2025-09-17
+Network Services,Guest Wi-Fi Access Provisioning,Closed,2025-10-05
+Network Services,Guest Wi-Fi Access Provisioning,Closed,2025-10-20
+Network Services,Guest Wi-Fi Access Provisioning,Closed,2025-11-08
+Network Services,Guest Wi-Fi Access Provisioning,Closed,2025-11-23
+Network Services,Guest Wi-Fi Access Provisioning,Closed,2025-12-06
+Network Services,Guest Wi-Fi Access Provisioning,Closed,2025-12-18
+Network Services,Guest Wi-Fi Access Provisioning,Closed,2026-01-09
+Network Services,Guest Wi-Fi Access Provisioning,Closed,2026-01-26
+Network Services,Guest Wi-Fi Access Provisioning,Closed,2026-02-11
+Cloud Infrastructure,AWS Sandbox Spin-Up,Closed,2025-09-11
+Cloud Infrastructure,AWS Sandbox Spin-Up,Closed,2025-10-15
+Cloud Infrastructure,AWS Sandbox Spin-Up,Closed,2025-11-18
+Cloud Infrastructure,AWS Sandbox Spin-Up,Closed,2025-12-21
+Cloud Infrastructure,AWS Sandbox Spin-Up,Closed,2026-01-18
+Cloud Infrastructure,AWS Sandbox Spin-Up,Closed,2026-02-22
+End User Computing,Standard Hardware Request,Closed,2025-09-30
+End User Computing,Standard Hardware Request,Closed,2025-11-30
+End User Computing,Standard Hardware Request,Closed,2026-01-30
