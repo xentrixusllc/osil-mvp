@@ -385,35 +385,49 @@ def _validate_mapping(mapping: Dict[str, Optional[str]], spec: Dict[str, Dict[st
     return missing
 
 def plot_tenant_history(df: pd.DataFrame):
-    """Generate the multi-domain executive trend intelligence chart"""
-    fig, ax = plt.subplots(figsize=(10, 5.0), dpi=120)
+    """Generate the primary executive macro trendline (BVSI vs Debt)"""
+    fig, ax = plt.subplots(figsize=(8, 4.5), dpi=120)
     
-    # 1. Main Global BVSI Line
     ax.plot(df["run_date"], df["bvsi_score"], marker='o', linewidth=3.5, color='#0F172A', markersize=8, label='Global Stability (BVSI™)')
-    
-    # 2. The Four Domains
-    ax.plot(df["run_date"], df["resilience_score"], marker='^', linewidth=2.0, color='#2563EB', alpha=0.8, markersize=6, label='Service Resilience')
-    ax.plot(df["run_date"], df["governance_score"], marker='d', linewidth=2.0, color='#059669', alpha=0.8, markersize=6, label='Change Governance')
     ax.plot(df["run_date"], df["debt_score"], marker='s', linewidth=2.5, color='#DC2626', linestyle='--', alpha=0.8, markersize=6, label='Structural Risk Debt™')
-    ax.plot(df["run_date"], df["momentum_score"], marker='*', linewidth=2.0, color='#D97706', alpha=0.8, markersize=6, label='Reliability Momentum')
     
     ax.set_ylim(0, 110)
     ax.spines['top'].set_visible(False)
     ax.spines['right'].set_visible(False)
-    ax.set_ylabel("Index Score (Zero to 100)", fontweight='bold', color='#0F172A', fontsize=10)
+    ax.set_ylabel("Index Score", fontweight='bold', color='#0F172A', fontsize=9)
     
-    plt.xticks(rotation=0, ha='center', fontsize=9, fontweight='bold', color='#334155')
+    plt.xticks(rotation=30, ha='right', fontsize=8, fontweight='bold', color='#334155')
     plt.yticks(fontsize=9, color='#334155')
-    plt.title("Executive Trajectory: Multi-Domain Evolution", fontweight='bold', color='#0F172A', pad=20, fontsize=14)
+    plt.title("Macro Trajectory: Stability vs. Debt", fontweight='bold', color='#0F172A', pad=15, fontsize=12)
     
-    # Annotate only the BVSI main score to avoid visual clutter
     for i, txt in enumerate(df["bvsi_score"]):
-        ax.annotate(f"{txt:.1f}", (df["run_date"].iloc[i], df["bvsi_score"].iloc[i]), 
-                    textcoords="offset points", xytext=(0,10), ha='center', fontweight='bold', color='#0F172A')
+        ax.annotate(f"{txt:.0f}", (df["run_date"].iloc[i], df["bvsi_score"].iloc[i]), 
+                    textcoords="offset points", xytext=(0,10), ha='center', fontweight='bold', color='#0F172A', fontsize=9)
                     
-    # Move Legend outside to the bottom
-    ax.legend(frameon=False, loc='upper center', bbox_to_anchor=(0.5, -0.15), ncol=3, fontsize=9)
-    plt.gcf().subplots_adjust(bottom=0.25)
+    ax.legend(frameon=False, loc='upper center', bbox_to_anchor=(0.5, -0.2), ncol=2, fontsize=9)
+    plt.gcf().subplots_adjust(bottom=0.3)
+    plt.tight_layout()
+    return fig
+
+def plot_domain_history(df: pd.DataFrame):
+    """Generate the secondary diagnostic trendline (The 4 Domains)"""
+    fig, ax = plt.subplots(figsize=(8, 4.5), dpi=120)
+    
+    ax.plot(df["run_date"], df["resilience_score"], marker='^', linewidth=2.0, color='#2563EB', alpha=0.8, markersize=5, label='Resilience')
+    ax.plot(df["run_date"], df["governance_score"], marker='d', linewidth=2.0, color='#059669', alpha=0.8, markersize=5, label='Governance')
+    ax.plot(df["run_date"], df["momentum_score"], marker='*', linewidth=2.0, color='#D97706', alpha=0.8, markersize=6, label='Momentum')
+    ax.plot(df["run_date"], df["debt_score"], marker='s', linewidth=2.0, color='#DC2626', linestyle=':', alpha=0.6, markersize=5, label='Risk Debt')
+    
+    ax.set_ylim(0, 110)
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    
+    plt.xticks(rotation=30, ha='right', fontsize=8, fontweight='bold', color='#334155')
+    plt.yticks(fontsize=9, color='#334155')
+    plt.title("Diagnostic Trajectory: Domain Breakdown", fontweight='bold', color='#0F172A', pad=15, fontsize=12)
+                    
+    ax.legend(frameon=False, loc='upper center', bbox_to_anchor=(0.5, -0.2), ncol=4, fontsize=8)
+    plt.gcf().subplots_adjust(bottom=0.3)
     plt.tight_layout()
     return fig
 
@@ -869,11 +883,19 @@ def main():
         st.divider()
         st.subheader("Executive Trend Intelligence")
         st.markdown(
-            "Mathematical proof of execution. This tracks the absolute trajectory of business value stability against operational debt over time. "
-            "By monitoring all domains simultaneously, executives can pinpoint exactly which capabilities are driving stability and which require immediate capital investment."
+            "Mathematical proof of execution. The **Macro Trajectory** tracks the absolute success of the operation, proving that business value stability is rising while operational friction collapses. "
+            "The **Diagnostic Trajectory** isolates the specific underlying domains driving that overarching success."
         )
-        fig_trend = plot_tenant_history(history_df)
-        st.pyplot(fig_trend, use_container_width=True)
+        
+        trend_col1, trend_col2 = st.columns(2)
+        
+        with trend_col1:
+            fig_macro = plot_tenant_history(history_df)
+            st.pyplot(fig_macro, use_container_width=True)
+            
+        with trend_col2:
+            fig_micro = plot_domain_history(history_df)
+            st.pyplot(fig_micro, use_container_width=True)
         
         with st.expander("View Raw Ledger Data", expanded=False):
             st.dataframe(history_df, use_container_width=True)
