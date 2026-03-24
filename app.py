@@ -642,7 +642,30 @@ def main():
     st.title(APP_TITLE)
     st.caption(APP_SUB)
 
-    tenant_name = st.text_input("Organization / Tenant Name", value="Demo Tenant")
+    # --- NEW DB INTEGRATION: Dynamic Workspace Selector ---
+    st.subheader("Executive Workspace")
+    
+    known_tenants = []
+    if DB_AVAILABLE:
+        try:
+            known_tenants = tenant_db.get_all_tenants()
+        except Exception as e:
+            st.warning(f"Could not retrieve client list: {e}")
+            
+    dropdown_options = ["Select an active client workspace", "Onboard New Enterprise"] + known_tenants
+    
+    workspace_selection = st.selectbox("Target Organization", dropdown_options)
+    
+    if workspace_selection == "Onboard New Enterprise":
+        tenant_name = st.text_input("Enter New Organization Name", value="Demo Tenant")
+    elif workspace_selection == "Select an active client workspace":
+        tenant_name = ""
+    else:
+        tenant_name = workspace_selection
+        
+    if not tenant_name:
+        st.info("Awaiting workspace selection to activate the intelligence engine.")
+        st.stop()
 
     st.subheader("Run Options")
     mode = st.radio(
@@ -795,7 +818,7 @@ def main():
         results["source_label"] = source_label
         results["tenant_name"] = tenant_name
         
-        # --- NEW DB INTEGRATION: Save the run silently to the ledger ---
+        # --- DB INTEGRATION: Save the run silently to the ledger ---
         history_df = pd.DataFrame()
         if DB_AVAILABLE:
             try:
@@ -825,7 +848,7 @@ def main():
         f"As of: {results['as_of']}"
     )
 
-    # --- NEW DB INTEGRATION: Render the Executive Trend Intelligence ---
+    # --- DB INTEGRATION: Render the Executive Trend Intelligence ---
     if not history_df.empty and len(history_df) > 1:
         st.divider()
         st.subheader("Executive Trend Intelligence")
