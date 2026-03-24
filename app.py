@@ -639,10 +639,19 @@ def main():
             st.session_state["password_correct"] = False
             st.rerun()
             
+        st.divider()
+        st.markdown("#### System Administration")
+        if st.button("⚠️ Factory Reset Ledger", use_container_width=True):
+            import os
+            if os.path.exists("osil_tenant_history.db"):
+                os.remove("osil_tenant_history.db")
+                st.success("Database destroyed. Please refresh your browser.")
+            else:
+                st.info("Database is already clean.")
+
     st.title(APP_TITLE)
     st.caption(APP_SUB)
 
-    # --- NEW DB INTEGRATION: Dynamic Workspace Selector ---
     st.subheader("Executive Workspace")
     
     known_tenants = []
@@ -818,7 +827,6 @@ def main():
         results["source_label"] = source_label
         results["tenant_name"] = tenant_name
         
-        # --- DB INTEGRATION: Save the run silently to the ledger ---
         history_df = pd.DataFrame()
         if DB_AVAILABLE:
             try:
@@ -848,7 +856,6 @@ def main():
         f"As of: {results['as_of']}"
     )
 
-    # --- DB INTEGRATION: Render the Executive Trend Intelligence ---
     if not history_df.empty and len(history_df) > 1:
         st.divider()
         st.subheader("Executive Trend Intelligence")
