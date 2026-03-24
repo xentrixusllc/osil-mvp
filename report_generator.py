@@ -307,6 +307,7 @@ def _build_pareto_image(df: pd.DataFrame) -> Optional[io.BytesIO]:
         return None
 
 def _build_impact_matrix_image(service_risk_df: pd.DataFrame) -> Optional[io.BytesIO]:
+    """Generate Dual Axis Chart for Disruption vs Recurrence using Service Risk Data directly"""
     if service_risk_df.empty or "Active_Disruption_P1_P2" not in service_risk_df.columns:
         return None
     try:
@@ -372,7 +373,8 @@ def _build_macro_trend_image(history_df: pd.DataFrame) -> Optional[io.BytesIO]:
         return None
     try:
         df = history_df.copy()
-        df["display_date"] = pd.to_datetime(df["run_date"]).dt.strftime('%b %d, %Y')
+        # Converted to highly compact MM/YYYY format to save space
+        df["display_date"] = pd.to_datetime(df["run_date"]).dt.strftime('%m/%Y')
 
         fig, ax = plt.subplots(figsize=(6.2, 3.2), dpi=120)
 
@@ -384,14 +386,15 @@ def _build_macro_trend_image(history_df: pd.DataFrame) -> Optional[io.BytesIO]:
         ax.spines['right'].set_visible(False)
         ax.set_ylabel("Index Score", fontweight='bold', color='#0F172A', fontsize=9)
 
-        plt.setp(ax.xaxis.get_majorticklabels(), rotation=30, ha='right', fontsize=8, fontweight='bold', color='#334155')
+        # Removed rotation completely, text is centered and flat
+        plt.setp(ax.xaxis.get_majorticklabels(), rotation=0, ha='center', fontsize=8, fontweight='bold', color='#334155')
         plt.yticks(fontsize=9, color='#334155')
 
         ax.set_title("Macro Trajectory: Stability vs. Debt", fontweight='bold', color='#0F172A', pad=15, fontsize=12)
 
-        # Force legend downward and create padding
-        ax.legend(frameon=False, loc='upper center', bbox_to_anchor=(0.5, -0.40), ncol=2, fontsize=9)
-        plt.tight_layout(rect=[0, 0.1, 1, 1])
+        # Legend spacing is tight but safe since dates are flat
+        ax.legend(frameon=False, loc='upper center', bbox_to_anchor=(0.5, -0.20), ncol=2, fontsize=9)
+        plt.tight_layout(rect=[0, 0.05, 1, 1])
 
         img = io.BytesIO()
         plt.savefig(img, format='png', bbox_inches='tight', facecolor='white', edgecolor='none')
@@ -407,7 +410,8 @@ def _build_micro_trend_image(history_df: pd.DataFrame) -> Optional[io.BytesIO]:
         return None
     try:
         df = history_df.copy()
-        df["display_date"] = pd.to_datetime(df["run_date"]).dt.strftime('%b %d, %Y')
+        # Converted to highly compact MM/YYYY format to save space
+        df["display_date"] = pd.to_datetime(df["run_date"]).dt.strftime('%m/%Y')
 
         fig, ax = plt.subplots(figsize=(6.2, 3.2), dpi=120)
 
@@ -420,14 +424,15 @@ def _build_micro_trend_image(history_df: pd.DataFrame) -> Optional[io.BytesIO]:
         ax.spines['top'].set_visible(False)
         ax.spines['right'].set_visible(False)
 
-        plt.setp(ax.xaxis.get_majorticklabels(), rotation=30, ha='right', fontsize=8, fontweight='bold', color='#334155')
+        # Removed rotation completely, text is centered and flat
+        plt.setp(ax.xaxis.get_majorticklabels(), rotation=0, ha='center', fontsize=8, fontweight='bold', color='#334155')
         plt.yticks(fontsize=9, color='#334155')
 
         ax.set_title("Diagnostic Trajectory: Domain Breakdown", fontweight='bold', color='#0F172A', pad=15, fontsize=12)
 
-        # Force legend downward and create padding
-        ax.legend(frameon=False, loc='upper center', bbox_to_anchor=(0.5, -0.40), ncol=4, fontsize=9)
-        plt.tight_layout(rect=[0, 0.1, 1, 1])
+        # Legend spacing is tight but safe since dates are flat
+        ax.legend(frameon=False, loc='upper center', bbox_to_anchor=(0.5, -0.20), ncol=4, fontsize=9)
+        plt.tight_layout(rect=[0, 0.05, 1, 1])
 
         img = io.BytesIO()
         plt.savefig(img, format='png', bbox_inches='tight', facecolor='white', edgecolor='none')
