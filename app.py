@@ -385,11 +385,17 @@ def _validate_mapping(mapping: Dict[str, Optional[str]], spec: Dict[str, Dict[st
     return missing
 
 def plot_tenant_history(df: pd.DataFrame):
-    """Generate the executive trend intelligence chart"""
-    fig, ax = plt.subplots(figsize=(10, 4.5), dpi=120)
+    """Generate the multi-domain executive trend intelligence chart"""
+    fig, ax = plt.subplots(figsize=(10, 5.0), dpi=120)
     
-    ax.plot(df["run_date"], df["bvsi_score"], marker='o', linewidth=3.5, color='#2563EB', markersize=8, label='Global Stability (BVSI)')
-    ax.plot(df["run_date"], df["debt_score"], marker='s', linewidth=2.5, color='#DC2626', linestyle='--', alpha=0.8, markersize=6, label='Structural Risk Debt')
+    # 1. Main Global BVSI Line
+    ax.plot(df["run_date"], df["bvsi_score"], marker='o', linewidth=3.5, color='#0F172A', markersize=8, label='Global Stability (BVSI™)')
+    
+    # 2. The Four Domains
+    ax.plot(df["run_date"], df["resilience_score"], marker='^', linewidth=2.0, color='#2563EB', alpha=0.8, markersize=6, label='Service Resilience')
+    ax.plot(df["run_date"], df["governance_score"], marker='d', linewidth=2.0, color='#059669', alpha=0.8, markersize=6, label='Change Governance')
+    ax.plot(df["run_date"], df["debt_score"], marker='s', linewidth=2.5, color='#DC2626', linestyle='--', alpha=0.8, markersize=6, label='Structural Risk Debt™')
+    ax.plot(df["run_date"], df["momentum_score"], marker='*', linewidth=2.0, color='#D97706', alpha=0.8, markersize=6, label='Reliability Momentum')
     
     ax.set_ylim(0, 110)
     ax.spines['top'].set_visible(False)
@@ -398,13 +404,16 @@ def plot_tenant_history(df: pd.DataFrame):
     
     plt.xticks(rotation=0, ha='center', fontsize=9, fontweight='bold', color='#334155')
     plt.yticks(fontsize=9, color='#334155')
-    plt.title("Executive Trajectory: Stability Escaping Debt", fontweight='bold', color='#0F172A', pad=20, fontsize=14)
+    plt.title("Executive Trajectory: Multi-Domain Evolution", fontweight='bold', color='#0F172A', pad=20, fontsize=14)
     
+    # Annotate only the BVSI main score to avoid visual clutter
     for i, txt in enumerate(df["bvsi_score"]):
         ax.annotate(f"{txt:.1f}", (df["run_date"].iloc[i], df["bvsi_score"].iloc[i]), 
-                    textcoords="offset points", xytext=(0,10), ha='center', fontweight='bold', color='#2563EB')
+                    textcoords="offset points", xytext=(0,10), ha='center', fontweight='bold', color='#0F172A')
                     
-    ax.legend(frameon=False, loc='lower right', fontsize=10)
+    # Move Legend outside to the bottom
+    ax.legend(frameon=False, loc='upper center', bbox_to_anchor=(0.5, -0.15), ncol=3, fontsize=9)
+    plt.gcf().subplots_adjust(bottom=0.25)
     plt.tight_layout()
     return fig
 
@@ -861,7 +870,7 @@ def main():
         st.subheader("Executive Trend Intelligence")
         st.markdown(
             "Mathematical proof of execution. This tracks the absolute trajectory of business value stability against operational debt over time. "
-            "As engineering teams execute Service Improvement Programs, the red line must collapse while the blue line rises."
+            "By monitoring all domains simultaneously, executives can pinpoint exactly which capabilities are driving stability and which require immediate capital investment."
         )
         fig_trend = plot_tenant_history(history_df)
         st.pyplot(fig_trend, use_container_width=True)
