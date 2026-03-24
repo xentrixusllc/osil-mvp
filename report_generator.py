@@ -38,7 +38,7 @@ def radar_chart(domain_scores: dict):
     plt.tight_layout()
     
     img_data = io.BytesIO()
-    plt.savefig(img_data, format='png')
+    plt.savefig(img_data, format='png', bbox_inches='tight')
     plt.close(fig)
     img_data.seek(0)
     return img_data
@@ -64,7 +64,7 @@ def heatmap_chart(hm: pd.DataFrame):
     plt.tight_layout()
     
     img_data = io.BytesIO()
-    plt.savefig(img_data, format='png')
+    plt.savefig(img_data, format='png', bbox_inches='tight')
     plt.close(fig)
     img_data.seek(0)
     return img_data
@@ -93,7 +93,7 @@ def plot_pareto(df: pd.DataFrame):
     plt.tight_layout()
     
     img_data = io.BytesIO()
-    plt.savefig(img_data, format='png')
+    plt.savefig(img_data, format='png', bbox_inches='tight')
     plt.close(fig)
     img_data.seek(0)
     return img_data
@@ -131,43 +131,33 @@ def plot_impact_matrix(df: pd.DataFrame):
     plt.tight_layout()
     
     img_data = io.BytesIO()
-    plt.savefig(img_data, format='png')
+    plt.savefig(img_data, format='png', bbox_inches='tight')
     plt.close(fig)
     img_data.seek(0)
     return img_data
 
 def df_to_table(df: pd.DataFrame, col_widths=None) -> Table:
-    """Bulletproof Table Generator: Forces text wrapping to prevent PDF layout breaks."""
+    """Restored: Native String Tables for maximum PDF stability"""
     if df.empty:
         return Table([["No Data Available"]])
         
-    if col_widths is None:
-        # Dynamically balance columns if no widths are provided
-        col_widths = [500.0 / len(df.columns)] * len(df.columns)
-        
-    style_header = ParagraphStyle(name='TH', fontName='Helvetica-Bold', fontSize=8, textColor=colors.whitesmoke)
-    style_cell = ParagraphStyle(name='TD', fontName='Helvetica', fontSize=8, textColor=colors.HexColor("#334155"))
+    # Convert all dataframe contents to native strings
+    data = [df.columns.tolist()] + df.astype(str).values.tolist()
     
-    data = []
-    
-    # Headers must be Paragraphs to allow wrapping
-    headers = [Paragraph(str(col), style_header) for col in df.columns]
-    data.append(headers)
-    
-    # Cells must be Paragraphs to allow wrapping
-    for _, row in df.iterrows():
-        row_data = [Paragraph(str(val), style_cell) for val in row]
-        data.append(row_data)
-        
-    t = Table(data, colWidths=col_widths, repeatRows=1)
+    t = Table(data, colWidths=col_widths)
     t.setStyle(TableStyle([
         ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#0F172A")),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
         ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-        ('BOTTOMPADDING', (0, 0), (-1, 0), 6),
-        ('TOPPADDING', (0, 0), (-1, -1), 6),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, 0), 9),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
         ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor("#F8FAFC")),
+        ('TEXTCOLOR', (0, 1), (-1, -1), colors.HexColor("#334155")),
+        ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+        ('FONTSIZE', (0, 1), (-1, -1), 8),
         ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor("#E2E8F0")),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
     ]))
     return t
 
@@ -239,7 +229,8 @@ def build_osil_pdf_report(payload: dict) -> bytes:
     story.append(Paragraph(exec_text.replace('\n', '<br/>'), styles['Normal']))
     story.append(Spacer(1, 20))
 
-    # --- NEW: EXECUTIVE TREND INTELLIGENCE SECTION ---
+    # --- EXECUTIVE TREND INTELLIGENCE SECTION ---
+    # Only draw this if the user has executed at least two historical runs.
     if not history_df.empty and len(history_df) > 1:
         story.append(PageBreak())
         story.append(Paragraph("Executive Trend Intelligence", styles['Heading1']))
@@ -252,50 +243,44 @@ def build_osil_pdf_report(payload: dict) -> bytes:
         story.append(Paragraph(narrative, styles['Normal']))
         story.append(Spacer(1, 12))
         
-        # Format dates nicely for X-Axis to prevent overlap
-        history_df = history_df.copy()
-        history_df["display_date"] = pd.to_datetime(history_df["run_date"]).dt.strftime('%b %d, %Y')
-        
-        # Macro Chart
-        fig_macro, ax_macro = plt.subplots(figsize=(6.5, 3.5), dpi=150)
-        ax_macro.plot(history_df["display_date"], history_df["bvsi_score"], marker='o', linewidth=3.0, color='#0F172A', label='Global Stability (BVSI™)')
-        ax_macro.plot(history_df["display_date"], history_df["debt_score"], marker='s', linewidth=2.0, color='#DC2626', linestyle='--', label='Structural Risk Debt™')
+        # 1. Generate Macro Chart
+        fig_macro, ax_macro = plt.subplots(figsize=(6.5, 3.5), dpi=200)
+        ax_macro.plot(history_df["run_date"], history_df["bvsi_score"], marker='o', linewidth=3.0, color='#0F172A', label='Global Stability (BVSI™)')
+        ax_macro.plot(history_df["run_date"], history_df["debt_score"], marker='s', linewidth=2.0, color='#DC2626', linestyle='--', label='Structural Risk Debt™')
         ax_macro.set_ylim(0, 110)
         ax_macro.spines['top'].set_visible(False)
         ax_macro.spines['right'].set_visible(False)
-        plt.setp(ax_macro.xaxis.get_majorticklabels(), rotation=25, ha='right', fontsize=8)
+        plt.setp(ax_macro.xaxis.get_majorticklabels(), rotation=30, ha='right', fontsize=8)
         ax_macro.set_title("Macro Trajectory: Stability vs. Debt", fontweight='bold', pad=10)
         ax_macro.legend(frameon=False, loc='upper center', bbox_to_anchor=(0.5, -0.2), ncol=2, fontsize=8)
+        plt.tight_layout()
         
-        plt.tight_layout(rect=[0, 0.15, 1, 1]) # Protects the legend from being cut off
         img_data_macro = io.BytesIO()
-        plt.savefig(img_data_macro, format='png')
+        plt.savefig(img_data_macro, format='png', bbox_inches='tight')
         plt.close(fig_macro)
         img_data_macro.seek(0)
-        # Force proportional rendering to stop the stretching
-        story.append(Image(img_data_macro, width=460, height=250, kind='proportional'))
+        story.append(Image(img_data_macro, width=450, height=240))
         story.append(Spacer(1, 20))
         
-        # Micro Chart
-        fig_micro, ax_micro = plt.subplots(figsize=(6.5, 3.5), dpi=150)
-        ax_micro.plot(history_df["display_date"], history_df["resilience_score"], marker='^', linewidth=1.5, color='#2563EB', label='Resilience')
-        ax_micro.plot(history_df["display_date"], history_df["governance_score"], marker='d', linewidth=1.5, color='#059669', label='Governance')
-        ax_micro.plot(history_df["display_date"], history_df["momentum_score"], marker='*', linewidth=1.5, color='#D97706', label='Momentum')
-        ax_micro.plot(history_df["display_date"], history_df["debt_score"], marker='s', linewidth=1.5, color='#DC2626', linestyle=':', label='Risk Debt')
+        # 2. Generate Micro Chart
+        fig_micro, ax_micro = plt.subplots(figsize=(6.5, 3.5), dpi=200)
+        ax_micro.plot(history_df["run_date"], history_df["resilience_score"], marker='^', linewidth=1.5, color='#2563EB', label='Resilience')
+        ax_micro.plot(history_df["run_date"], history_df["governance_score"], marker='d', linewidth=1.5, color='#059669', label='Governance')
+        ax_micro.plot(history_df["run_date"], history_df["momentum_score"], marker='*', linewidth=1.5, color='#D97706', label='Momentum')
+        ax_micro.plot(history_df["run_date"], history_df["debt_score"], marker='s', linewidth=1.5, color='#DC2626', linestyle=':', label='Risk Debt')
         ax_micro.set_ylim(0, 110)
         ax_micro.spines['top'].set_visible(False)
         ax_micro.spines['right'].set_visible(False)
-        plt.setp(ax_micro.xaxis.get_majorticklabels(), rotation=25, ha='right', fontsize=8)
+        plt.setp(ax_micro.xaxis.get_majorticklabels(), rotation=30, ha='right', fontsize=8)
         ax_micro.set_title("Diagnostic Trajectory: Domain Breakdown", fontweight='bold', pad=10)
         ax_micro.legend(frameon=False, loc='upper center', bbox_to_anchor=(0.5, -0.2), ncol=4, fontsize=8)
+        plt.tight_layout()
         
-        plt.tight_layout(rect=[0, 0.15, 1, 1]) # Protects the legend from being cut off
         img_data_micro = io.BytesIO()
-        plt.savefig(img_data_micro, format='png')
+        plt.savefig(img_data_micro, format='png', bbox_inches='tight')
         plt.close(fig_micro)
         img_data_micro.seek(0)
-        # Force proportional rendering to stop the stretching
-        story.append(Image(img_data_micro, width=460, height=250, kind='proportional'))
+        story.append(Image(img_data_micro, width=450, height=240))
         
     story.append(PageBreak())
 
@@ -307,7 +292,7 @@ def build_osil_pdf_report(payload: dict) -> bytes:
     if not top10.empty:
         impact_img = plot_impact_matrix(top10)
         if impact_img:
-            story.append(Image(impact_img, width=420, height=240, kind='proportional'))
+            story.append(Image(impact_img, width=400, height=230))
             story.append(Spacer(1, 12))
             
     if not trust_gap_df.empty:
@@ -319,7 +304,7 @@ def build_osil_pdf_report(payload: dict) -> bytes:
     story.append(Paragraph("Operational Stability Profile", styles['Heading1']))
     if domain_scores:
         radar_img = radar_chart(domain_scores)
-        story.append(Image(radar_img, width=300, height=300, kind='proportional'))
+        story.append(Image(radar_img, width=300, height=300))
         
         domain_df = pd.DataFrame({
             "Domain Capability": list(domain_scores.keys()), 
@@ -334,7 +319,7 @@ def build_osil_pdf_report(payload: dict) -> bytes:
     story.append(Paragraph("Structural Risk Debt™: Root Cause Themes", styles['Heading1']))
     if not pareto_df.empty:
         pareto_img = plot_pareto(pareto_df)
-        story.append(Image(pareto_img, width=420, height=240, kind='proportional'))
+        story.append(Image(pareto_img, width=400, height=230))
         story.append(Spacer(1, 12))
         
         display_pareto = pareto_df.copy()
@@ -364,7 +349,7 @@ def build_osil_pdf_report(payload: dict) -> bytes:
             hm_data = hm_data.apply(pd.to_numeric, errors="coerce").fillna(0.0)
             
             hm_img = heatmap_chart(hm_data)
-            story.append(Image(hm_img, width=460, height=230, kind='proportional'))
+            story.append(Image(hm_img, width=450, height=225))
             story.append(Spacer(1, 12))
             
         display_top10 = top10[["Service", "Total_Service_Risk", "Data_Confidence"]].copy()
