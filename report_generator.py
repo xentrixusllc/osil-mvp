@@ -368,6 +368,77 @@ def _build_impact_matrix_image(service_risk_df: pd.DataFrame) -> Optional[io.Byt
         print(f"Impact matrix error: {e}")
         return None
 
+def _build_macro_trend_image(history_df: pd.DataFrame) -> Optional[io.BytesIO]:
+    if history_df.empty or len(history_df) <= 1:
+        return None
+    try:
+        df = history_df.copy()
+        df["display_date"] = pd.to_datetime(df["run_date"]).dt.strftime('%b %d, %Y')
+
+        fig, ax = plt.subplots(figsize=(7.0, 4.0), dpi=120)
+
+        ax.plot(df["display_date"], df["bvsi_score"], marker='o', linewidth=3.0, color='#0F172A', label='Global Stability (BVSI™)')
+        ax.plot(df["display_date"], df["debt_score"], marker='s', linewidth=2.0, color='#DC2626', linestyle='--', label='Structural Risk Debt™')
+
+        ax.set_ylim(0, 110)
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+        ax.set_ylabel("Index Score", fontweight='bold', color='#0F172A', fontsize=9)
+
+        plt.setp(ax.xaxis.get_majorticklabels(), rotation=30, ha='right', fontsize=8, fontweight='bold', color='#334155')
+        plt.yticks(fontsize=9, color='#334155')
+
+        ax.set_title("Macro Trajectory: Stability vs. Debt", fontweight='bold', color='#0F172A', pad=15, fontsize=12)
+
+        ax.legend(frameon=False, loc='upper center', bbox_to_anchor=(0.5, -0.25), ncol=2, fontsize=9)
+        plt.gcf().subplots_adjust(bottom=0.30)
+        plt.tight_layout()
+
+        img = io.BytesIO()
+        plt.savefig(img, format='png', bbox_inches='tight', facecolor='white', edgecolor='none')
+        plt.close(fig)
+        img.seek(0)
+        return img
+    except Exception as e:
+        print(f"Macro trend error: {e}")
+        return None
+
+def _build_micro_trend_image(history_df: pd.DataFrame) -> Optional[io.BytesIO]:
+    if history_df.empty or len(history_df) <= 1:
+        return None
+    try:
+        df = history_df.copy()
+        df["display_date"] = pd.to_datetime(df["run_date"]).dt.strftime('%b %d, %Y')
+
+        fig, ax = plt.subplots(figsize=(7.0, 4.0), dpi=120)
+
+        ax.plot(df["display_date"], df["resilience_score"], marker='^', linewidth=2.0, color='#2563EB', alpha=0.8, label='Resilience')
+        ax.plot(df["display_date"], df["governance_score"], marker='d', linewidth=2.0, color='#059669', alpha=0.8, label='Governance')
+        ax.plot(df["display_date"], df["momentum_score"], marker='*', linewidth=2.0, color='#D97706', alpha=0.8, label='Momentum')
+        ax.plot(df["display_date"], df["debt_score"], marker='s', linewidth=2.0, color='#DC2626', linestyle=':', alpha=0.6, label='Risk Debt')
+
+        ax.set_ylim(0, 110)
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+
+        plt.setp(ax.xaxis.get_majorticklabels(), rotation=30, ha='right', fontsize=8, fontweight='bold', color='#334155')
+        plt.yticks(fontsize=9, color='#334155')
+
+        ax.set_title("Diagnostic Trajectory: Domain Breakdown", fontweight='bold', color='#0F172A', pad=15, fontsize=12)
+
+        ax.legend(frameon=False, loc='upper center', bbox_to_anchor=(0.5, -0.25), ncol=4, fontsize=9)
+        plt.gcf().subplots_adjust(bottom=0.30)
+        plt.tight_layout()
+
+        img = io.BytesIO()
+        plt.savefig(img, format='png', bbox_inches='tight', facecolor='white', edgecolor='none')
+        plt.close(fig)
+        img.seek(0)
+        return img
+    except Exception as e:
+        print(f"Micro trend error: {e}")
+        return None
+
 def _build_domain_insight_box(domain_scores: dict, styles: Any) -> Table:
     weakest_domain = "Service Resilience"
     if domain_scores:
@@ -427,6 +498,7 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
         trust_gap_df = _safe_df(payload.get("trust_gap_df"))
         rca_themes_df = _safe_df(payload.get("rca_themes_df"))
         rca_pareto_df = _safe_df(payload.get("rca_pareto_df"))
+        history_df = _safe_df(payload.get("history_df"))
         detected_dataset = str(payload.get("detected_dataset", "INCIDENT")).upper()
         service_anchor = str(payload.get("service_anchor_used", "Service"))
         readiness = _safe_float(payload.get("data_readiness_score", 0))
@@ -511,6 +583,30 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
         story.append(Paragraph(f"Data Sources: {detected_dataset} | Classification: Confidential", styles["Caption"]))
 
         story.append(PageBreak())
+
+        # NEW: EXECUTIVE TREND INTELLIGENCE SECTION
+        if not history_df.empty and len(history_df) > 1:
+            story.append(Paragraph("Executive Trend Intelligence", styles["PageHeader"]))
+            
+            narrative = (
+                "Mathematical proof of execution. The Macro Trajectory tracks the absolute success of the operation, "
+                "proving that business value stability is rising while operational friction collapses. The Diagnostic "
+                "Trajectory isolates the specific underlying domains driving that overarching success."
+            )
+            story.append(Paragraph(narrative, styles["ExecutiveBody"]))
+            story.append(Spacer(1, 12))
+            
+            macro_img = _build_macro_trend_image(history_df)
+            if macro_img:
+                story.append(Image(macro_img, width=6.5*inch, height=3.7*inch))
+                story.append(Spacer(1, 20))
+                
+            micro_img = _build_micro_trend_image(history_df)
+            if micro_img:
+                story.append(Image(micro_img, width=6.5*inch, height=3.7*inch))
+                story.append(Spacer(1, 20))
+
+            story.append(PageBreak())
 
         # DUAL COLUMN LAYOUT FOR STABILITY PROFILE
         story.append(Paragraph("Operational Stability Profile", styles["PageHeader"]))
@@ -716,7 +812,7 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
         else:
             story.append(Paragraph("Insufficient Channel or Service Request data to calculate automation deficits. Map these intake sources to reveal manual effort waste.", styles["ExecutiveBody"]))
             
-        story.append(PageBreak()) # FORCE PAGE BREAK HERE TO FIX ORPHAN HEADING
+        story.append(PageBreak()) 
         
         story.append(Paragraph("Business Trust & Root Cause Analytics", styles["PageHeader"]))
         story.append(Paragraph("The Xentrixus OSIL™ framework identifies structural operational gaps by measuring the ratio of silent friction to active disruption, and by extracting true thematic root causes rather than relying on administrative closure flags.", styles["ExecutiveBody"]))
@@ -755,9 +851,9 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
 
         if not trust_gap_df.empty:
             trust_data = [[Paragraph("Service", styles["TableHeader"]), 
-                          Paragraph("Critical Disruption<br/>(P1 and P2)", styles["TableHeader"]),
-                          Paragraph("Silent Friction<br/>(P3 to P5)", styles["TableHeader"]), 
-                          Paragraph("Friction Ratio", styles["TableHeader"])]]
+                           Paragraph("Critical Disruption<br/>(P1 and P2)", styles["TableHeader"]),
+                           Paragraph("Silent Friction<br/>(P3 to P5)", styles["TableHeader"]), 
+                           Paragraph("Friction Ratio", styles["TableHeader"])]]
             
             for _, row in trust_gap_df.iterrows():
                 svc = str(row.get("Service", ""))
@@ -982,7 +1078,7 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
             risk_table
         ]))
         
-        story.append(PageBreak()) # FORCE PAGE BREAK HERE TO KEEP ABOUT SECTION CLEAN
+        story.append(PageBreak()) 
         
         about_text = (
             f"The Operational Stability Intelligence Layer (OSIL™) is an enterprise advisory platform developed exclusively by Xentrixus. "
