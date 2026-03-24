@@ -12,6 +12,12 @@ import streamlit as st
 from osil_engine import INCIDENT_REQUIRED_COLUMNS, run_osil
 from report_generator import build_osil_pdf_report
 
+try:
+    import tenant_db
+    DB_AVAILABLE = True
+except ImportError:
+    DB_AVAILABLE = False
+
 plt.switch_backend('Agg')
 
 st.set_page_config(
@@ -61,7 +67,7 @@ APP_SUB = (
 DEMO_INCIDENTS = "data/demo_incidents.csv"
 DEMO_CHANGES = "data/demo_changes.csv"
 DEMO_PROBLEMS = "data/demo_problems.csv"
-DEMO_REQUESTS = "data/demo_requests.csv" # Added Demo Requests
+DEMO_REQUESTS = "data/demo_requests.csv"
 
 INCIDENT_MAPPING_SPEC = {
     "Service": {
@@ -378,6 +384,30 @@ def _validate_mapping(mapping: Dict[str, Optional[str]], spec: Dict[str, Dict[st
             missing.append(f"{dataset_name}: {canonical}")
     return missing
 
+def plot_tenant_history(df: pd.DataFrame):
+    """Generate the executive trend intelligence chart"""
+    fig, ax = plt.subplots(figsize=(10, 4.5), dpi=120)
+    
+    ax.plot(df["run_date"], df["bvsi_score"], marker='o', linewidth=3.5, color='#2563EB', markersize=8, label='Global Stability (BVSI)')
+    ax.plot(df["run_date"], df["debt_score"], marker='s', linewidth=2.5, color='#DC2626', linestyle='--', alpha=0.8, markersize=6, label='Structural Risk Debt')
+    
+    ax.set_ylim(0, 110)
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    ax.set_ylabel("Index Score (Zero to 100)", fontweight='bold', color='#0F172A', fontsize=10)
+    
+    plt.xticks(rotation=0, ha='center', fontsize=9, fontweight='bold', color='#334155')
+    plt.yticks(fontsize=9, color='#334155')
+    plt.title("Executive Trajectory: Stability Escaping Debt", fontweight='bold', color='#0F172A', pad=20, fontsize=14)
+    
+    for i, txt in enumerate(df["bvsi_score"]):
+        ax.annotate(f"{txt:.1f}", (df["run_date"].iloc[i], df["bvsi_score"].iloc[i]), 
+                    textcoords="offset points", xytext=(0,10), ha='center', fontweight='bold', color='#2563EB')
+                    
+    ax.legend(frameon=False, loc='lower right', fontsize=10)
+    plt.tight_layout()
+    return fig
+
 def heatmap_chart(hm: pd.DataFrame):
     """Generate heatmap chart for Streamlit display"""
     fig = plt.figure(figsize=(12, 6), dpi=200) 
@@ -600,11 +630,9 @@ def _build_pdf_payload(results: dict, tenant_name: str) -> dict:
 def main():
     """Main application function"""
     
-    # Execute the master key validation
     if not check_password():
         return
         
-    # Build the secure sidebar with manual kill switch
     with st.sidebar:
         st.markdown("### Executive Controls")
         if st.button("Log Out / Lock Engine", use_container_width=True):
@@ -614,7 +642,7 @@ def main():
     st.title(APP_TITLE)
     st.caption(APP_SUB)
 
-    tenant_name = st.text_input("Organization / Tenant Name", value="Default")
+    tenant_name = st.text_input("Organization / Tenant Name", value="Wajax")
 
     st.subheader("Run Options")
     mode = st.radio(
@@ -632,7 +660,6 @@ def main():
 
     if mode == "Run with Demo Data":
         if st.button("Run Demo Analysis", use_container_width=True):
-            # Unpacks all 4 demo files now
             incidents_df, changes_df, problems_df, requests_df = _load_demo_data()
             if incidents_df.empty:
                 st.error("Demo load failed: data/demo_incidents.csv was not found or is empty.")
@@ -763,10 +790,25 @@ def main():
             incidents_df=incidents_df,
             changes_df=changes_df,
             problems_df=problems_df,
-            requests_df=requests_df, # Successfully passing requests to engine
+            requests_df=requests_df,
         )
         results["source_label"] = source_label
         results["tenant_name"] = tenant_name
+        
+        # --- NEW DB INTEGRATION: Save the run silently to the ledger ---
+        history_df = pd.DataFrame()
+        if DB_AVAILABLE:
+            try:
+                tenant_db.save_tenant_run(
+                    tenant_name=tenant_name,
+                    as_of_date=results["as_of"],
+                    bvsi=results["bvsi"],
+                    domain_scores=results["domain_scores"]
+                )
+                history_df = tenant_db.get_tenant_history(tenant_name)
+            except Exception as db_err:
+                st.warning(f"Could not connect to tenant ledger. Running in stateless mode. Error: {db_err}")
+
     except Exception as e:
         st.error(f"Run failed: {e}")
         st.exception(e)
@@ -782,6 +824,20 @@ def main():
         f"Service anchor used: {results['anchor_used']} • "
         f"As of: {results['as_of']}"
     )
+
+    # --- NEW DB INTEGRATION: Render the Executive Trend Intelligence ---
+    if not history_df.empty and len(history_df) > 1:
+        st.divider()
+        st.subheader("Executive Trend Intelligence")
+        st.markdown(
+            "Mathematical proof of execution. This tracks the absolute trajectory of business value stability against operational debt over time. "
+            "As engineering teams execute Service Improvement Programs, the red line must collapse while the blue line rises."
+        )
+        fig_trend = plot_tenant_history(history_df)
+        st.pyplot(fig_trend, use_container_width=True)
+        
+        with st.expander("View Raw Ledger Data", expanded=False):
+            st.dataframe(history_df, use_container_width=True)
 
     st.divider()
     st.subheader("Executive Interpretation")
