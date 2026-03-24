@@ -386,49 +386,59 @@ def _validate_mapping(mapping: Dict[str, Optional[str]], spec: Dict[str, Dict[st
 
 def plot_tenant_history(df: pd.DataFrame):
     """Generate the primary executive macro trendline (BVSI vs Debt)"""
+    df = df.copy()
+    # Convert dates to MM/YYYY format for compact visual spacing
+    df["display_date"] = pd.to_datetime(df["run_date"]).dt.strftime('%m/%Y')
+    
     fig, ax = plt.subplots(figsize=(8, 4.5), dpi=120)
     
-    ax.plot(df["run_date"], df["bvsi_score"], marker='o', linewidth=3.5, color='#0F172A', markersize=8, label='Global Stability (BVSI™)')
-    ax.plot(df["run_date"], df["debt_score"], marker='s', linewidth=2.5, color='#DC2626', linestyle='--', alpha=0.8, markersize=6, label='Structural Risk Debt™')
+    ax.plot(df["display_date"], df["bvsi_score"], marker='o', linewidth=3.5, color='#0F172A', markersize=8, label='Global Stability (BVSI™)')
+    ax.plot(df["display_date"], df["debt_score"], marker='s', linewidth=2.5, color='#DC2626', linestyle='--', alpha=0.8, markersize=6, label='Structural Risk Debt™')
     
     ax.set_ylim(0, 110)
     ax.spines['top'].set_visible(False)
     ax.spines['right'].set_visible(False)
     ax.set_ylabel("Index Score", fontweight='bold', color='#0F172A', fontsize=9)
     
-    plt.xticks(rotation=30, ha='right', fontsize=8, fontweight='bold', color='#334155')
+    # Dates are set flat to zero degrees to prevent legend overlap
+    plt.xticks(rotation=0, ha='center', fontsize=8, fontweight='bold', color='#334155')
     plt.yticks(fontsize=9, color='#334155')
     plt.title("Macro Trajectory: Stability vs. Debt", fontweight='bold', color='#0F172A', pad=15, fontsize=12)
     
     for i, txt in enumerate(df["bvsi_score"]):
-        ax.annotate(f"{txt:.0f}", (df["run_date"].iloc[i], df["bvsi_score"].iloc[i]), 
+        ax.annotate(f"{txt:.0f}", (df["display_date"].iloc[i], df["bvsi_score"].iloc[i]), 
                     textcoords="offset points", xytext=(0,10), ha='center', fontweight='bold', color='#0F172A', fontsize=9)
                     
-    ax.legend(frameon=False, loc='upper center', bbox_to_anchor=(0.5, -0.2), ncol=2, fontsize=9)
-    plt.gcf().subplots_adjust(bottom=0.3)
-    plt.tight_layout()
+    # Legend pushed down with layout boundaries secured
+    ax.legend(frameon=False, loc='upper center', bbox_to_anchor=(0.5, -0.20), ncol=2, fontsize=9)
+    plt.tight_layout(rect=[0, 0.05, 1, 1])
     return fig
 
 def plot_domain_history(df: pd.DataFrame):
     """Generate the secondary diagnostic trendline (The 4 Domains)"""
+    df = df.copy()
+    # Convert dates to MM/YYYY format for compact visual spacing
+    df["display_date"] = pd.to_datetime(df["run_date"]).dt.strftime('%m/%Y')
+    
     fig, ax = plt.subplots(figsize=(8, 4.5), dpi=120)
     
-    ax.plot(df["run_date"], df["resilience_score"], marker='^', linewidth=2.0, color='#2563EB', alpha=0.8, markersize=5, label='Resilience')
-    ax.plot(df["run_date"], df["governance_score"], marker='d', linewidth=2.0, color='#059669', alpha=0.8, markersize=5, label='Governance')
-    ax.plot(df["run_date"], df["momentum_score"], marker='*', linewidth=2.0, color='#D97706', alpha=0.8, markersize=6, label='Momentum')
-    ax.plot(df["run_date"], df["debt_score"], marker='s', linewidth=2.0, color='#DC2626', linestyle=':', alpha=0.6, markersize=5, label='Risk Debt')
+    ax.plot(df["display_date"], df["resilience_score"], marker='^', linewidth=2.0, color='#2563EB', alpha=0.8, markersize=5, label='Resilience')
+    ax.plot(df["display_date"], df["governance_score"], marker='d', linewidth=2.0, color='#059669', alpha=0.8, markersize=5, label='Governance')
+    ax.plot(df["display_date"], df["momentum_score"], marker='*', linewidth=2.0, color='#D97706', alpha=0.8, markersize=6, label='Momentum')
+    ax.plot(df["display_date"], df["debt_score"], marker='s', linewidth=2.0, color='#DC2626', linestyle=':', alpha=0.6, markersize=5, label='Risk Debt')
     
     ax.set_ylim(0, 110)
     ax.spines['top'].set_visible(False)
     ax.spines['right'].set_visible(False)
     
-    plt.xticks(rotation=30, ha='right', fontsize=8, fontweight='bold', color='#334155')
+    # Dates are set flat to zero degrees to prevent legend overlap
+    plt.xticks(rotation=0, ha='center', fontsize=8, fontweight='bold', color='#334155')
     plt.yticks(fontsize=9, color='#334155')
     plt.title("Diagnostic Trajectory: Domain Breakdown", fontweight='bold', color='#0F172A', pad=15, fontsize=12)
                     
-    ax.legend(frameon=False, loc='upper center', bbox_to_anchor=(0.5, -0.2), ncol=4, fontsize=8)
-    plt.gcf().subplots_adjust(bottom=0.3)
-    plt.tight_layout()
+    # Legend pushed down with layout boundaries secured
+    ax.legend(frameon=False, loc='upper center', bbox_to_anchor=(0.5, -0.20), ncol=4, fontsize=8)
+    plt.tight_layout(rect=[0, 0.05, 1, 1])
     return fig
 
 def heatmap_chart(hm: pd.DataFrame):
