@@ -108,7 +108,7 @@ def _executive_interpretation(
     practice_text: str,
 ) -> str:
     return (
-        f"Your organization is operating in a {posture} posture (BVSI {bvsi:.1f}). "
+        f"Your organization is operating in a {posture} posture (BVSI™ {bvsi:.1f}). "
         f"Current stability signals suggest the greatest exposure sits in {weakest_domain}. "
         f"{practice_text}"
     )
@@ -501,7 +501,7 @@ def _analyze_trust_gap(roll: pd.DataFrame) -> Tuple[pd.DataFrame, str]:
     total_fric = int(df["Silent_Friction_P3_P5"].sum())
 
     narrative = (
-        f"The Xentrixus OSIL framework identifies a perception gap when silent friction outweighs acknowledged disruption. "
+        f"The Xentrixus OSIL™ framework identifies a perception gap when silent friction outweighs acknowledged disruption. "
         f"Currently, the business is absorbing {total_fric} low priority friction points compared to {total_crit} high priority disruptions. "
     )
 
@@ -666,7 +666,7 @@ def _build_domain_scores(service_risk_df: pd.DataFrame) -> Dict[str, float]:
         return {
             "Service Resilience": 0.0,
             "Change Governance": 0.0,
-            "Structural Risk Debt": 0.0,
+            "Structural Risk Debt™": 0.0,
             "Reliability Momentum": 0.0,
         }
         
@@ -697,7 +697,7 @@ def _build_domain_scores(service_risk_df: pd.DataFrame) -> Dict[str, float]:
     return {
         "Service Resilience": round(float(service_resilience), 1),
         "Change Governance": round(float(change_governance), 1),
-        "Structural Risk Debt": round(float(structural_risk_debt), 1),
+        "Structural Risk Debt™": round(float(structural_risk_debt), 1),
         "Reliability Momentum": round(float(reliability_momentum), 1),
     }
 
@@ -803,7 +803,7 @@ def run_osil(
     )
     problem_signal = (
         "Structural learning signals are improving."
-        if domain_scores["Structural Risk Debt"] >= 70
+        if domain_scores["Structural Risk Debt™"] >= 70
         else "Structural learning signals remain inconsistent."
     )
     change_signal = (
