@@ -107,6 +107,11 @@ INCIDENT_MAPPING_SPEC = {
         "required": True,
         "aliases": ["Assignment Group", "Assignment_Group", "Resolver Group", "Assigned Group", "Support Group"],
     },
+    "Channel": {
+        "label": "Contact Channel (optional)",
+        "required": False,
+        "aliases": ["Channel", "Contact Type", "Source", "Origin"],
+    },
     "Reassignment_Count": {
         "label": "Reassignment Count / Bounces (optional)",
         "required": False,
@@ -237,6 +242,24 @@ PROBLEM_MAPPING_SPEC = {
     },
 }
 
+REQUEST_MAPPING_SPEC = {
+    "Service": {
+        "label": "Operational Anchor (optional)",
+        "required": False,
+        "aliases": ["Service", "Application", "CI"],
+    },
+    "Item": {
+        "label": "Catalog Item",
+        "required": True,
+        "aliases": ["Item", "Catalog Item", "Request Type", "Category"],
+    },
+    "State": {
+        "label": "State",
+        "required": False,
+        "aliases": ["State", "Status", "Phase"],
+    },
+}
+
 def safe_read_csv(file_or_path):
     """Safely read CSV with multiple encoding attempts"""
     encodings = ["utf-8", "utf-8-sig", "cp1252", "latin1", "utf-16"]
@@ -354,15 +377,12 @@ def _validate_mapping(mapping: Dict[str, Optional[str]], spec: Dict[str, Dict[st
     return missing
 
 def heatmap_chart(hm: pd.DataFrame):
-    """Generate heavily upgraded, enterprise-ready heatmap chart"""
-    # Increased figsize and DPI for wider, sharper rendering
+    """Generate heatmap chart for Streamlit display"""
     fig = plt.figure(figsize=(12, 6), dpi=200) 
     ax = plt.gca()
     
-    # Swapped default colormap to RdYlGn_r (Red = Bad/100, Green = Good/0)
     im = ax.imshow(hm.values, aspect="auto", vmin=0, vmax=100, cmap="RdYlGn_r")
     
-    # Upgraded font sizes and weights for readability
     ax.set_xticks(range(len(hm.columns)))
     ax.set_xticklabels(list(hm.columns), fontsize=11, fontweight='bold', color='#0F172A')
     
@@ -371,15 +391,12 @@ def heatmap_chart(hm: pd.DataFrame):
     
     ax.set_title("Service Risk Concentration Matrix", fontsize=16, fontweight='bold', color='#0F172A', pad=20)
 
-    # Injecting smart-contrast text into the cells
     for i in range(hm.shape[0]):
         for j in range(hm.shape[1]):
             val = int(round(float(hm.iat[i, j]), 0))
-            # If the background is extreme red (>80) or extreme green (<20), use white text. Otherwise black.
             text_color = "white" if (val > 80 or val < 20) else "#0F172A"
             ax.text(j, i, f"{val}", ha="center", va="center", fontsize=12, fontweight='bold', color=text_color)
 
-    # Scale the colorbar
     cbar = plt.colorbar(im, ax=ax, fraction=0.03, pad=0.03)
     cbar.set_label("Risk Score", fontsize=11, fontweight='bold', color='#0F172A')
     cbar.ax.tick_params(labelsize=10)
@@ -571,6 +588,7 @@ def _build_pdf_payload(results: dict, tenant_name: str) -> dict:
         "domain_scores": results.get("domain_scores", {}),
         "service_risk_top10": results.get("top10", pd.DataFrame()),
         "sip_candidates": results.get("sip_view", pd.DataFrame()),
+        "automation_df": results.get("automation_df", pd.DataFrame()),
         "data_readiness_score": results.get("readiness_score", 0.0),
         "service_anchor_used": results.get("anchor_used", "None"),
         "detected_dataset": results.get("practice_type", "unknown"),
@@ -606,6 +624,7 @@ def main():
     incidents_df: Optional[pd.DataFrame] = None
     changes_df: Optional[pd.DataFrame] = None
     problems_df: Optional[pd.DataFrame] = None
+    requests_df: Optional[pd.DataFrame] = None
     source_label = None
     run_requested = False
 
@@ -619,14 +638,14 @@ def main():
             run_requested = True
     else:
         st.markdown("### Upload Files")
-        c1, c2, c3 = st.columns(3)
+        c1, c2 = st.columns(2)
 
         with c1:
             inc_file = st.file_uploader("Incident CSV", type=["csv"], key="inc")
-        with c2:
             chg_file = st.file_uploader("Change CSV (optional)", type=["csv"], key="chg")
-        with c3:
+        with c2:
             prb_file = st.file_uploader("Problem CSV (optional)", type=["csv"], key="prb")
+            req_file = st.file_uploader("Service Request CSV (optional)", type=["csv"], key="req")
 
         if inc_file is not None:
             try:
@@ -663,6 +682,18 @@ def main():
                 return
         else:
             prb_mapping = {}
+            
+        if req_file is not None:
+            try:
+                req_preview = safe_read_csv(req_file)
+                req_file.seek(0)
+                st.markdown("### Request Mapping")
+                req_mapping = _render_mapping_ui(req_preview, REQUEST_MAPPING_SPEC, "Map Request Columns", "reqmap")
+            except Exception as e:
+                st.error(f"Could not read Request CSV: {e}")
+                return
+        else:
+            req_mapping = {}
 
         st.caption(
             "Use the best available operational anchor for each dataset. "
@@ -699,6 +730,12 @@ def main():
                     problems_df = _apply_mapping(problems_df, prb_mapping)
                 else:
                     problems_df = pd.DataFrame()
+                    
+                if req_file is not None:
+                    requests_df = safe_read_csv(req_file)
+                    requests_df = _apply_mapping(requests_df, req_mapping)
+                else:
+                    requests_df = pd.DataFrame()
 
                 source_label = f"Upload ({inc_file.name})"
                 run_requested = True
@@ -723,6 +760,7 @@ def main():
             incidents_df=incidents_df,
             changes_df=changes_df,
             problems_df=problems_df,
+            requests_df=requests_df,
         )
         results["source_label"] = source_label
         results["tenant_name"] = tenant_name
@@ -874,12 +912,9 @@ def main():
                 )
                 hm = hm.apply(pd.to_numeric, errors="coerce").replace([np.inf, -np.inf], np.nan).fillna(0.0)
 
-                # --- UPGRADED HEATMAP RENDERING BLOCK ---
                 st.markdown("### Service Stability Heatmap (Top 10 Services by Risk)")
                 hm_fig = heatmap_chart(hm)
                 
-                # Removed the constraining layout columns (hc1, hc2, hc3)
-                # Setting use_container_width=True allows the chart to breathe across the screen
                 st.pyplot(hm_fig, use_container_width=True)
                 
                 st.caption(
@@ -901,6 +936,15 @@ def main():
     st.divider()
     st.markdown("### Top SIP Candidates (Next Thirty Days)")
     st.dataframe(results["sip_view"], use_container_width=True)
+    
+    # --- AUTOMATION STRIKE ZONE UI ---
+    st.divider()
+    st.markdown("### Automation Strike Zone (AIOps Readiness)")
+    st.markdown("Identify massive manual effort waste. Use these findings to deploy orchestration scripts and automated remediation.")
+    if not results["automation_df"].empty:
+        st.dataframe(results["automation_df"], use_container_width=True)
+    else:
+        st.info("Insufficient Channel or Request telemetry to calculate automation deficits. Map these columns to unlock AIOps tracking.")
 
     st.divider()
 
