@@ -375,7 +375,7 @@ def _build_macro_trend_image(history_df: pd.DataFrame) -> Optional[io.BytesIO]:
         df = history_df.copy()
         df["display_date"] = pd.to_datetime(df["run_date"]).dt.strftime('%b %d, %Y')
 
-        fig, ax = plt.subplots(figsize=(7.0, 4.0), dpi=120)
+        fig, ax = plt.subplots(figsize=(6.2, 3.2), dpi=120)
 
         ax.plot(df["display_date"], df["bvsi_score"], marker='o', linewidth=3.0, color='#0F172A', label='Global Stability (BVSI™)')
         ax.plot(df["display_date"], df["debt_score"], marker='s', linewidth=2.0, color='#DC2626', linestyle='--', label='Structural Risk Debt™')
@@ -410,7 +410,7 @@ def _build_micro_trend_image(history_df: pd.DataFrame) -> Optional[io.BytesIO]:
         df = history_df.copy()
         df["display_date"] = pd.to_datetime(df["run_date"]).dt.strftime('%b %d, %Y')
 
-        fig, ax = plt.subplots(figsize=(7.0, 4.0), dpi=120)
+        fig, ax = plt.subplots(figsize=(6.2, 3.2), dpi=120)
 
         ax.plot(df["display_date"], df["resilience_score"], marker='^', linewidth=2.0, color='#2563EB', alpha=0.8, label='Resilience')
         ax.plot(df["display_date"], df["governance_score"], marker='d', linewidth=2.0, color='#059669', alpha=0.8, label='Governance')
@@ -598,13 +598,13 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
             
             macro_img = _build_macro_trend_image(history_df)
             if macro_img:
-                story.append(Image(macro_img, width=6.5*inch, height=3.7*inch))
-                story.append(Spacer(1, 20))
+                story.append(Image(macro_img, width=6.2*inch, height=3.2*inch))
+                story.append(Spacer(1, 16))
                 
             micro_img = _build_micro_trend_image(history_df)
             if micro_img:
-                story.append(Image(micro_img, width=6.5*inch, height=3.7*inch))
-                story.append(Spacer(1, 20))
+                story.append(Image(micro_img, width=6.2*inch, height=3.2*inch))
+                story.append(Spacer(1, 16))
 
             story.append(PageBreak())
 
