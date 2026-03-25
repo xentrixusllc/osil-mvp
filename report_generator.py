@@ -917,65 +917,105 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
                 svs_table
             ]))
             
-        # ADDED: SERVICE VALUE CHAIN TABLE
+        # ADDED: SERVICE VALUE CHAIN DIAGRAM (PDF NATIVE)
         if svc_scores:
-            svc_intro = "Isolating operational friction into specific ITIL 4 Service Value Chain activities."
+            svc_intro = "Isolating operational friction into specific ITIL 4 Service Value Chain activities. Green (Controlled), Orange (Exposed), Red (Critical)."
             
-            svc_rows = [
-                [
-                    Paragraph("SVC Activity", styles["TableHeader"]), 
-                    Paragraph("Score", styles["TableHeader"]), 
-                    Paragraph("OSIL Driver", styles["TableHeader"])
-                ]
-            ]
-            
-            svc_definitions = {
-                "Plan": "Driven by Enterprise Data Readiness and hygiene metrics.",
-                "Improve": "Driven by Structural Risk Debt (Incident Recurrence and Problem Gaps).",
-                "Engage": "Driven by Reliability Momentum and Business Trust (Silent Friction).",
-                "Design & Transition": "Driven by Change Governance (Collision and Failure rates).",
-                "Obtain/Build": "Blended indicator of deployment safety and artifact resilience.",
-                "Deliver & Support": "Driven by Service Resilience (MTTR, Execution Churn, Reopen rates)."
-            }
-            
-            for key, definition in svc_definitions.items():
-                score = _safe_float(svc_scores.get(key, 0), 0)
-                score_color = colors.HexColor("#059669") if score >= 70 else colors.HexColor("#D97706") if score >= 55 else colors.HexColor("#DC2626")
+            def _get_svc_pdf_color(score):
+                if score >= 70: return colors.HexColor("#059669") # Emerald Green
+                if score >= 55: return colors.HexColor("#D97706") # Amber/Orange
+                return colors.HexColor("#DC2626") # Red
                 
-                svc_rows.append([
-                    Paragraph(key, styles["TableCellBold"]),
-                    Paragraph(
-                        f"{score:.1f}", 
-                        ParagraphStyle(name='score', parent=styles["TableCell"], textColor=score_color, fontName='Helvetica-Bold')
-                    ),
-                    Paragraph(definition, styles["TableCell"])
-                ])
-                
-            svc_table = Table(svc_rows, colWidths=[1.5*inch, 0.7*inch, 4.8*inch])
-            svc_table.setStyle(TableStyle([
-                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#0F172A")),
-                ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
-                ('ALIGN', (0, 0), (0, -1), 'LEFT'),
-                ('ALIGN', (1, 0), (1, -1), 'CENTER'),
-                ('ALIGN', (2, 0), (2, -1), 'LEFT'),
-                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-                ('LEFTPADDING', (0, 0), (-1, -1), 8),
-                ('RIGHTPADDING', (0, 0), (-1, -1), 8),
-                ('TOPPADDING', (0, 0), (-1, -1), 10),
-                ('BOTTOMPADDING', (0, 0), (-1, -1), 10),
-                ('LINEBELOW', (0, 0), (-1, 0), 2, colors.HexColor("#0F172A")),
-            ] + [
-                ('LINEBELOW', (0, i), (-1, i), 0.5, colors.HexColor("#E2E8F0")) for i in range(1, len(svc_rows))
-            ] + [
-                ('BACKGROUND', (0, i), (-1, i), colors.HexColor("#F8FAFC")) for i in range(2, len(svc_rows), 2)
+            c_plan = _get_svc_pdf_color(_safe_float(svc_scores.get('Plan', 0), 0))
+            c_imp = _get_svc_pdf_color(_safe_float(svc_scores.get('Improve', 0), 0))
+            c_eng = _get_svc_pdf_color(_safe_float(svc_scores.get('Engage', 0), 0))
+            c_dt = _get_svc_pdf_color(_safe_float(svc_scores.get('Design & Transition', 0), 0))
+            c_ob = _get_svc_pdf_color(_safe_float(svc_scores.get('Obtain/Build', 0), 0))
+            c_ds = _get_svc_pdf_color(_safe_float(svc_scores.get('Deliver & Support', 0), 0))
+            
+            box_style = ParagraphStyle(
+                name='svc_box', 
+                parent=styles['BodyText'], 
+                textColor=colors.white, 
+                fontName='Helvetica-Bold', 
+                alignment=1, 
+                fontSize=12
+            )
+            
+            # 1. Plan Block (Top)
+            t_plan = Table([[Paragraph(f"Plan ({svc_scores.get('Plan', 0.0):.1f})", box_style)]], colWidths=[6.5*inch], rowHeights=[0.45*inch])
+            t_plan.setStyle(TableStyle([
+                ('BACKGROUND', (0,0), (-1,-1), c_plan),
+                ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+                ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
             ]))
+            
+            # 2. Middle Section (Engage Left, Stack Right)
+            t_eng = Table([[Paragraph(f"Engage<br/><br/>({svc_scores.get('Engage', 0.0):.1f})", box_style)]], colWidths=[1.8*inch], rowHeights=[1.55*inch])
+            t_eng.setStyle(TableStyle([
+                ('BACKGROUND', (0,0), (-1,-1), c_eng),
+                ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+                ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+            ]))
+            
+            t_dt = Table([[Paragraph(f"Design & Transition ({svc_scores.get('Design & Transition', 0.0):.1f})", box_style)]], colWidths=[4.5*inch], rowHeights=[0.45*inch])
+            t_dt.setStyle(TableStyle([('BACKGROUND', (0,0), (-1,-1), c_dt), ('ALIGN', (0,0), (-1,-1), 'CENTER'), ('VALIGN', (0,0), (-1,-1), 'MIDDLE')]))
+            
+            t_ob = Table([[Paragraph(f"Obtain / Build ({svc_scores.get('Obtain/Build', 0.0):.1f})", box_style)]], colWidths=[4.5*inch], rowHeights=[0.45*inch])
+            t_ob.setStyle(TableStyle([('BACKGROUND', (0,0), (-1,-1), c_ob), ('ALIGN', (0,0), (-1,-1), 'CENTER'), ('VALIGN', (0,0), (-1,-1), 'MIDDLE')]))
+            
+            t_ds = Table([[Paragraph(f"Deliver & Support ({svc_scores.get('Deliver & Support', 0.0):.1f})", box_style)]], colWidths=[4.5*inch], rowHeights=[0.45*inch])
+            t_ds.setStyle(TableStyle([('BACKGROUND', (0,0), (-1,-1), c_ds), ('ALIGN', (0,0), (-1,-1), 'CENTER'), ('VALIGN', (0,0), (-1,-1), 'MIDDLE')]))
+            
+            t_stack = Table([[t_dt], [t_ob], [t_ds]], colWidths=[4.5*inch])
+            t_stack.setStyle(TableStyle([
+                ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+                ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+                ('BOTTOMPADDING', (0,0), (-1,0), 6),
+                ('BOTTOMPADDING', (0,1), (-1,1), 6),
+            ]))
+            
+            t_mid = Table([[t_eng, t_stack]], colWidths=[1.9*inch, 4.6*inch])
+            t_mid.setStyle(TableStyle([
+                ('ALIGN', (0,0), (-1,-1), 'LEFT'),
+                ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+            ]))
+            
+            # 3. Improve Block (Bottom)
+            t_imp = Table([[Paragraph(f"Improve ({svc_scores.get('Improve', 0.0):.1f})", box_style)]], colWidths=[6.5*inch], rowHeights=[0.45*inch])
+            t_imp.setStyle(TableStyle([
+                ('BACKGROUND', (0,0), (-1,-1), c_imp),
+                ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+                ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+            ]))
+            
+            # Master Container
+            svc_diagram = Table([[t_plan], [t_mid], [t_imp]], colWidths=[6.5*inch])
+            svc_diagram.setStyle(TableStyle([
+                ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+                ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+                ('BOTTOMPADDING', (0,0), (-1,0), 8),
+                ('BOTTOMPADDING', (0,1), (-1,1), 8),
+            ]))
+            
+            # Definitions Legend
+            legend_text = (
+                "<b>Deliver & Support:</b> Driven by Resilience (MTTR, Churn, Reopen Rates).<br/>"
+                "<b>Design & Transition:</b> Driven by Change Governance (Collision and Failure rates).<br/>"
+                "<b>Improve:</b> Driven by Structural Risk Debt (Recurrence).<br/>"
+                "<b>Engage:</b> Driven by Momentum and Trust Gap.<br/>"
+                "<b>Plan:</b> Driven by Enterprise Data Readiness.<br/>"
+                "<b>Obtain/Build:</b> Blended indicator of deployment safety and artifact resilience."
+            )
             
             story.append(Spacer(1, 24))
             story.append(KeepTogether([
                 Paragraph("ITIL 4 Service Value Chain (SVC)", styles["SectionHeader"]),
                 Paragraph(svc_intro, styles["ExecutiveBody"]),
-                Spacer(1, 8),
-                svc_table
+                Spacer(1, 12),
+                svc_diagram,
+                Spacer(1, 16),
+                Paragraph(legend_text, styles["ExecutiveBody"])
             ]))
         # ----------------------------------------------------
 
