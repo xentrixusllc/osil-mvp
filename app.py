@@ -712,7 +712,8 @@ def _build_pdf_payload(results: dict, tenant_name: str, history_df: pd.DataFrame
         "rca_themes_df": results.get("rca_themes_df", pd.DataFrame()),
         "rca_pareto_df": results.get("rca_pareto_df", pd.DataFrame()),
         "domain_scores": results.get("domain_scores", {}),
-        "svs_scores": results.get("svs_scores", {}), # Injected ITIL 4 mappings
+        "svs_scores": results.get("svs_scores", {}), 
+        "svc_scores": results.get("svc_scores", {}),
         "service_risk_top10": results.get("top10", pd.DataFrame()),
         "sip_candidates": results.get("sip_view", pd.DataFrame()),
         "automation_df": results.get("automation_df", pd.DataFrame()),
@@ -993,7 +994,7 @@ def main():
     st.subheader("Executive Interpretation")
     st.write(results["exec_text"])
     
-    # --- ADDED: THE ITIL 4 SERVICE VALUE SYSTEM DASHBOARD ---
+    # --- ITIL 4 SERVICE VALUE SYSTEM DASHBOARD ---
     st.divider()
     st.subheader("ITIL 4 Service Value System Assessment")
     st.markdown("Translating technical friction into enterprise operating model health based on ITIL 4 principles.")
@@ -1012,6 +1013,34 @@ def main():
         <b>Continual Improvement:</b> Evaluates structural risk debt and problem learning gaps. High scores prove the organization is proactively eliminating technical debt rather than reactive firefighting.<br>
         <b>Practices:</b> Evaluates assignment hygiene, execution churn, and incident resolution. High scores indicate structured, efficient ITSM execution.<br>
         <b>Guiding Principles:</b> Evaluates the trust gap and automation strike zones ('Focus on Value' and 'Optimize & Automate'). High scores prove a modern, value-driven culture.
+        </div>
+        """, unsafe_allow_html=True)
+
+    # --- ITIL 4 SERVICE VALUE CHAIN DASHBOARD ---
+    st.markdown("<br>", unsafe_allow_html=True)
+    st.subheader("ITIL 4 Service Value Chain (SVC)")
+    st.markdown("Isolating operational friction into specific ITIL 4 value chain activities.")
+    
+    svc = results.get("svc_scores", {})
+    if svc:
+        svc1, svc2, svc3 = st.columns(3)
+        svc1.metric("Plan", f"{svc.get('Plan', 0):.1f}")
+        svc2.metric("Improve", f"{svc.get('Improve', 0):.1f}")
+        svc3.metric("Engage", f"{svc.get('Engage', 0):.1f}")
+
+        svc4, svc5, svc6 = st.columns(3)
+        svc4.metric("Design & Transition", f"{svc.get('Design & Transition', 0):.1f}")
+        svc5.metric("Obtain / Build", f"{svc.get('Obtain/Build', 0):.1f}")
+        svc6.metric("Deliver & Support", f"{svc.get('Deliver & Support', 0):.1f}")
+
+        st.markdown("""
+        <div style="margin-top: 16px; font-size: 13px; color: #334155;">
+        <b>Deliver & Support:</b> Driven by Resilience (MTTR, Churn, Reopen Rates).<br>
+        <b>Design & Transition:</b> Driven by Change Governance (Collision and Failure rates).<br>
+        <b>Improve:</b> Driven by Structural Risk Debt (Recurrence).<br>
+        <b>Engage:</b> Driven by Momentum and Trust Gap.<br>
+        <b>Plan:</b> Driven by Enterprise Data Readiness.<br>
+        <b>Obtain/Build:</b> Blended indicator of deployment safety and artifact resilience.
         </div>
         """, unsafe_allow_html=True)
     # --------------------------------------------------------
