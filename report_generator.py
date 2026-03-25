@@ -656,6 +656,7 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
         posture = str(payload.get("posture", _get_posture_from_bvsi(bvsi)))
         domain_scores = payload.get("domain_scores", {}) or {}
         svs_scores = payload.get("svs_scores", {}) or {}
+        svc_scores = payload.get("svc_scores", {}) or {} # ADDED SVC
         service_risk_df = _safe_df(payload.get("service_risk_top10"))
         sip_candidates = _safe_df(payload.get("sip_candidates"))
         automation_df = _safe_df(payload.get("automation_df"))
@@ -854,7 +855,7 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
         else:
             story.append(KeepTogether(right_col_elements))
 
-        # --- ADDED: THE ITIL 4 SERVICE VALUE SYSTEM PAGE ---
+        # --- ITIL 4 SERVICE VALUE SYSTEM & CHAIN PAGE ---
         story.append(Spacer(1, 24))
         
         if svs_scores:
@@ -864,7 +865,7 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
             
             svs_rows = [
                 [
-                    Paragraph("ITIL 4 Pillar", styles["TableHeader"]), 
+                    Paragraph("ITIL 4 SVS Pillar", styles["TableHeader"]), 
                     Paragraph("Score", styles["TableHeader"]), 
                     Paragraph("Executive Interpretation", styles["TableHeader"])
                 ]
@@ -914,6 +915,67 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
                 Paragraph(svs_intro, styles["ExecutiveBody"]),
                 Spacer(1, 8),
                 svs_table
+            ]))
+            
+        # ADDED: SERVICE VALUE CHAIN TABLE
+        if svc_scores:
+            svc_intro = "Isolating operational friction into specific ITIL 4 Service Value Chain activities."
+            
+            svc_rows = [
+                [
+                    Paragraph("SVC Activity", styles["TableHeader"]), 
+                    Paragraph("Score", styles["TableHeader"]), 
+                    Paragraph("OSIL Driver", styles["TableHeader"])
+                ]
+            ]
+            
+            svc_definitions = {
+                "Plan": "Driven by Enterprise Data Readiness and hygiene metrics.",
+                "Improve": "Driven by Structural Risk Debt (Incident Recurrence and Problem Gaps).",
+                "Engage": "Driven by Reliability Momentum and Business Trust (Silent Friction).",
+                "Design & Transition": "Driven by Change Governance (Collision and Failure rates).",
+                "Obtain/Build": "Blended indicator of deployment safety and artifact resilience.",
+                "Deliver & Support": "Driven by Service Resilience (MTTR, Execution Churn, Reopen rates)."
+            }
+            
+            for key, definition in svc_definitions.items():
+                score = _safe_float(svc_scores.get(key, 0), 0)
+                score_color = colors.HexColor("#059669") if score >= 70 else colors.HexColor("#D97706") if score >= 55 else colors.HexColor("#DC2626")
+                
+                svc_rows.append([
+                    Paragraph(key, styles["TableCellBold"]),
+                    Paragraph(
+                        f"{score:.1f}", 
+                        ParagraphStyle(name='score', parent=styles["TableCell"], textColor=score_color, fontName='Helvetica-Bold')
+                    ),
+                    Paragraph(definition, styles["TableCell"])
+                ])
+                
+            svc_table = Table(svc_rows, colWidths=[1.5*inch, 0.7*inch, 4.8*inch])
+            svc_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#0F172A")),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+                ('ALIGN', (0, 0), (0, -1), 'LEFT'),
+                ('ALIGN', (1, 0), (1, -1), 'CENTER'),
+                ('ALIGN', (2, 0), (2, -1), 'LEFT'),
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                ('LEFTPADDING', (0, 0), (-1, -1), 8),
+                ('RIGHTPADDING', (0, 0), (-1, -1), 8),
+                ('TOPPADDING', (0, 0), (-1, -1), 10),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 10),
+                ('LINEBELOW', (0, 0), (-1, 0), 2, colors.HexColor("#0F172A")),
+            ] + [
+                ('LINEBELOW', (0, i), (-1, i), 0.5, colors.HexColor("#E2E8F0")) for i in range(1, len(svc_rows))
+            ] + [
+                ('BACKGROUND', (0, i), (-1, i), colors.HexColor("#F8FAFC")) for i in range(2, len(svc_rows), 2)
+            ]))
+            
+            story.append(Spacer(1, 24))
+            story.append(KeepTogether([
+                Paragraph("ITIL 4 Service Value Chain (SVC)", styles["SectionHeader"]),
+                Paragraph(svc_intro, styles["ExecutiveBody"]),
+                Spacer(1, 8),
+                svc_table
             ]))
         # ----------------------------------------------------
 
