@@ -74,9 +74,10 @@ INCIDENT_MAPPING_SPEC = {
         "label": "Operational Anchor (Service / Application / CI / etc.)",
         "required": True,
         "aliases": [
-            "Service", "Business Service", "business_service", "Application", "Application Name",
-            "CI", "Configuration Item", "CI Name", "Affected Service", "Service Offering",
-            "Product", "System", "App", "Application Service", "Application CI", "Configuration Item Name"
+            "Service", "Business Service", "business_service", "Application", 
+            "Application Name", "CI", "Configuration Item", "CI Name", 
+            "Affected Service", "Service Offering", "Product", "System", 
+            "App", "Application Service", "Application CI", "Configuration Item Name"
         ],
     },
     "Service_Tier": {
@@ -156,9 +157,9 @@ CHANGE_MAPPING_SPEC = {
         "label": "Operational Anchor for Changes",
         "required": True,
         "aliases": [
-            "Service", "Business Service", "Application", "Application Name", "CI",
-            "Configuration Item", "CI Name", "Service Offering", "Product", "System",
-            "Application CI", "Configuration Item Name"
+            "Service", "Business Service", "Application", "Application Name", 
+            "CI", "Configuration Item", "CI Name", "Service Offering", 
+            "Product", "System", "Application CI", "Configuration Item Name"
         ],
     },
     "Change_ID": {
@@ -207,9 +208,9 @@ PROBLEM_MAPPING_SPEC = {
         "label": "Operational Anchor for Problems",
         "required": True,
         "aliases": [
-            "Service", "Business Service", "Application", "Application Name", "CI",
-            "Configuration Item", "CI Name", "Service Offering", "Product", "System",
-            "Application CI", "Configuration Item Name"
+            "Service", "Business Service", "Application", "Application Name", 
+            "CI", "Configuration Item", "CI Name", "Service Offering", 
+            "Product", "System", "Application CI", "Configuration Item Name"
         ],
     },
     "Problem_ID": {
@@ -242,10 +243,15 @@ PROBLEM_MAPPING_SPEC = {
         "required": False,
         "aliases": ["Known_Error_Flag", "Known_Error", "Known Error"],
     },
-    "Root_Cause_Text": {
-        "label": "Root Cause Description (optional)",
+    "Root_Cause_Category": {
+        "label": "Root Cause Category / Code (optional)",
         "required": False,
-        "aliases": ["Root Cause", "Root_Cause", "RCA Details", "RCA Description", "Cause", "Primary Cause"],
+        "aliases": ["Root Cause", "Root_Cause", "Cause Code", "Category", "RCA Category", "Root Cause Code", "Cause_Code"],
+    },
+    "Root_Cause_Text": {
+        "label": "Root Cause Description / Details (optional)",
+        "required": False,
+        "aliases": ["Cause", "Root_Cause_Text", "RCA Details", "RCA Description", "5 Whys", "Description"],
     },
 }
 
@@ -291,7 +297,7 @@ def _safe_read_csv(path: str) -> pd.DataFrame:
     return pd.DataFrame()
 
 def _load_demo_data() -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-    """Load demo data files including the new Requests CSV"""
+    """Load demo data files"""
     inc = _safe_read_csv(DEMO_INCIDENTS)
     chg = _safe_read_csv(DEMO_CHANGES)
     prb = _safe_read_csv(DEMO_PROBLEMS)
@@ -387,27 +393,53 @@ def _validate_mapping(mapping: Dict[str, Optional[str]], spec: Dict[str, Dict[st
 def plot_tenant_history(df: pd.DataFrame):
     """Generate the primary executive macro trendline (BVSI vs Debt)"""
     df = df.copy()
-    # Convert dates to MM/YYYY format for compact visual spacing
+    # Converted to highly compact MM/YYYY format to save space
     df["display_date"] = pd.to_datetime(df["run_date"]).dt.strftime('%m/%Y')
     
     fig, ax = plt.subplots(figsize=(8, 4.5), dpi=120)
     
-    ax.plot(df["display_date"], df["bvsi_score"], marker='o', linewidth=3.5, color='#0F172A', markersize=8, label='Global Stability (BVSI™)')
-    ax.plot(df["display_date"], df["debt_score"], marker='s', linewidth=2.5, color='#DC2626', linestyle='--', alpha=0.8, markersize=6, label='Structural Risk Debt™')
+    ax.plot(
+        df["display_date"], 
+        df["bvsi_score"], 
+        marker='o', 
+        linewidth=3.5, 
+        color='#0F172A', 
+        markersize=8, 
+        label='Global Stability (BVSI™)'
+    )
+    ax.plot(
+        df["display_date"], 
+        df["debt_score"], 
+        marker='s', 
+        linewidth=2.5, 
+        color='#DC2626', 
+        linestyle='--', 
+        alpha=0.8, 
+        markersize=6, 
+        label='Structural Risk Debt™'
+    )
     
     ax.set_ylim(0, 110)
     ax.spines['top'].set_visible(False)
     ax.spines['right'].set_visible(False)
     ax.set_ylabel("Index Score", fontweight='bold', color='#0F172A', fontsize=9)
     
-    # Dates are set flat to zero degrees to prevent legend overlap
+    # Removed rotation completely, text is centered and flat
     plt.xticks(rotation=0, ha='center', fontsize=8, fontweight='bold', color='#334155')
     plt.yticks(fontsize=9, color='#334155')
     plt.title("Macro Trajectory: Stability vs. Debt", fontweight='bold', color='#0F172A', pad=15, fontsize=12)
     
     for i, txt in enumerate(df["bvsi_score"]):
-        ax.annotate(f"{txt:.0f}", (df["display_date"].iloc[i], df["bvsi_score"].iloc[i]), 
-                    textcoords="offset points", xytext=(0,10), ha='center', fontweight='bold', color='#0F172A', fontsize=9)
+        ax.annotate(
+            f"{txt:.0f}", 
+            (df["display_date"].iloc[i], df["bvsi_score"].iloc[i]), 
+            textcoords="offset points", 
+            xytext=(0,10), 
+            ha='center', 
+            fontweight='bold', 
+            color='#0F172A', 
+            fontsize=9
+        )
                     
     # Legend pushed down with layout boundaries secured
     ax.legend(frameon=False, loc='upper center', bbox_to_anchor=(0.5, -0.20), ncol=2, fontsize=9)
@@ -417,7 +449,7 @@ def plot_tenant_history(df: pd.DataFrame):
 def plot_domain_history(df: pd.DataFrame):
     """Generate the secondary diagnostic trendline (The 4 Domains)"""
     df = df.copy()
-    # Convert dates to MM/YYYY format for compact visual spacing
+    # Converted to highly compact MM/YYYY format to save space
     df["display_date"] = pd.to_datetime(df["run_date"]).dt.strftime('%m/%Y')
     
     fig, ax = plt.subplots(figsize=(8, 4.5), dpi=120)
@@ -431,7 +463,7 @@ def plot_domain_history(df: pd.DataFrame):
     ax.spines['top'].set_visible(False)
     ax.spines['right'].set_visible(False)
     
-    # Dates are set flat to zero degrees to prevent legend overlap
+    # Removed rotation completely, text is centered and flat
     plt.xticks(rotation=0, ha='center', fontsize=8, fontweight='bold', color='#334155')
     plt.yticks(fontsize=9, color='#334155')
     plt.title("Diagnostic Trajectory: Domain Breakdown", fontweight='bold', color='#0F172A', pad=15, fontsize=12)
@@ -537,7 +569,15 @@ def plot_impact_matrix(service_risk_df: pd.DataFrame):
     x_pos = np.arange(len(merged))
     labels = [textwrap.fill(str(x)[:20], width=12) for x in merged["Service"]]
     
-    bars = ax1.bar(x_pos, merged["Active_Disruption_P1_P2"], color="#DC2626", width=0.45, alpha=0.9, label="Active Disruption (P1/P2 Count)")
+    bars = ax1.bar(
+        x_pos, 
+        merged["Active_Disruption_P1_P2"], 
+        color="#DC2626", 
+        width=0.45, 
+        alpha=0.9, 
+        label="Active Disruption (P1/P2 Count)"
+    )
+    
     ax1.set_ylabel("Active Disruption Volume (P1 and P2)", color="#DC2626", fontweight="bold", fontsize=9)
     ax1.tick_params(axis="y", labelcolor="#DC2626")
     ax1.set_xticks(x_pos)
@@ -546,7 +586,16 @@ def plot_impact_matrix(service_risk_df: pd.DataFrame):
     for bar in bars:
         yval = bar.get_height()
         if yval > 0:
-            ax1.text(bar.get_x() + bar.get_width()/2.0, yval + 0.05, f"{int(yval)}", ha='center', va='bottom', color='#DC2626', fontweight='bold', fontsize=10)
+            ax1.text(
+                bar.get_x() + bar.get_width()/2.0, 
+                yval + 0.05, 
+                f"{int(yval)}", 
+                ha='center', 
+                va='bottom', 
+                color='#DC2626', 
+                fontweight='bold', 
+                fontsize=10
+            )
 
     max_disruption = float(merged["Active_Disruption_P1_P2"].max())
     if max_disruption < 5:
@@ -555,13 +604,31 @@ def plot_impact_matrix(service_risk_df: pd.DataFrame):
         ax1.set_ylim(0, max_disruption * 1.3)
 
     ax2 = ax1.twinx()
-    line = ax2.plot(x_pos, merged["Recurrence_Risk"], color="#0F172A", marker="o", linewidth=2.5, markersize=8, label="Recurrence Risk Score")
+    line = ax2.plot(
+        x_pos, 
+        merged["Recurrence_Risk"], 
+        color="#0F172A", 
+        marker="o", 
+        linewidth=2.5, 
+        markersize=8, 
+        label="Recurrence Risk Score"
+    )
+    
     ax2.set_ylabel("Recurrence Risk Score (Zero to 100)", color="#0F172A", fontweight="bold", fontsize=9)
     ax2.tick_params(axis="y", labelcolor="#0F172A")
     ax2.set_ylim(0, 115)
     
     for i, val in enumerate(merged["Recurrence_Risk"]):
-        ax2.text(x_pos[i], val + 3, f"{int(val)}", ha='center', va='bottom', color='#0F172A', fontweight='bold', fontsize=9)
+        ax2.text(
+            x_pos[i], 
+            val + 3, 
+            f"{int(val)}", 
+            ha='center', 
+            va='bottom', 
+            color='#0F172A', 
+            fontweight='bold', 
+            fontsize=9
+        )
 
     ax1.spines['top'].set_visible(False)
     ax2.spines['top'].set_visible(False)
@@ -721,6 +788,7 @@ def main():
     changes_df: Optional[pd.DataFrame] = None
     problems_df: Optional[pd.DataFrame] = None
     requests_df: Optional[pd.DataFrame] = None
+    dynamic_prb_cols: List[str] = []
     source_label = None
     run_requested = False
 
@@ -773,6 +841,14 @@ def main():
                 prb_file.seek(0)
                 st.markdown("### Problem Mapping")
                 prb_mapping = _render_mapping_ui(prb_preview, PROBLEM_MAPPING_SPEC, "Map Problem Columns", "prbmap")
+                
+                # TELEMETRY RICHNESS MODIFIER: The Dynamic Injection UI
+                unmapped_prb = [c for c in prb_preview.columns if c not in prb_mapping.values()]
+                if unmapped_prb:
+                    st.markdown("#### ⚡ Dynamic Telemetry Injection")
+                    st.caption("Select custom maturity fields (e.g., 5 Whys, Vendor). High fill rates in these custom fields will mathematically boost the Data Confidence and Governance scores, while appending the data directly to the Executive PDF Ledger.")
+                    dynamic_prb_cols = st.multiselect("Inject Custom Problem Fields", unmapped_prb, key="dyn_prb")
+
             except Exception as e:
                 st.error(f"Could not read Problem CSV: {e}")
                 return
@@ -823,7 +899,11 @@ def main():
 
                 if prb_file is not None:
                     problems_df = safe_read_csv(prb_file)
-                    problems_df = _apply_mapping(problems_df, prb_mapping)
+                    # Pass dynamic columns through so the engine can calculate their fill-rate
+                    rename_map = {v: k for k, v in prb_mapping.items() if v}
+                    for dyn_col in dynamic_prb_cols: 
+                        rename_map[dyn_col] = dyn_col 
+                    problems_df = problems_df.rename(columns=rename_map)
                 else:
                     problems_df = pd.DataFrame()
                     
@@ -857,6 +937,7 @@ def main():
             changes_df=changes_df,
             problems_df=problems_df,
             requests_df=requests_df,
+            dynamic_prb_cols=dynamic_prb_cols
         )
         results["source_label"] = source_label
         results["tenant_name"] = tenant_name
