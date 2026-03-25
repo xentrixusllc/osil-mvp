@@ -1,11 +1,17 @@
 from __future__ import annotations
 from datetime import date
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
 
-INCIDENT_REQUIRED_COLUMNS = ["Service", "Opened_Date", "Priority", "State", "Assignment_Group"]
+INCIDENT_REQUIRED_COLUMNS = [
+    "Service", 
+    "Opened_Date", 
+    "Priority", 
+    "State", 
+    "Assignment_Group"
+]
 
 def _safe_float(val: Any, default: float = 0.0) -> float:
     try:
@@ -28,7 +34,9 @@ def _first_non_null_mode(series: pd.Series, default: str) -> str:
     if s.empty:
         return default
     vc = s.value_counts()
-    return str(vc.index[0]) if not vc.empty else default
+    if not vc.empty:
+        return str(vc.index[0])
+    return default
 
 def _normalize_0_100(series: pd.Series) -> pd.Series:
     s = pd.to_numeric(series, errors="coerce").replace([np.inf, -np.inf], np.nan).fillna(0.0)
@@ -153,12 +161,13 @@ def _prepare_incidents(df: pd.DataFrame) -> Tuple[pd.DataFrame, str]:
 
     if "Assignment_Group" not in out.columns:
         out["Assignment_Group"] = "Unassigned"
-    out["Assignment_Group"] = out["Assignment_Group"].fillna("Unassigned").astype(str)
     
+    out["Assignment_Group"] = out["Assignment_Group"].fillna("Unassigned").astype(str)
     out["Is_Assigned"] = (~out["Assignment_Group"].str.lower().isin(["unassigned", ""])).astype(int)
 
     if "Reassignment_Count" not in out.columns:
         out["Reassignment_Count"] = 0
+    
     out["Reassignment_Count"] = pd.to_numeric(out["Reassignment_Count"], errors="coerce").fillna(0)
         
     close_col = (
@@ -270,23 +279,20 @@ def _prepare_problems(df: Optional[pd.DataFrame]) -> pd.DataFrame:
     if "Problem_ID" not in out.columns:
         out["Problem_ID"] = [f"PRB {i+1}" for i in range(len(out))]
         
-    out["Opened_Date"] = (
-        pd.to_datetime(out["Opened_Date"], errors="coerce")
-        if "Opened_Date" in out.columns
-        else pd.NaT
-    )
+    if "Opened_Date" in out.columns:
+        out["Opened_Date"] = pd.to_datetime(out["Opened_Date"], errors="coerce")
+    else:
+        out["Opened_Date"] = pd.NaT
     
-    out["Resolved_Date"] = (
-        pd.to_datetime(out["Resolved_Date"], errors="coerce")
-        if "Resolved_Date" in out.columns
-        else pd.NaT
-    )
+    if "Resolved_Date" in out.columns:
+        out["Resolved_Date"] = pd.to_datetime(out["Resolved_Date"], errors="coerce")
+    else:
+        out["Resolved_Date"] = pd.NaT
     
-    out["Closed_Date"] = (
-        pd.to_datetime(out["Closed_Date"], errors="coerce")
-        if "Closed_Date" in out.columns
-        else pd.NaT
-    )
+    if "Closed_Date" in out.columns:
+        out["Closed_Date"] = pd.to_datetime(out["Closed_Date"], errors="coerce")
+    else:
+        out["Closed_Date"] = pd.NaT
     
     if "State" not in out.columns:
         out["State"] = "Unknown"
@@ -307,6 +313,9 @@ def _prepare_problems(df: Optional[pd.DataFrame]) -> pd.DataFrame:
         out["Permanent_Fix_Flag"] = 0
     out["Permanent_Fix_Flag"] = _to_bool_series(out["Permanent_Fix_Flag"])
     
+    if "Root_Cause_Category" not in out.columns:
+        out["Root_Cause_Category"] = ""
+        
     if "Root_Cause_Text" not in out.columns:
         out["Root_Cause_Text"] = ""
         
@@ -358,68 +367,76 @@ def _detect_change_collision(inc: pd.DataFrame, changes: pd.DataFrame) -> pd.Dat
     )
     return out
 
-def _problem_signals_by_service(inc: pd.DataFrame, probs: pd.DataFrame) -> pd.DataFrame:
+def _problem_signals_by_service(
+    inc: pd.DataFrame, 
+    probs: pd.DataFrame, 
+    dynamic_cols: List[str] = None
+) -> pd.DataFrame:
+    
     services = pd.Series(inc["Service_Anchor"].dropna().unique(), name="Service_Anchor")
     rows = []
     
     for svc in services:
         inc_svc = inc[inc["Service_Anchor"] == svc]
         incident_count = len(inc_svc)
-        linked_ratio = inc_svc["Problem_ID"].notna().mean() if "Problem_ID" in inc_svc.columns else 0.0
         
-        prob_svc = (
-            probs[probs["Service_Anchor"] == svc]
-            if probs is not None and not probs.empty
-            else pd.DataFrame()
-        )
+        if "Problem_ID" in inc_svc.columns:
+            linked_ratio = inc_svc["Problem_ID"].notna().mean() 
+        else:
+            linked_ratio = 0.0
+        
+        if probs is not None and not probs.empty:
+            prob_svc = probs[probs["Service_Anchor"] == svc]
+        else:
+            prob_svc = pd.DataFrame()
         
         rca_fidelity = 0.5 
         
         if prob_svc.empty:
-            rca_rate = known_error_rate = workaround_rate = permanent_fix_rate = open_problem_penalty = empty_rca_penalty = 0.0
+            rca_rate = 0.0
+            known_error_rate = 0.0
+            workaround_rate = 0.0
+            permanent_fix_rate = 0.0
+            open_problem_penalty = 0.0
+            empty_rca_penalty = 0.0
         else:
-            rca_rate = (
-                prob_svc["RCA_Completed_Flag"].mean()
-                if "RCA_Completed_Flag" in prob_svc.columns
-                else 0.0
-            )
+            if "RCA_Completed_Flag" in prob_svc.columns:
+                rca_rate = prob_svc["RCA_Completed_Flag"].mean()
+            else:
+                rca_rate = 0.0
             
             rca_text_fill_rate = 0.0
             if "Root_Cause_Text" in prob_svc.columns:
                  rca_text_filled = prob_svc["Root_Cause_Text"].replace("", np.nan).notna().sum()
-                 rca_text_fill_rate = rca_text_filled / len(prob_svc) if len(prob_svc) > 0 else 0.0
+                 if len(prob_svc) > 0:
+                     rca_text_fill_rate = rca_text_filled / len(prob_svc)
                  
             empty_rca_penalty = max(0.0, rca_rate - rca_text_fill_rate)
             
-            known_error_rate = (
-                prob_svc["Known_Error_Flag"].mean()
-                if "Known_Error_Flag" in prob_svc.columns
-                else 0.0
-            )
+            if "Known_Error_Flag" in prob_svc.columns:
+                known_error_rate = prob_svc["Known_Error_Flag"].mean()
+            else:
+                known_error_rate = 0.0
             
-            workaround_rate = (
-                prob_svc["Workaround_Available"].mean()
-                if "Workaround_Available" in prob_svc.columns
-                else 0.0
-            )
+            if "Workaround_Available" in prob_svc.columns:
+                workaround_rate = prob_svc["Workaround_Available"].mean()
+            else:
+                workaround_rate = 0.0
             
-            permanent_fix_rate = (
-                prob_svc["Permanent_Fix_Flag"].mean()
-                if "Permanent_Fix_Flag" in prob_svc.columns
-                else 0.0
-            )
+            if "Permanent_Fix_Flag" in prob_svc.columns:
+                permanent_fix_rate = prob_svc["Permanent_Fix_Flag"].mean()
+            else:
+                permanent_fix_rate = 0.0
             
-            state = (
-                prob_svc["State"].astype(str).str.lower()
-                if "State" in prob_svc.columns
-                else pd.Series(dtype=str)
-            )
+            if "State" in prob_svc.columns:
+                state = prob_svc["State"].astype(str).str.lower()
+            else:
+                state = pd.Series(dtype=str)
             
-            open_problem_penalty = (
-                (~state.isin(["closed", "resolved", "complete", "completed"])).mean()
-                if not state.empty
-                else 0.0
-            )
+            if not state.empty:
+                open_problem_penalty = (~state.isin(["closed", "resolved", "complete", "completed"])).mean()
+            else:
+                open_problem_penalty = 0.0
             
             closed_mask = state.isin(["closed", "resolved", "complete", "completed"])
             closed_prbs = prob_svc[closed_mask]
@@ -432,6 +449,14 @@ def _problem_signals_by_service(inc: pd.DataFrame, probs: pd.DataFrame) -> pd.Da
                     rca_fidelity = 0.0
             elif not prob_svc.empty:
                 rca_fidelity = 0.5
+                
+            # TELEMETRY RICHNESS MODIFIER: Reward organizations mapping extra custom fields
+            if dynamic_cols:
+                valid_dynamic_cols = [c for c in dynamic_cols if c in prob_svc.columns]
+                if valid_dynamic_cols:
+                    fill_rate = prob_svc[valid_dynamic_cols].replace("", np.nan).notna().mean().mean()
+                    # Boost fidelity by up to 25% for high operational discipline
+                    rca_fidelity = min(1.0, rca_fidelity + (fill_rate * 0.25))
             
         missing_problem_penalty = (1.0 - linked_ratio) * min(incident_count * 0.08, 1.0)
         missing_rca_penalty = 1.0 - rca_rate
@@ -456,30 +481,61 @@ def _problem_signals_by_service(inc: pd.DataFrame, probs: pd.DataFrame) -> pd.Da
         
     return pd.DataFrame(rows)
 
-def _extract_rca_themes(probs: pd.DataFrame) -> pd.DataFrame:
+def _extract_rca_themes(probs: pd.DataFrame, dynamic_cols: List[str] = None) -> pd.DataFrame:
+    cols = ["Service", "Problem_Count", "Documented_Themes"]
+    if dynamic_cols: 
+        cols.extend(dynamic_cols)
+        
     if probs is None or probs.empty or "Root_Cause_Text" not in probs.columns:
-        return pd.DataFrame(columns=["Service", "Problem_Count", "Documented_Themes"])
+        return pd.DataFrame(columns=cols)
 
     valid = probs[probs["Root_Cause_Text"].astype(str).str.strip().replace("nan", "") != ""]
     if valid.empty:
-        return pd.DataFrame(columns=["Service", "Problem_Count", "Documented_Themes"])
+        return pd.DataFrame(columns=cols)
 
-    grouped = valid.groupby("Service_Anchor").agg(
-        Problem_Count=("Problem_ID", "nunique"),
-        Documented_Themes=("Root_Cause_Text", lambda x: " | ".join(x.astype(str).str.strip().unique()[:3]))
-    ).reset_index()
+    agg_dict = {
+        "Problem_ID": "nunique",
+        "Root_Cause_Text": lambda x: " | ".join(x.astype(str).str.strip().unique()[:3])
+    }
     
-    return grouped.rename(columns={"Service_Anchor": "Service"}).sort_values("Problem_Count", ascending=False)
+    if dynamic_cols:
+        for dc in dynamic_cols:
+            if dc in valid.columns:
+                agg_dict[dc] = lambda x: " | ".join(x.astype(str).str.strip().replace("nan", "").unique()[:3])
+
+    grouped = valid.groupby("Service_Anchor").agg(agg_dict).reset_index()
+    
+    grouped.rename(
+        columns={
+            "Service_Anchor": "Service", 
+            "Problem_ID": "Problem_Count", 
+            "Root_Cause_Text": "Documented_Themes"
+        }, 
+        inplace=True
+    )
+    
+    return grouped.sort_values("Problem_Count", ascending=False)
 
 def _build_rca_pareto(probs: pd.DataFrame) -> pd.DataFrame:
-    if probs is None or probs.empty or "Root_Cause_Text" not in probs.columns:
+    if probs is None or probs.empty:
         return pd.DataFrame(columns=["Theme", "Frequency", "Cumulative_Pct"])
         
-    valid = probs[probs["Root_Cause_Text"].astype(str).str.strip().replace("nan", "") != ""]
+    # Prefer structured Category/Code for the Pareto Chart, fallback to Text
+    use_col = "Root_Cause_Text"
+    if "Root_Cause_Category" in probs.columns:
+        valid_cats = probs["Root_Cause_Category"].astype(str).str.strip().replace("nan", "")
+        if valid_cats[valid_cats != ""].any():
+            use_col = "Root_Cause_Category"
+
+    if use_col not in probs.columns:
+         return pd.DataFrame(columns=["Theme", "Frequency", "Cumulative_Pct"])
+         
+    valid = probs[probs[use_col].astype(str).str.strip().replace("nan", "") != ""]
     if valid.empty:
         return pd.DataFrame(columns=["Theme", "Frequency", "Cumulative_Pct"])
         
-    valid.loc[:, "Theme"] = valid["Root_Cause_Text"].astype(str).str.strip().str.title()
+    valid.loc[:, "Theme"] = valid[use_col].astype(str).str.strip().str.title()
+    
     pareto = valid.groupby("Theme").size().reset_index(name="Frequency")
     pareto = pareto.sort_values("Frequency", ascending=False).head(10).reset_index(drop=True)
     pareto["Cumulative_Pct"] = (pareto["Frequency"].cumsum() / pareto["Frequency"].sum() * 100).round(1)
@@ -491,11 +547,14 @@ def _analyze_trust_gap(roll: pd.DataFrame) -> Tuple[pd.DataFrame, str]:
         return pd.DataFrame(), "Insufficient priority data to calculate business trust gap."
 
     df = roll[["Service_Anchor", "high_urgency_count", "low_urgency_count"]].copy()
-    df.rename(columns={
-        "Service_Anchor": "Service",
-        "high_urgency_count": "Active_Disruption_P1_P2",
-        "low_urgency_count": "Silent_Friction_P3_P5"
-    }, inplace=True)
+    df.rename(
+        columns={
+            "Service_Anchor": "Service",
+            "high_urgency_count": "Active_Disruption_P1_P2",
+            "low_urgency_count": "Silent_Friction_P3_P5"
+        }, 
+        inplace=True
+    )
 
     total_crit = int(df["Active_Disruption_P1_P2"].sum())
     total_fric = int(df["Silent_Friction_P3_P5"].sum())
@@ -528,6 +587,7 @@ def _build_automation_strike_zone(inc: pd.DataFrame, req: pd.DataFrame) -> pd.Da
         # 1. System Alerts -> Automated Remediation
         alert_mask = channel_series.isin(["alert", "event", "system", "integration", "api"])
         alerts = inc[alert_mask]
+        
         if not alerts.empty:
             alert_grouped = alerts.groupby("Service_Anchor").size().reset_index(name="Volume")
             alert_grouped = alert_grouped.sort_values("Volume", ascending=False).head(3)
@@ -544,6 +604,7 @@ def _build_automation_strike_zone(inc: pd.DataFrame, req: pd.DataFrame) -> pd.Da
         # 2. Manual Toil -> Tier 1 Deflection
         manual_mask = ~alert_mask & (channel_series != "unknown") & (channel_series != "nan") & (channel_series != "")
         manuals = inc[manual_mask]
+        
         if not manuals.empty:
             manual_grouped = manuals.groupby("Service_Anchor").size().reset_index(name="Volume")
             manual_grouped = manual_grouped.sort_values("Volume", ascending=False).head(3)
@@ -572,10 +633,26 @@ def _build_automation_strike_zone(inc: pd.DataFrame, req: pd.DataFrame) -> pd.Da
             
     df = pd.DataFrame(rows)
     if df.empty:
-        return pd.DataFrame(columns=["Target_Service", "Automation_Type", "Signal_Source", "Volume", "Wasted_Hours", "Mandate"])
+        return pd.DataFrame(
+            columns=[
+                "Target_Service", 
+                "Automation_Type", 
+                "Signal_Source", 
+                "Volume", 
+                "Wasted_Hours", 
+                "Mandate"
+            ]
+        )
+        
     return df.sort_values("Wasted_Hours", ascending=False).head(6)
 
-def _build_rollup(inc: pd.DataFrame, changes: pd.DataFrame, probs: pd.DataFrame) -> pd.DataFrame:
+def _build_rollup(
+    inc: pd.DataFrame, 
+    changes: pd.DataFrame, 
+    probs: pd.DataFrame, 
+    dynamic_cols: List[str] = None
+) -> pd.DataFrame:
+    
     base = inc.groupby("Service_Anchor", dropna=False).agg(
         recurrence=("Service_Anchor", "count"),
         high_urgency_count=("Is_High_Urgency", "sum"),
@@ -602,10 +679,18 @@ def _build_rollup(inc: pd.DataFrame, changes: pd.DataFrame, probs: pd.DataFrame)
         base["failed_change_rate"] = 0.0
         base["rollback_rate"] = 0.0
         
-    problem_roll = _problem_signals_by_service(inc, probs)
+    problem_roll = _problem_signals_by_service(inc, probs, dynamic_cols)
     base = base.merge(problem_roll, on="Service_Anchor", how="left")
     
-    for c in ["change_count", "failed_change_rate", "rollback_rate", "Problem_Gap_Risk", "RCA_Completion_Rate"]:
+    cols_to_fill = [
+        "change_count", 
+        "failed_change_rate", 
+        "rollback_rate", 
+        "Problem_Gap_Risk", 
+        "RCA_Completion_Rate"
+    ]
+    
+    for c in cols_to_fill:
         base[c] = pd.to_numeric(base[c], errors="coerce").fillna(0.0)
         
     base["mttr_hours"] = pd.to_numeric(base["mttr_hours"], errors="coerce").fillna(0.0)
@@ -649,8 +734,10 @@ def _build_service_risk_df(roll: pd.DataFrame, top_n: int = 10) -> pd.DataFrame:
     conf_score = (roll["assignment_hygiene"].fillna(1.0) * 50.0) + (roll["RCA_Fidelity"].fillna(0.5) * 50.0)
     
     def _get_conf_label(s: float) -> str:
-        if s >= 85.0: return "High"
-        elif s >= 60.0: return "Medium"
+        if s >= 85.0:
+            return "High"
+        elif s >= 60.0:
+            return "Medium"
         return "Low"
         
     data_confidence = conf_score.apply(_get_conf_label)
@@ -691,16 +778,30 @@ def _build_domain_scores(service_risk_df: pd.DataFrame) -> Dict[str, float]:
         }
         
     service_resilience = np.clip(
-        100 - (0.40 * service_risk_df["MTTR_Drag_Risk"].mean() + 0.30 * service_risk_df["Reopen_Churn_Risk"].mean() + 0.30 * service_risk_df["Execution_Churn_Risk"].mean()),
+        100 - (
+            0.40 * service_risk_df["MTTR_Drag_Risk"].mean() 
+            + 0.30 * service_risk_df["Reopen_Churn_Risk"].mean() 
+            + 0.30 * service_risk_df["Execution_Churn_Risk"].mean()
+        ),
         0,
         100,
     )
-    change_governance = np.clip(100 - service_risk_df["Change_Collision_Risk"].mean(), 0, 100)
+    
+    change_governance = np.clip(
+        100 - service_risk_df["Change_Collision_Risk"].mean(), 
+        0, 
+        100
+    )
+    
     structural_risk_debt = np.clip(
-        100 - (0.55 * service_risk_df["Recurrence_Risk"].mean() + 0.45 * service_risk_df["Problem_Gap_Risk"].mean()),
+        100 - (
+            0.55 * service_risk_df["Recurrence_Risk"].mean() 
+            + 0.45 * service_risk_df["Problem_Gap_Risk"].mean()
+        ),
         0,
         100,
     )
+    
     reliability_momentum = np.clip(
         100
         - (
@@ -767,7 +868,10 @@ def _build_sip_candidates(service_risk_df: pd.DataFrame, roll: pd.DataFrame, top
             parts.append("change instability")
         if _safe_float(row.get("Problem_Gap_Risk", 0)) >= 60:
             parts.append("structural learning gap")
-        return " + ".join(parts) if parts else "multi factor stability exposure"
+            
+        if parts:
+            return " + ".join(parts)
+        return "multi factor stability exposure"
         
     merged["Priority_Label"] = merged["SIP_Priority_Score"].apply(_label)
     merged["Suggested_Theme"] = merged["category"].fillna("Stability Improvement").astype(str)
@@ -796,41 +900,50 @@ def run_osil(
     changes_df: Optional[pd.DataFrame] = None,
     problems_df: Optional[pd.DataFrame] = None,
     requests_df: Optional[pd.DataFrame] = None,
+    dynamic_prb_cols: List[str] = None
 ) -> Dict[str, Any]:
+    
     inc, anchor_used = _prepare_incidents(incidents_df)
     chg = _prepare_changes(changes_df)
     prb = _prepare_problems(problems_df)
     req = _prepare_requests(requests_df)
     
     inc = _detect_change_collision(inc, chg)
-    roll = _build_rollup(inc, chg, prb)
+    roll = _build_rollup(inc, chg, prb, dynamic_prb_cols)
     service_risk_df = _build_service_risk_df(roll, top_n=10)
     domain_scores = _build_domain_scores(service_risk_df)
     
-    rca_themes_df = _extract_rca_themes(prb)
+    rca_themes_df = _extract_rca_themes(prb, dynamic_prb_cols)
     rca_pareto_df = _build_rca_pareto(prb)
     trust_gap_df, trust_gap_narrative = _analyze_trust_gap(roll)
     automation_df = _build_automation_strike_zone(inc, req)
     
-    bvsi = round(float(np.mean(list(domain_scores.values()))), 1) if domain_scores else 0.0
+    if domain_scores:
+        bvsi = round(float(np.mean(list(domain_scores.values()))), 1)
+    else:
+        bvsi = 0.0
+        
     posture = _operating_posture(bvsi)
-    weakest_domain = min(domain_scores.items(), key=lambda x: x[1])[0] if domain_scores else "Service Resilience"
     
-    incident_signal = (
-        "Incident restoration efficiency appears controlled."
-        if domain_scores["Service Resilience"] >= 70
-        else "Incident restoration signals show visible drag and execution churn."
-    )
-    problem_signal = (
-        "Structural learning signals are improving."
-        if domain_scores["Structural Risk Debt™"] >= 70
-        else "Structural learning signals remain inconsistent."
-    )
-    change_signal = (
-        "Change governance appears steady."
-        if domain_scores["Change Governance"] >= 70
-        else "Change driven instability is contributing to exposure."
-    )
+    if domain_scores:
+        weakest_domain = min(domain_scores.items(), key=lambda x: x[1])[0]
+    else:
+        weakest_domain = "Service Resilience"
+    
+    if domain_scores.get("Service Resilience", 0) >= 70:
+        incident_signal = "Incident restoration efficiency appears controlled."
+    else:
+        incident_signal = "Incident restoration signals show visible drag and execution churn."
+        
+    if domain_scores.get("Structural Risk Debt™", 0) >= 70:
+        problem_signal = "Structural learning signals are improving."
+    else:
+        problem_signal = "Structural learning signals remain inconsistent."
+        
+    if domain_scores.get("Change Governance", 0) >= 70:
+        change_signal = "Change governance appears steady."
+    else:
+        change_signal = "Change driven instability is contributing to exposure."
     
     exec_text = _executive_interpretation(
         bvsi,
@@ -847,21 +960,39 @@ def run_osil(
     if "Closed_Date" in inc.columns and isinstance(inc["Closed_Date"], pd.Series) and inc["Closed_Date"].notna().any():
         close_candidates.append(inc["Closed_Date"].max())
         
-    as_of = str(max(close_candidates).date()) if close_candidates else date.today().isoformat()
+    if close_candidates:
+        as_of = str(max(close_candidates).date())
+    else:
+        as_of = date.today().isoformat()
     
     readiness_checks = 0
     readiness_total = 11
-    readiness_checks += 1 if "Service" in inc.columns or "Service_Anchor" in inc.columns else 0
-    readiness_checks += 1 if "Opened_Date" in inc.columns else 0
-    readiness_checks += 1 if "Priority" in inc.columns else 0
-    readiness_checks += 1 if "State" in inc.columns else 0
-    readiness_checks += 1 if "Assignment_Group" in inc.columns else 0
-    readiness_checks += 1 if changes_df is not None and not changes_df.empty else 0
-    readiness_checks += 1 if changes_df is not None and not changes_df.empty and "Change_Type" in changes_df.columns else 0
-    readiness_checks += 1 if problems_df is not None and not problems_df.empty else 0
-    readiness_checks += 1 if problems_df is not None and not problems_df.empty and "Root_Cause_Text" in problems_df.columns else 0
-    readiness_checks += 1 if problems_df is not None and not problems_df.empty and "Assignment_Group" in problems_df.columns else 0
-    readiness_checks += 1 if requests_df is not None and not requests_df.empty else 0
+    
+    if "Service" in inc.columns or "Service_Anchor" in inc.columns:
+        readiness_checks += 1
+    if "Opened_Date" in inc.columns:
+        readiness_checks += 1
+    if "Priority" in inc.columns:
+        readiness_checks += 1
+    if "State" in inc.columns:
+        readiness_checks += 1
+    if "Assignment_Group" in inc.columns:
+        readiness_checks += 1
+        
+    if changes_df is not None and not changes_df.empty:
+        readiness_checks += 1
+        if "Change_Type" in changes_df.columns:
+            readiness_checks += 1
+            
+    if problems_df is not None and not problems_df.empty:
+        readiness_checks += 1
+        if "Root_Cause_Text" in problems_df.columns:
+            readiness_checks += 1
+        if "Assignment_Group" in problems_df.columns:
+            readiness_checks += 1
+            
+    if requests_df is not None and not requests_df.empty:
+        readiness_checks += 1
     
     readiness_score = round((readiness_checks / readiness_total) * 100, 1)
     
@@ -894,7 +1025,4 @@ def run_osil(
         "automation_df": automation_df.copy(),
         "tenant_name": "Default",
         "preview_df": inc.head(20).copy(),
-        "incidents_enriched": inc.copy(),
-        "changes_prepared": chg.copy(),
-        "problems_prepared": prb.copy(),
     }
