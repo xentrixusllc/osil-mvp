@@ -450,12 +450,10 @@ def _problem_signals_by_service(
             elif not prob_svc.empty:
                 rca_fidelity = 0.5
                 
-            # TELEMETRY RICHNESS MODIFIER
             if dynamic_cols:
                 valid_dynamic_cols = [c for c in dynamic_cols if c in prob_svc.columns]
                 if valid_dynamic_cols:
                     fill_rate = prob_svc[valid_dynamic_cols].replace("", np.nan).notna().mean().mean()
-                    # Boost fidelity by up to 25% for high operational discipline
                     rca_fidelity = min(1.0, rca_fidelity + (fill_rate * 0.25))
             
         missing_problem_penalty = (1.0 - linked_ratio) * min(incident_count * 0.08, 1.0)
