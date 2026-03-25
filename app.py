@@ -713,7 +713,7 @@ def _build_pdf_payload(results: dict, tenant_name: str, history_df: pd.DataFrame
         "rca_pareto_df": results.get("rca_pareto_df", pd.DataFrame()),
         "domain_scores": results.get("domain_scores", {}),
         "svs_scores": results.get("svs_scores", {}), 
-        "svc_scores": results.get("svc_scores", {}),
+        "svc_scores": results.get("svc_scores", {}), 
         "service_risk_top10": results.get("top10", pd.DataFrame()),
         "sip_candidates": results.get("sip_view", pd.DataFrame()),
         "automation_df": results.get("automation_df", pd.DataFrame()),
@@ -838,7 +838,6 @@ def main():
                 st.markdown("### Problem Mapping")
                 prb_mapping = _render_mapping_ui(prb_preview, PROBLEM_MAPPING_SPEC, "Map Problem Columns", "prbmap")
                 
-                # TELEMETRY RICHNESS MODIFIER: The Dynamic Injection UI
                 unmapped_prb = [c for c in prb_preview.columns if c not in prb_mapping.values()]
                 if unmapped_prb:
                     st.markdown("#### ⚡ Dynamic Telemetry Injection")
@@ -895,7 +894,6 @@ def main():
 
                 if prb_file is not None:
                     problems_df = safe_read_csv(prb_file)
-                    # Pass dynamic columns through so the engine can calculate their fill-rate
                     rename_map = {v: k for k, v in prb_mapping.items() if v}
                     for dyn_col in dynamic_prb_cols: 
                         rename_map[dyn_col] = dyn_col 
@@ -994,7 +992,7 @@ def main():
     st.subheader("Executive Interpretation")
     st.write(results["exec_text"])
     
-    # --- ITIL 4 SERVICE VALUE SYSTEM DASHBOARD ---
+    # --- ADDED: THE ITIL 4 SERVICE VALUE SYSTEM DASHBOARD ---
     st.divider()
     st.subheader("ITIL 4 Service Value System Assessment")
     st.markdown("Translating technical friction into enterprise operating model health based on ITIL 4 principles.")
@@ -1015,24 +1013,60 @@ def main():
         <b>Guiding Principles:</b> Evaluates the trust gap and automation strike zones ('Focus on Value' and 'Optimize & Automate'). High scores prove a modern, value-driven culture.
         </div>
         """, unsafe_allow_html=True)
-
-    # --- ITIL 4 SERVICE VALUE CHAIN DASHBOARD ---
+        
+    # --- ADDED: ITIL 4 SERVICE VALUE CHAIN (SVC) VISUAL DASHBOARD ---
     st.markdown("<br>", unsafe_allow_html=True)
     st.subheader("ITIL 4 Service Value Chain (SVC)")
-    st.markdown("Isolating operational friction into specific ITIL 4 value chain activities.")
+    st.markdown("Isolating operational friction into specific ITIL 4 value chain activities. **Green** (Controlled), **Orange** (Exposed), **Red** (Critical).")
     
     svc = results.get("svc_scores", {})
     if svc:
-        svc1, svc2, svc3 = st.columns(3)
-        svc1.metric("Plan", f"{svc.get('Plan', 0):.1f}")
-        svc2.metric("Improve", f"{svc.get('Improve', 0):.1f}")
-        svc3.metric("Engage", f"{svc.get('Engage', 0):.1f}")
-
-        svc4, svc5, svc6 = st.columns(3)
-        svc4.metric("Design & Transition", f"{svc.get('Design & Transition', 0):.1f}")
-        svc5.metric("Obtain / Build", f"{svc.get('Obtain/Build', 0):.1f}")
-        svc6.metric("Deliver & Support", f"{svc.get('Deliver & Support', 0):.1f}")
-
+        def _get_svc_color(score):
+            if score >= 70: return "#059669" # Emerald Green
+            if score >= 55: return "#D97706" # Amber/Orange
+            return "#DC2626" # Red
+            
+        c_plan = _get_svc_color(svc.get('Plan', 0))
+        c_imp = _get_svc_color(svc.get('Improve', 0))
+        c_eng = _get_svc_color(svc.get('Engage', 0))
+        c_dt = _get_svc_color(svc.get('Design & Transition', 0))
+        c_ob = _get_svc_color(svc.get('Obtain/Build', 0))
+        c_ds = _get_svc_color(svc.get('Deliver & Support', 0))
+        
+        svc_html = f"""
+        <div style="background-color: #F8FAFC; padding: 20px; border-radius: 8px; border: 1px solid #E2E8F0; margin-top: 10px;">
+            <div style="display: flex; flex-direction: column; gap: 10px;">
+                <div style="background-color: {c_plan}; padding: 12px; border-radius: 6px; text-align: center; color: white; font-weight: bold; font-size: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+                    Plan ({svc.get('Plan', 0):.1f})
+                </div>
+                
+                <div style="display: flex; gap: 10px; min-height: 180px;">
+                    <div style="flex: 1; background-color: {c_eng}; padding: 12px; border-radius: 6px; display: flex; flex-direction: column; align-items: center; justify-content: center; color: white; font-weight: bold; font-size: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+                        <div>Engage</div>
+                        <div style="font-size: 14px; font-weight: normal; margin-top: 4px;">({svc.get('Engage', 0):.1f})</div>
+                    </div>
+                    
+                    <div style="flex: 2; display: flex; flex-direction: column; gap: 10px;">
+                        <div style="flex: 1; background-color: {c_dt}; border-radius: 6px; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; font-size: 15px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+                            Design & Transition ({svc.get('Design & Transition', 0):.1f})
+                        </div>
+                        <div style="flex: 1; background-color: {c_ob}; border-radius: 6px; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; font-size: 15px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+                            Obtain / Build ({svc.get('Obtain/Build', 0):.1f})
+                        </div>
+                        <div style="flex: 1; background-color: {c_ds}; border-radius: 6px; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; font-size: 15px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+                            Deliver & Support ({svc.get('Deliver & Support', 0):.1f})
+                        </div>
+                    </div>
+                </div>
+                
+                <div style="background-color: {c_imp}; padding: 12px; border-radius: 6px; text-align: center; color: white; font-weight: bold; font-size: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+                    Improve ({svc.get('Improve', 0):.1f})
+                </div>
+            </div>
+        </div>
+        """
+        st.markdown(svc_html, unsafe_allow_html=True)
+        
         st.markdown("""
         <div style="margin-top: 16px; font-size: 13px; color: #334155;">
         <b>Deliver & Support:</b> Driven by Resilience (MTTR, Churn, Reopen Rates).<br>
