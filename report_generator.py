@@ -655,6 +655,7 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
         bvsi = _safe_float(payload.get("bvsi", 0))
         posture = str(payload.get("posture", _get_posture_from_bvsi(bvsi)))
         domain_scores = payload.get("domain_scores", {}) or {}
+        svs_scores = payload.get("svs_scores", {}) or {}
         service_risk_df = _safe_df(payload.get("service_risk_top10"))
         sip_candidates = _safe_df(payload.get("sip_candidates"))
         automation_df = _safe_df(payload.get("automation_df"))
@@ -853,6 +854,69 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
         else:
             story.append(KeepTogether(right_col_elements))
 
+        # --- ADDED: THE ITIL 4 SERVICE VALUE SYSTEM PAGE ---
+        story.append(Spacer(1, 24))
+        
+        if svs_scores:
+            svs_intro = (
+                "Translating technical friction into enterprise operating model health based on ITIL 4 principles."
+            )
+            
+            svs_rows = [
+                [
+                    Paragraph("ITIL 4 Pillar", styles["TableHeader"]), 
+                    Paragraph("Score", styles["TableHeader"]), 
+                    Paragraph("Executive Interpretation", styles["TableHeader"])
+                ]
+            ]
+            
+            svs_definitions = {
+                "Governance": "Evaluates enterprise release policies and change collision rates. High scores indicate strong leadership direction executing cleanly at the engineering layer.",
+                "Continual Improvement": "Evaluates structural risk debt and problem learning gaps. High scores prove the organization is proactively eliminating technical debt rather than reactive firefighting.",
+                "Practices": "Evaluates assignment hygiene, execution churn, and incident resolution. High scores indicate structured, efficient ITSM execution.",
+                "Guiding Principles": "Evaluates the trust gap and automation strike zones ('Focus on Value' and 'Optimize & Automate'). High scores prove a modern, value-driven culture."
+            }
+            
+            for key, definition in svs_definitions.items():
+                score = _safe_float(svs_scores.get(key, 0), 0)
+                score_color = colors.HexColor("#059669") if score >= 70 else colors.HexColor("#D97706") if score >= 55 else colors.HexColor("#DC2626")
+                
+                svs_rows.append([
+                    Paragraph(key, styles["TableCellBold"]),
+                    Paragraph(
+                        f"{score:.1f}", 
+                        ParagraphStyle(name='score', parent=styles["TableCell"], textColor=score_color, fontName='Helvetica-Bold')
+                    ),
+                    Paragraph(definition, styles["TableCell"])
+                ])
+                
+            svs_table = Table(svs_rows, colWidths=[1.5*inch, 0.7*inch, 4.8*inch])
+            svs_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#0F172A")),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+                ('ALIGN', (0, 0), (0, -1), 'LEFT'),
+                ('ALIGN', (1, 0), (1, -1), 'CENTER'),
+                ('ALIGN', (2, 0), (2, -1), 'LEFT'),
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                ('LEFTPADDING', (0, 0), (-1, -1), 8),
+                ('RIGHTPADDING', (0, 0), (-1, -1), 8),
+                ('TOPPADDING', (0, 0), (-1, -1), 10),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 10),
+                ('LINEBELOW', (0, 0), (-1, 0), 2, colors.HexColor("#0F172A")),
+            ] + [
+                ('LINEBELOW', (0, i), (-1, i), 0.5, colors.HexColor("#E2E8F0")) for i in range(1, len(svs_rows))
+            ] + [
+                ('BACKGROUND', (0, i), (-1, i), colors.HexColor("#F8FAFC")) for i in range(2, len(svs_rows), 2)
+            ]))
+            
+            story.append(KeepTogether([
+                Paragraph("ITIL 4 Service Value System Assessment", styles["SectionHeader"]),
+                Paragraph(svs_intro, styles["ExecutiveBody"]),
+                Spacer(1, 8),
+                svs_table
+            ]))
+        # ----------------------------------------------------
+
         story.append(PageBreak())
 
         story.append(Paragraph("Service Improvement Priorities & Confidence Lens", styles["PageHeader"]))
@@ -919,6 +983,7 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
             
             story.append(KeepTogether([
                 Paragraph("Immediate Executive Actions", styles["SectionHeader"]),
+                Spacer(1, 8),
                 top3_table
             ]))
             
@@ -966,6 +1031,7 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
             
             story.append(KeepTogether([
                 Paragraph("Full SIP Portfolio", styles["SectionHeader"]),
+                Spacer(1, 8),
                 sip_table
             ]))
 
@@ -1156,7 +1222,7 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
             for _, row in rca_themes_df.iterrows():
                 row_data = []
                 for idx, c in enumerate(display_cols):
-                    # TRUNCATION PROTOCOL: Prevent Single-Row Crash
+                    # TRUNCATION PROTOCOL
                     val_str = str(row.get(c, ""))
                     if len(val_str) > 600:
                         val_str = val_str[:600] + " ... [Truncated]"
