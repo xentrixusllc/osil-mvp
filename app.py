@@ -393,7 +393,6 @@ def _validate_mapping(mapping: Dict[str, Optional[str]], spec: Dict[str, Dict[st
 def plot_tenant_history(df: pd.DataFrame):
     """Generate the primary executive macro trendline (BVSI vs Debt)"""
     df = df.copy()
-    # Converted to highly compact MM/YYYY format to save space
     df["display_date"] = pd.to_datetime(df["run_date"]).dt.strftime('%m/%Y')
     
     fig, ax = plt.subplots(figsize=(8, 4.5), dpi=120)
@@ -424,7 +423,6 @@ def plot_tenant_history(df: pd.DataFrame):
     ax.spines['right'].set_visible(False)
     ax.set_ylabel("Index Score", fontweight='bold', color='#0F172A', fontsize=9)
     
-    # Removed rotation completely, text is centered and flat
     plt.xticks(rotation=0, ha='center', fontsize=8, fontweight='bold', color='#334155')
     plt.yticks(fontsize=9, color='#334155')
     plt.title("Macro Trajectory: Stability vs. Debt", fontweight='bold', color='#0F172A', pad=15, fontsize=12)
@@ -441,7 +439,6 @@ def plot_tenant_history(df: pd.DataFrame):
             fontsize=9
         )
                     
-    # Legend pushed down with layout boundaries secured
     ax.legend(frameon=False, loc='upper center', bbox_to_anchor=(0.5, -0.20), ncol=2, fontsize=9)
     plt.tight_layout(rect=[0, 0.05, 1, 1])
     return fig
@@ -449,7 +446,6 @@ def plot_tenant_history(df: pd.DataFrame):
 def plot_domain_history(df: pd.DataFrame):
     """Generate the secondary diagnostic trendline (The 4 Domains)"""
     df = df.copy()
-    # Converted to highly compact MM/YYYY format to save space
     df["display_date"] = pd.to_datetime(df["run_date"]).dt.strftime('%m/%Y')
     
     fig, ax = plt.subplots(figsize=(8, 4.5), dpi=120)
@@ -463,12 +459,10 @@ def plot_domain_history(df: pd.DataFrame):
     ax.spines['top'].set_visible(False)
     ax.spines['right'].set_visible(False)
     
-    # Removed rotation completely, text is centered and flat
     plt.xticks(rotation=0, ha='center', fontsize=8, fontweight='bold', color='#334155')
     plt.yticks(fontsize=9, color='#334155')
     plt.title("Diagnostic Trajectory: Domain Breakdown", fontweight='bold', color='#0F172A', pad=15, fontsize=12)
                     
-    # Legend pushed down with layout boundaries secured
     ax.legend(frameon=False, loc='upper center', bbox_to_anchor=(0.5, -0.20), ncol=4, fontsize=8)
     plt.tight_layout(rect=[0, 0.05, 1, 1])
     return fig
@@ -718,6 +712,7 @@ def _build_pdf_payload(results: dict, tenant_name: str, history_df: pd.DataFrame
         "rca_themes_df": results.get("rca_themes_df", pd.DataFrame()),
         "rca_pareto_df": results.get("rca_pareto_df", pd.DataFrame()),
         "domain_scores": results.get("domain_scores", {}),
+        "svs_scores": results.get("svs_scores", {}), # Injected ITIL 4 mappings
         "service_risk_top10": results.get("top10", pd.DataFrame()),
         "sip_candidates": results.get("sip_view", pd.DataFrame()),
         "automation_df": results.get("automation_df", pd.DataFrame()),
@@ -998,6 +993,30 @@ def main():
     st.subheader("Executive Interpretation")
     st.write(results["exec_text"])
     
+    # --- ADDED: THE ITIL 4 SERVICE VALUE SYSTEM DASHBOARD ---
+    st.divider()
+    st.subheader("ITIL 4 Service Value System Assessment")
+    st.markdown("Translating technical friction into enterprise operating model health based on ITIL 4 principles.")
+    
+    svs = results.get("svs_scores", {})
+    if svs:
+        sc1, sc2, sc3, sc4 = st.columns(4)
+        sc1.metric("Governance", f"{svs.get('Governance', 0):.1f}")
+        sc2.metric("Continual Improvement", f"{svs.get('Continual Improvement', 0):.1f}")
+        sc3.metric("Practices", f"{svs.get('Practices', 0):.1f}")
+        sc4.metric("Guiding Principles", f"{svs.get('Guiding Principles', 0):.1f}")
+        
+        st.markdown("""
+        <div style="margin-top: 16px; font-size: 13px; color: #334155;">
+        <b>Governance:</b> Evaluates enterprise release policies and change collision rates. High scores indicate strong leadership direction executing cleanly at the engineering layer.<br>
+        <b>Continual Improvement:</b> Evaluates structural risk debt and problem learning gaps. High scores prove the organization is proactively eliminating technical debt rather than reactive firefighting.<br>
+        <b>Practices:</b> Evaluates assignment hygiene, execution churn, and incident resolution. High scores indicate structured, efficient ITSM execution.<br>
+        <b>Guiding Principles:</b> Evaluates the trust gap and automation strike zones ('Focus on Value' and 'Optimize & Automate'). High scores prove a modern, value-driven culture.
+        </div>
+        """, unsafe_allow_html=True)
+    # --------------------------------------------------------
+
+    st.divider()
     st.markdown("#### Xentrixus OSIL™ Trust Gap Analysis")
     st.info(results["trust_gap_narrative"])
     
