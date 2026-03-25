@@ -838,6 +838,7 @@ def main():
                 st.markdown("### Problem Mapping")
                 prb_mapping = _render_mapping_ui(prb_preview, PROBLEM_MAPPING_SPEC, "Map Problem Columns", "prbmap")
                 
+                # TELEMETRY RICHNESS MODIFIER: The Dynamic Injection UI
                 unmapped_prb = [c for c in prb_preview.columns if c not in prb_mapping.values()]
                 if unmapped_prb:
                     st.markdown("#### ⚡ Dynamic Telemetry Injection")
@@ -894,6 +895,7 @@ def main():
 
                 if prb_file is not None:
                     problems_df = safe_read_csv(prb_file)
+                    # Pass dynamic columns through so the engine can calculate their fill-rate
                     rename_map = {v: k for k, v in prb_mapping.items() if v}
                     for dyn_col in dynamic_prb_cols: 
                         rename_map[dyn_col] = dyn_col 
@@ -992,7 +994,7 @@ def main():
     st.subheader("Executive Interpretation")
     st.write(results["exec_text"])
     
-    # --- ADDED: THE ITIL 4 SERVICE VALUE SYSTEM DASHBOARD ---
+    # --- START SURGICAL INJECTION: ITIL 4 SVS & SVC DASHBOARDS ---
     st.divider()
     st.subheader("ITIL 4 Service Value System Assessment")
     st.markdown("Translating technical friction into enterprise operating model health based on ITIL 4 principles.")
@@ -1000,10 +1002,10 @@ def main():
     svs = results.get("svs_scores", {})
     if svs:
         sc1, sc2, sc3, sc4 = st.columns(4)
-        sc1.metric("Governance", f"{svs.get('Governance', 0):.1f}")
-        sc2.metric("Continual Improvement", f"{svs.get('Continual Improvement', 0):.1f}")
-        sc3.metric("Practices", f"{svs.get('Practices', 0):.1f}")
-        sc4.metric("Guiding Principles", f"{svs.get('Guiding Principles', 0):.1f}")
+        sc1.metric("Governance", f"{svs.get('Governance', 0.0):.1f}")
+        sc2.metric("Continual Improvement", f"{svs.get('Continual Improvement', 0.0):.1f}")
+        sc3.metric("Practices", f"{svs.get('Practices', 0.0):.1f}")
+        sc4.metric("Guiding Principles", f"{svs.get('Guiding Principles', 0.0):.1f}")
         
         st.markdown("""
         <div style="margin-top: 16px; font-size: 13px; color: #334155;">
@@ -1014,7 +1016,6 @@ def main():
         </div>
         """, unsafe_allow_html=True)
         
-    # --- ADDED: ITIL 4 SERVICE VALUE CHAIN (SVC) VISUAL DASHBOARD ---
     st.markdown("<br>", unsafe_allow_html=True)
     st.subheader("ITIL 4 Service Value Chain (SVC)")
     st.markdown("Isolating operational friction into specific ITIL 4 value chain activities. **Green** (Controlled), **Orange** (Exposed), **Red** (Critical).")
@@ -1022,45 +1023,42 @@ def main():
     svc = results.get("svc_scores", {})
     if svc:
         def _get_svc_color(score):
-            if score >= 70: return "#059669" # Emerald Green
-            if score >= 55: return "#D97706" # Amber/Orange
-            return "#DC2626" # Red
+            if score >= 70: return "#059669" 
+            if score >= 55: return "#D97706" 
+            return "#DC2626" 
             
-        c_plan = _get_svc_color(svc.get('Plan', 0))
-        c_imp = _get_svc_color(svc.get('Improve', 0))
-        c_eng = _get_svc_color(svc.get('Engage', 0))
-        c_dt = _get_svc_color(svc.get('Design & Transition', 0))
-        c_ob = _get_svc_color(svc.get('Obtain/Build', 0))
-        c_ds = _get_svc_color(svc.get('Deliver & Support', 0))
+        c_plan = _get_svc_color(svc.get('Plan', 0.0))
+        c_imp = _get_svc_color(svc.get('Improve', 0.0))
+        c_eng = _get_svc_color(svc.get('Engage', 0.0))
+        c_dt = _get_svc_color(svc.get('Design & Transition', 0.0))
+        c_ob = _get_svc_color(svc.get('Obtain/Build', 0.0))
+        c_ds = _get_svc_color(svc.get('Deliver & Support', 0.0))
         
         svc_html = f"""
         <div style="background-color: #F8FAFC; padding: 20px; border-radius: 8px; border: 1px solid #E2E8F0; margin-top: 10px;">
             <div style="display: flex; flex-direction: column; gap: 10px;">
                 <div style="background-color: {c_plan}; padding: 12px; border-radius: 6px; text-align: center; color: white; font-weight: bold; font-size: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
-                    Plan ({svc.get('Plan', 0):.1f})
+                    Plan ({svc.get('Plan', 0.0):.1f})
                 </div>
-                
                 <div style="display: flex; gap: 10px; min-height: 180px;">
                     <div style="flex: 1; background-color: {c_eng}; padding: 12px; border-radius: 6px; display: flex; flex-direction: column; align-items: center; justify-content: center; color: white; font-weight: bold; font-size: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
                         <div>Engage</div>
-                        <div style="font-size: 14px; font-weight: normal; margin-top: 4px;">({svc.get('Engage', 0):.1f})</div>
+                        <div style="font-size: 14px; font-weight: normal; margin-top: 4px;">({svc.get('Engage', 0.0):.1f})</div>
                     </div>
-                    
                     <div style="flex: 2; display: flex; flex-direction: column; gap: 10px;">
                         <div style="flex: 1; background-color: {c_dt}; border-radius: 6px; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; font-size: 15px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
-                            Design & Transition ({svc.get('Design & Transition', 0):.1f})
+                            Design & Transition ({svc.get('Design & Transition', 0.0):.1f})
                         </div>
                         <div style="flex: 1; background-color: {c_ob}; border-radius: 6px; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; font-size: 15px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
-                            Obtain / Build ({svc.get('Obtain/Build', 0):.1f})
+                            Obtain / Build ({svc.get('Obtain/Build', 0.0):.1f})
                         </div>
                         <div style="flex: 1; background-color: {c_ds}; border-radius: 6px; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; font-size: 15px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
-                            Deliver & Support ({svc.get('Deliver & Support', 0):.1f})
+                            Deliver & Support ({svc.get('Deliver & Support', 0.0):.1f})
                         </div>
                     </div>
                 </div>
-                
                 <div style="background-color: {c_imp}; padding: 12px; border-radius: 6px; text-align: center; color: white; font-weight: bold; font-size: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
-                    Improve ({svc.get('Improve', 0):.1f})
+                    Improve ({svc.get('Improve', 0.0):.1f})
                 </div>
             </div>
         </div>
@@ -1077,7 +1075,7 @@ def main():
         <b>Obtain/Build:</b> Blended indicator of deployment safety and artifact resilience.
         </div>
         """, unsafe_allow_html=True)
-    # --------------------------------------------------------
+    # --- END SURGICAL INJECTION ---
 
     st.divider()
     st.markdown("#### Xentrixus OSIL™ Trust Gap Analysis")
