@@ -3,11 +3,13 @@ import io
 import re
 import textwrap
 from typing import Any, Dict, List, Optional
+
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import LETTER
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
@@ -195,9 +197,16 @@ def _build_radar_chart(domain_scores: Dict[str, float]) -> Optional[io.BytesIO]:
         ax.grid(True, linestyle='solid', alpha=0.2, color='#94A3B8')
         
         plt.tight_layout()
+        
         img = io.BytesIO()
-        plt.savefig(img, format='png', bbox_inches='tight', facecolor='white', 
-                   edgecolor='none', pad_inches=0.1)
+        plt.savefig(
+            img, 
+            format='png', 
+            bbox_inches='tight', 
+            facecolor='white', 
+            edgecolor='none', 
+            pad_inches=0.1
+        )
         plt.close(fig)
         img.seek(0)
         return img
@@ -214,7 +223,14 @@ def _build_heatmap(service_risk_df: pd.DataFrame) -> Optional[io.BytesIO]:
     if not all(c in df.columns for c in required):
         return None
     
-    risk_cols = ["Recurrence_Risk", "MTTR_Drag_Risk", "Execution_Churn_Risk", "Reopen_Churn_Risk", "Change_Collision_Risk"]
+    risk_cols = [
+        "Recurrence_Risk", 
+        "MTTR_Drag_Risk", 
+        "Execution_Churn_Risk", 
+        "Reopen_Churn_Risk", 
+        "Change_Collision_Risk"
+    ]
+    
     display_names = {
         "Recurrence_Risk": "Recurrence",
         "MTTR_Drag_Risk": "MTTR Drag", 
@@ -251,16 +267,36 @@ def _build_heatmap(service_risk_df: pd.DataFrame) -> Optional[io.BytesIO]:
             for j in range(len(hm.columns)):
                 val = int(round(hm.iloc[i, j], 0))
                 color = 'white' if val > 60 else '#0F172A'
-                ax.text(j, i, str(val), ha='center', va='center', 
-                       fontsize=10, color=color, fontweight='bold')
+                ax.text(
+                    j, 
+                    i, 
+                    str(val), 
+                    ha='center', 
+                    va='center', 
+                    fontsize=10, 
+                    color=color, 
+                    fontweight='bold'
+                )
         
-        ax.set_title('Service Risk Concentration', fontsize=13, fontweight='bold', 
-                    color='#0F172A', pad=15)
+        ax.set_title(
+            'Service Risk Concentration', 
+            fontsize=13, 
+            fontweight='bold', 
+            color='#0F172A', 
+            pad=15
+        )
         
         plt.tight_layout()
+        
         img = io.BytesIO()
-        plt.savefig(img, format='png', bbox_inches='tight', facecolor='white', 
-                   edgecolor='none', pad_inches=0.2)
+        plt.savefig(
+            img, 
+            format='png', 
+            bbox_inches='tight', 
+            facecolor='white', 
+            edgecolor='none', 
+            pad_inches=0.2
+        )
         plt.close(fig)
         img.seek(0)
         return img
@@ -274,7 +310,7 @@ def _build_pareto_image(df: pd.DataFrame) -> Optional[io.BytesIO]:
     try:
         fig, ax1 = plt.subplots(figsize=(7.0, 4.5), dpi=120)
         
-        labels = [str(x)[:22] + "..." if len(str(x)) > 22 else str(x) for x in df["Theme"]]
+        labels = [textwrap.fill(str(x)[:22] + "..." if len(str(x)) > 22 else str(x), width=18) for x in df["Theme"]]
         x_pos = np.arange(len(df))
         
         ax1.bar(x_pos, df["Frequency"], color="#3B82F6", width=0.55)
@@ -320,7 +356,15 @@ def _build_impact_matrix_image(service_risk_df: pd.DataFrame) -> Optional[io.Byt
         x_pos = np.arange(len(merged))
         labels = [textwrap.fill(str(x)[:20], width=12) for x in merged["Service"]]
         
-        bars = ax1.bar(x_pos, merged["Active_Disruption_P1_P2"], color="#DC2626", width=0.45, alpha=0.9, label="Active Disruption (P1/P2 Count)")
+        bars = ax1.bar(
+            x_pos, 
+            merged["Active_Disruption_P1_P2"], 
+            color="#DC2626", 
+            width=0.45, 
+            alpha=0.9, 
+            label="Active Disruption (P1/P2 Count)"
+        )
+        
         ax1.set_ylabel("Active Disruption Volume (P1 and P2)", color="#DC2626", fontweight="bold", fontsize=9)
         ax1.tick_params(axis="y", labelcolor="#DC2626")
         ax1.set_xticks(x_pos)
@@ -329,7 +373,16 @@ def _build_impact_matrix_image(service_risk_df: pd.DataFrame) -> Optional[io.Byt
         for bar in bars:
             yval = bar.get_height()
             if yval > 0:
-                ax1.text(bar.get_x() + bar.get_width()/2.0, yval + 0.05, f"{int(yval)}", ha='center', va='bottom', color='#DC2626', fontweight='bold', fontsize=9)
+                ax1.text(
+                    bar.get_x() + bar.get_width()/2.0, 
+                    yval + 0.05, 
+                    f"{int(yval)}", 
+                    ha='center', 
+                    va='bottom', 
+                    color='#DC2626', 
+                    fontweight='bold', 
+                    fontsize=9
+                )
         
         max_disruption = float(merged["Active_Disruption_P1_P2"].max())
         if max_disruption < 5:
@@ -338,13 +391,31 @@ def _build_impact_matrix_image(service_risk_df: pd.DataFrame) -> Optional[io.Byt
             ax1.set_ylim(0, max_disruption * 1.3)
 
         ax2 = ax1.twinx()
-        ax2.plot(x_pos, merged["Recurrence_Risk"], color="#0F172A", marker="o", linewidth=2.5, markersize=8, label="Recurrence Risk Score")
+        ax2.plot(
+            x_pos, 
+            merged["Recurrence_Risk"], 
+            color="#0F172A", 
+            marker="o", 
+            linewidth=2.5, 
+            markersize=8, 
+            label="Recurrence Risk Score"
+        )
+        
         ax2.set_ylabel("Recurrence Risk Score (Zero to 100)", color="#0F172A", fontweight="bold", fontsize=9)
         ax2.tick_params(axis="y", labelcolor="#0F172A")
         ax2.set_ylim(0, 115)
         
         for i, val in enumerate(merged["Recurrence_Risk"]):
-            ax2.text(x_pos[i], val + 3, f"{int(val)}", ha='center', va='bottom', color='#0F172A', fontweight='bold', fontsize=8)
+            ax2.text(
+                x_pos[i], 
+                val + 3, 
+                f"{int(val)}", 
+                ha='center', 
+                va='bottom', 
+                color='#0F172A', 
+                fontweight='bold', 
+                fontsize=8
+            )
 
         ax1.spines['top'].set_visible(False)
         ax2.spines['top'].set_visible(False)
@@ -353,7 +424,16 @@ def _build_impact_matrix_image(service_risk_df: pd.DataFrame) -> Optional[io.Byt
         
         lines_1, labels_1 = ax1.get_legend_handles_labels()
         lines_2, labels_2 = ax2.get_legend_handles_labels()
-        ax1.legend(lines_1 + lines_2, labels_1 + labels_2, loc='upper center', bbox_to_anchor=(0.5, -0.15), frameon=False, ncol=2, fontsize=8)
+        
+        ax1.legend(
+            lines_1 + lines_2, 
+            labels_1 + labels_2, 
+            loc='upper center', 
+            bbox_to_anchor=(0.5, -0.15), 
+            frameon=False, 
+            ncol=2, 
+            fontsize=8
+        )
         
         plt.gcf().subplots_adjust(bottom=0.25)
         plt.tight_layout()
@@ -376,20 +456,54 @@ def _build_macro_trend_image(history_df: pd.DataFrame) -> Optional[io.BytesIO]:
 
         fig, ax = plt.subplots(figsize=(6.2, 3.2), dpi=120)
 
-        ax.plot(df["display_date"], df["bvsi_score"], marker='o', linewidth=3.0, color='#0F172A', label='Global Stability (BVSI™)')
-        ax.plot(df["display_date"], df["debt_score"], marker='s', linewidth=2.0, color='#DC2626', linestyle='--', label='Structural Risk Debt™')
+        ax.plot(
+            df["display_date"], 
+            df["bvsi_score"], 
+            marker='o', 
+            linewidth=3.0, 
+            color='#0F172A', 
+            label='Global Stability (BVSI™)'
+        )
+        ax.plot(
+            df["display_date"], 
+            df["debt_score"], 
+            marker='s', 
+            linewidth=2.0, 
+            color='#DC2626', 
+            linestyle='--', 
+            label='Structural Risk Debt™'
+        )
 
         ax.set_ylim(0, 110)
         ax.spines['top'].set_visible(False)
         ax.spines['right'].set_visible(False)
         ax.set_ylabel("Index Score", fontweight='bold', color='#0F172A', fontsize=9)
 
-        plt.setp(ax.xaxis.get_majorticklabels(), rotation=0, ha='center', fontsize=8, fontweight='bold', color='#334155')
+        plt.setp(
+            ax.xaxis.get_majorticklabels(), 
+            rotation=0, 
+            ha='center', 
+            fontsize=8, 
+            fontweight='bold', 
+            color='#334155'
+        )
         plt.yticks(fontsize=9, color='#334155')
 
-        ax.set_title("Macro Trajectory: Stability vs. Debt", fontweight='bold', color='#0F172A', pad=15, fontsize=12)
+        ax.set_title(
+            "Macro Trajectory: Stability vs. Debt", 
+            fontweight='bold', 
+            color='#0F172A', 
+            pad=15, 
+            fontsize=12
+        )
 
-        ax.legend(frameon=False, loc='upper center', bbox_to_anchor=(0.5, -0.28), ncol=2, fontsize=9)
+        ax.legend(
+            frameon=False, 
+            loc='upper center', 
+            bbox_to_anchor=(0.5, -0.28), 
+            ncol=2, 
+            fontsize=9
+        )
         plt.tight_layout(rect=[0, 0.12, 1, 1])
 
         img = io.BytesIO()
@@ -410,21 +524,73 @@ def _build_micro_trend_image(history_df: pd.DataFrame) -> Optional[io.BytesIO]:
 
         fig, ax = plt.subplots(figsize=(6.2, 3.2), dpi=120)
 
-        ax.plot(df["display_date"], df["resilience_score"], marker='^', linewidth=2.0, color='#2563EB', alpha=0.8, label='Resilience')
-        ax.plot(df["display_date"], df["governance_score"], marker='d', linewidth=2.0, color='#059669', alpha=0.8, label='Governance')
-        ax.plot(df["display_date"], df["momentum_score"], marker='*', linewidth=2.0, color='#D97706', alpha=0.8, label='Momentum')
-        ax.plot(df["display_date"], df["debt_score"], marker='s', linewidth=2.0, color='#DC2626', linestyle=':', alpha=0.6, label='Risk Debt')
+        ax.plot(
+            df["display_date"], 
+            df["resilience_score"], 
+            marker='^', 
+            linewidth=2.0, 
+            color='#2563EB', 
+            alpha=0.8, 
+            label='Resilience'
+        )
+        ax.plot(
+            df["display_date"], 
+            df["governance_score"], 
+            marker='d', 
+            linewidth=2.0, 
+            color='#059669', 
+            alpha=0.8, 
+            label='Governance'
+        )
+        ax.plot(
+            df["display_date"], 
+            df["momentum_score"], 
+            marker='*', 
+            linewidth=2.0, 
+            color='#D97706', 
+            alpha=0.8, 
+            label='Momentum'
+        )
+        ax.plot(
+            df["display_date"], 
+            df["debt_score"], 
+            marker='s', 
+            linewidth=2.0, 
+            color='#DC2626', 
+            linestyle=':', 
+            alpha=0.6, 
+            label='Risk Debt'
+        )
 
         ax.set_ylim(0, 110)
         ax.spines['top'].set_visible(False)
         ax.spines['right'].set_visible(False)
 
-        plt.setp(ax.xaxis.get_majorticklabels(), rotation=0, ha='center', fontsize=8, fontweight='bold', color='#334155')
+        plt.setp(
+            ax.xaxis.get_majorticklabels(), 
+            rotation=0, 
+            ha='center', 
+            fontsize=8, 
+            fontweight='bold', 
+            color='#334155'
+        )
         plt.yticks(fontsize=9, color='#334155')
 
-        ax.set_title("Diagnostic Trajectory: Domain Breakdown", fontweight='bold', color='#0F172A', pad=15, fontsize=12)
+        ax.set_title(
+            "Diagnostic Trajectory: Domain Breakdown", 
+            fontweight='bold', 
+            color='#0F172A', 
+            pad=15, 
+            fontsize=12
+        )
 
-        ax.legend(frameon=False, loc='upper center', bbox_to_anchor=(0.5, -0.28), ncol=4, fontsize=9)
+        ax.legend(
+            frameon=False, 
+            loc='upper center', 
+            bbox_to_anchor=(0.5, -0.28), 
+            ncol=4, 
+            fontsize=9
+        )
         plt.tight_layout(rect=[0, 0.12, 1, 1])
 
         img = io.BytesIO()
@@ -503,8 +669,12 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
         story = []
 
         story.append(Paragraph("OSIL™ Executive Briefing", styles["ExecutiveTitle"]))
-        story.append(Paragraph(f"Operational Stability Intelligence Report for {tenant_name} | As of {as_of}", 
-                              styles["ExecutiveSubtitle"]))
+        story.append(
+            Paragraph(
+                f"Operational Stability Intelligence Report for {tenant_name} | As of {as_of}", 
+                styles["ExecutiveSubtitle"]
+            )
+        )
         
         metric_data = [
             ["BVSI™ Score", "Operating Posture", "Data Quality"],
@@ -547,12 +717,18 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
         weakest = min(domain_scores.items(), key=lambda x: float(x[1]))[0] if domain_scores else "Structural Risk Debt"
         
         imp_data = [
-            [Paragraph("Executive Insight", styles["TableHeader"]), 
-             Paragraph("Leadership Action", styles["TableHeader"])],
-            [Paragraph(f"<b>Strength:</b> {strongest}", styles["TableCell"]),
-             Paragraph("Leverage mature controls as the enterprise standard and expand successful patterns.", styles["TableCell"])],
-            [Paragraph(f"<b>Primary Exposure:</b> {weakest}", styles["TableCell"]),
-             Paragraph("Authorize immediate stabilization resourcing for services in the bottom quartile.", styles["TableCell"])],
+            [
+                Paragraph("Executive Insight", styles["TableHeader"]), 
+                Paragraph("Leadership Action", styles["TableHeader"])
+            ],
+            [
+                Paragraph(f"<b>Strength:</b> {strongest}", styles["TableCell"]),
+                Paragraph("Leverage mature controls as the enterprise standard and expand successful patterns.", styles["TableCell"])
+            ],
+            [
+                Paragraph(f"<b>Primary Exposure:</b> {weakest}", styles["TableCell"]),
+                Paragraph("Authorize immediate stabilization resourcing for services in the bottom quartile.", styles["TableCell"])
+            ],
         ]
         
         imp_table = Table(imp_data, colWidths=[2.0*inch, 5.0*inch])
@@ -611,9 +787,13 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
         
         radar_img = _build_radar_chart(domain_scores)
         
-        domain_rows = [[Paragraph("Domain", styles["TableHeader"]), 
-                        Paragraph("Score", styles["TableHeader"]), 
-                        Paragraph("Assessment", styles["TableHeader"])]]
+        domain_rows = [
+            [
+                Paragraph("Domain", styles["TableHeader"]), 
+                Paragraph("Score", styles["TableHeader"]), 
+                Paragraph("Assessment", styles["TableHeader"])
+            ]
+        ]
         
         domain_keys = ["Service Resilience", "Change Governance", "Structural Risk Debt™", "Reliability Momentum"]
         for key in domain_keys:
@@ -624,7 +804,10 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
             
             domain_rows.append([
                 Paragraph(key, styles["TableCell"]),
-                Paragraph(f"{score:.1f}", ParagraphStyle(name='score', parent=styles["TableCell"], textColor=score_color, fontName='Helvetica-Bold')),
+                Paragraph(
+                    f"{score:.1f}", 
+                    ParagraphStyle(name='score', parent=styles["TableCell"], textColor=score_color, fontName='Helvetica-Bold')
+                ),
                 Paragraph(assessment, styles["TableCellBold"])
             ])
         
@@ -695,10 +878,14 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
         story.append(Spacer(1, 16))
         
         if not sip_candidates.empty:
-            top3_data = [[Paragraph("Service", styles["TableHeader"]), 
-                         Paragraph("Focus Area", styles["TableHeader"]),
-                         Paragraph("Data Conf.", styles["TableHeader"]), 
-                         Paragraph("Mandate", styles["TableHeader"])]]
+            top3_data = [
+                [
+                    Paragraph("Service", styles["TableHeader"]), 
+                    Paragraph("Focus Area", styles["TableHeader"]),
+                    Paragraph("Data Conf.", styles["TableHeader"]), 
+                    Paragraph("Mandate", styles["TableHeader"])
+                ]
+            ]
             
             for idx, (_, row) in enumerate(sip_candidates.head(3).iterrows(), 1):
                 svc = str(row.get("Service", "Unknown"))
@@ -737,11 +924,15 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
             
             story.append(Spacer(1, 24))
             
-            sip_data = [[Paragraph("Service", styles["TableHeader"]), 
-                        Paragraph("Tier", styles["TableHeader"]),
-                        Paragraph("Focus / Theme", styles["TableHeader"]),
-                        Paragraph("Data Conf.", styles["TableHeader"]),
-                        Paragraph("Action", styles["TableHeader"])]]
+            sip_data = [
+                [
+                    Paragraph("Service", styles["TableHeader"]), 
+                    Paragraph("Tier", styles["TableHeader"]),
+                    Paragraph("Focus / Theme", styles["TableHeader"]),
+                    Paragraph("Data Conf.", styles["TableHeader"]),
+                    Paragraph("Action", styles["TableHeader"])
+                ]
+            ]
             
             for _, row in sip_candidates.iterrows():
                 svc = str(row.get("Service", ""))
@@ -785,13 +976,21 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
         if not automation_df.empty:
             story.append(Paragraph("The OSIL engine has identified specific workflows causing excessive manual toil. Deploy automated remediation scripts and orchestration workflows to eliminate this operational friction.", styles["ExecutiveBody"]))
             
-            auto_data = [[Paragraph("Target Workflow", styles["TableHeader"]), Paragraph("Type", styles["TableHeader"]), Paragraph("Wasted Hours", styles["TableHeader"])]]
+            auto_data = [
+                [
+                    Paragraph("Target Workflow", styles["TableHeader"]), 
+                    Paragraph("Type", styles["TableHeader"]), 
+                    Paragraph("Wasted Hours", styles["TableHeader"])
+                ]
+            ]
+            
             for _, row in automation_df.iterrows():
                 auto_data.append([
                     Paragraph(str(row.get("Target_Service", "")), styles["TableCellBold"]),
                     Paragraph(str(row.get("Automation_Type", "")), styles["TableCell"]),
                     Paragraph(str(row.get("Wasted_Hours", "")), styles["TableCellBold"])
                 ])
+                
             auto_table = Table(auto_data, colWidths=[3.0*inch, 2.5*inch, 1.5*inch])
             auto_table.setStyle(TableStyle([
                 ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#DC2626")),
@@ -847,10 +1046,14 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
             story.append(Spacer(1, 24))
 
         if not trust_gap_df.empty:
-            trust_data = [[Paragraph("Service", styles["TableHeader"]), 
-                           Paragraph("Critical Disruption<br/>(P1 and P2)", styles["TableHeader"]),
-                           Paragraph("Silent Friction<br/>(P3 to P5)", styles["TableHeader"]), 
-                           Paragraph("Friction Ratio", styles["TableHeader"])]]
+            trust_data = [
+                [
+                    Paragraph("Service", styles["TableHeader"]), 
+                    Paragraph("Critical Disruption<br/>(P1 and P2)", styles["TableHeader"]),
+                    Paragraph("Silent Friction<br/>(P3 to P5)", styles["TableHeader"]), 
+                    Paragraph("Friction Ratio", styles["TableHeader"])
+                ]
+            ]
             
             for _, row in trust_gap_df.iterrows():
                 svc = str(row.get("Service", ""))
@@ -940,20 +1143,27 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
             story.append(box_table)
             story.append(Spacer(1, 24))
 
+        # DYNAMIC RCA LEDGER
         if not rca_themes_df.empty:
-            rca_data = [[Paragraph("Service", styles["TableHeader"]), 
-                         Paragraph("Documented Root Cause Themes", styles["TableHeader"])]]
+            display_cols = [c for c in rca_themes_df.columns if c != "Problem_Count"]
+            
+            headers = [Paragraph(c.replace("_", " "), styles["TableHeader"]) for c in display_cols]
+            rca_data = [headers]
             
             for _, row in rca_themes_df.iterrows():
-                svc = str(row.get("Service", ""))
-                themes = str(row.get("Documented_Themes", ""))
+                row_data = [Paragraph(str(row.get(c, "")), styles["TableCell"]) for c in display_cols]
+                row_data[0] = Paragraph(str(row.get(display_cols[0], "")), styles["TableCellBold"])
+                rca_data.append(row_data)
                 
-                rca_data.append([
-                    Paragraph(svc, styles["TableCellBold"]),
-                    Paragraph(themes, styles["TableCell"])
-                ])
+            if len(display_cols) > 2:
+                col_widths = [1.5 * inch]
+                rem_width = (6.5 - 1.5) * inch / (len(display_cols) - 1)
+                for _ in range(1, len(display_cols)): 
+                    col_widths.append(rem_width)
+            else:
+                col_widths = [2.5*inch, 4.0*inch]
                 
-            rca_table = Table(rca_data, colWidths=[2.5*inch, 4.0*inch])
+            rca_table = Table(rca_data, colWidths=col_widths)
             rca_table.setStyle(TableStyle([
                 ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#0F172A")),
                 ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
