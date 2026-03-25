@@ -523,7 +523,11 @@ def _build_automation_strike_zone(inc: pd.DataFrame, req: pd.DataFrame) -> pd.Da
     rows = []
     
     if "Channel" in inc.columns:
-        alerts = inc[inc["Channel"].astype(str).str.lower().isin(["alert", "event", "system", "integration"])]
+        channel_series = inc["Channel"].astype(str).str.lower().str.strip()
+        
+        # 1. System Alerts -> Automated Remediation
+        alert_mask = channel_series.isin(["alert", "event", "system", "integration", "api"])
+        alerts = inc[alert_mask]
         if not alerts.empty:
             alert_grouped = alerts.groupby("Service_Anchor").size().reset_index(name="Volume")
             alert_grouped = alert_grouped.sort_values("Volume", ascending=False).head(3)
@@ -535,6 +539,22 @@ def _build_automation_strike_zone(inc: pd.DataFrame, req: pd.DataFrame) -> pd.Da
                     "Volume": r["Volume"],
                     "Wasted_Hours": round(r["Volume"] * 0.25, 1), 
                     "Mandate": "Implement AIOps capacity scaling or script automated service restarts."
+                })
+                
+        # 2. Manual Toil -> Tier 1 Deflection
+        manual_mask = ~alert_mask & (channel_series != "unknown") & (channel_series != "nan") & (channel_series != "")
+        manuals = inc[manual_mask]
+        if not manuals.empty:
+            manual_grouped = manuals.groupby("Service_Anchor").size().reset_index(name="Volume")
+            manual_grouped = manual_grouped.sort_values("Volume", ascending=False).head(3)
+            for _, r in manual_grouped.iterrows():
+                rows.append({
+                    "Target_Service": r["Service_Anchor"],
+                    "Automation_Type": "Tier 1 Deflection",
+                    "Signal_Source": "Manual Incident Intake",
+                    "Volume": r["Volume"],
+                    "Wasted_Hours": round(r["Volume"] * 0.5, 1), 
+                    "Mandate": "Deploy self-service workflows and conversational AI to deflect manual ticket creation."
                 })
                 
     if req is not None and not req.empty and "Item" in req.columns:
@@ -553,7 +573,7 @@ def _build_automation_strike_zone(inc: pd.DataFrame, req: pd.DataFrame) -> pd.Da
     df = pd.DataFrame(rows)
     if df.empty:
         return pd.DataFrame(columns=["Target_Service", "Automation_Type", "Signal_Source", "Volume", "Wasted_Hours", "Mandate"])
-    return df.sort_values("Wasted_Hours", ascending=False)
+    return df.sort_values("Wasted_Hours", ascending=False).head(6)
 
 def _build_rollup(inc: pd.DataFrame, changes: pd.DataFrame, probs: pd.DataFrame) -> pd.DataFrame:
     base = inc.groupby("Service_Anchor", dropna=False).agg(
