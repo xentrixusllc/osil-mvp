@@ -917,9 +917,10 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
                 ('BACKGROUND', (0, 1), (-1, 1), colors.HexColor("#FEF3C7"))
             ]))
             
-            story.append(Paragraph("Immediate Executive Actions", styles["SectionHeader"]))
-            story.append(Spacer(1, 8))
-            story.append(top3_table)
+            story.append(KeepTogether([
+                Paragraph("Immediate Executive Actions", styles["SectionHeader"]),
+                top3_table
+            ]))
             
             story.append(Spacer(1, 24))
             
@@ -963,9 +964,10 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
                 ('LINEBELOW', (0, i), (-1, i), 0.5, colors.HexColor("#E2E8F0")) for i in range(1, len(sip_data))
             ]))
             
-            story.append(Paragraph("Full SIP Portfolio", styles["SectionHeader"]))
-            story.append(Spacer(1, 8))
-            story.append(sip_table)
+            story.append(KeepTogether([
+                Paragraph("Full SIP Portfolio", styles["SectionHeader"]),
+                sip_table
+            ]))
 
         story.append(PageBreak())
         
@@ -1083,9 +1085,11 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
                 ('BACKGROUND', (0, i), (-1, i), colors.HexColor("#F8FAFC")) for i in range(2, len(trust_data), 2)
             ]))
             
-            story.append(Paragraph("Xentrixus Trust Gap Matrix (P1 to P5)", styles["SectionHeader"]))
-            story.append(Spacer(1, 8))
-            story.append(trust_table)
+            story.append(KeepTogether([
+                Paragraph("Xentrixus Trust Gap Matrix (P1 to P5)", styles["SectionHeader"]),
+                Spacer(1, 8),
+                trust_table
+            ]))
             
         story.append(PageBreak())
         
@@ -1141,6 +1145,8 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
             story.append(Spacer(1, 24))
 
         # DYNAMIC RCA LEDGER
+        story.append(PageBreak())
+        
         if not rca_themes_df.empty:
             display_cols = [c for c in rca_themes_df.columns if c != "Problem_Count"]
             
@@ -1170,7 +1176,6 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
             else:
                 col_widths = [2.5*inch, 4.0*inch]
                 
-            # Removed KeepTogether, Enabled repeatRows=1 to allow cross-page layout
             rca_table = Table(rca_data, colWidths=col_widths, repeatRows=1)
             rca_table.setStyle(TableStyle([
                 ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#0F172A")),
@@ -1188,11 +1193,11 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
                 ('BACKGROUND', (0, i), (-1, i), colors.HexColor("#F8FAFC")) for i in range(2, len(rca_data), 2)
             ]))
             
-            story.append(Paragraph("Structural Risk Debt™: Root Cause Ledger", styles["SectionHeader"]))
-            story.append(Spacer(1, 8))
+            story.append(Paragraph("Structural Risk Debt™: Root Cause Ledger", styles["PageHeader"]))
+            story.append(Spacer(1, 16))
             story.append(rca_table)
         else:
-            story.append(Paragraph("Structural Risk Debt™: Root Cause Ledger", styles["SectionHeader"]))
+            story.append(Paragraph("Structural Risk Debt™: Root Cause Ledger", styles["PageHeader"]))
             story.append(Paragraph("No thematic root cause data was detected in the active problem dataset. Ensure the Root Cause Description field is mapped and actively utilized by operational teams.", styles["ExecutiveBody"]))
 
 
