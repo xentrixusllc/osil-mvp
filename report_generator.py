@@ -917,10 +917,9 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
                 ('BACKGROUND', (0, 1), (-1, 1), colors.HexColor("#FEF3C7"))
             ]))
             
-            story.append(KeepTogether([
-                Paragraph("Immediate Executive Actions", styles["SectionHeader"]),
-                top3_table
-            ]))
+            story.append(Paragraph("Immediate Executive Actions", styles["SectionHeader"]))
+            story.append(Spacer(1, 8))
+            story.append(top3_table)
             
             story.append(Spacer(1, 24))
             
@@ -964,10 +963,9 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
                 ('LINEBELOW', (0, i), (-1, i), 0.5, colors.HexColor("#E2E8F0")) for i in range(1, len(sip_data))
             ]))
             
-            story.append(KeepTogether([
-                Paragraph("Full SIP Portfolio", styles["SectionHeader"]),
-                sip_table
-            ]))
+            story.append(Paragraph("Full SIP Portfolio", styles["SectionHeader"]))
+            story.append(Spacer(1, 8))
+            story.append(sip_table)
 
         story.append(PageBreak())
         
@@ -1085,10 +1083,9 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
                 ('BACKGROUND', (0, i), (-1, i), colors.HexColor("#F8FAFC")) for i in range(2, len(trust_data), 2)
             ]))
             
-            story.append(KeepTogether([
-                Paragraph("Xentrixus Trust Gap Matrix (P1 to P5)", styles["SectionHeader"]),
-                trust_table
-            ]))
+            story.append(Paragraph("Xentrixus Trust Gap Matrix (P1 to P5)", styles["SectionHeader"]))
+            story.append(Spacer(1, 8))
+            story.append(trust_table)
             
         story.append(PageBreak())
         
@@ -1151,8 +1148,18 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
             rca_data = [headers]
             
             for _, row in rca_themes_df.iterrows():
-                row_data = [Paragraph(str(row.get(c, "")), styles["TableCell"]) for c in display_cols]
-                row_data[0] = Paragraph(str(row.get(display_cols[0], "")), styles["TableCellBold"])
+                row_data = []
+                for idx, c in enumerate(display_cols):
+                    # TRUNCATION PROTOCOL: Prevent Single-Row Crash
+                    val_str = str(row.get(c, ""))
+                    if len(val_str) > 600:
+                        val_str = val_str[:600] + " ... [Truncated]"
+                        
+                    if idx == 0:
+                        row_data.append(Paragraph(val_str, styles["TableCellBold"]))
+                    else:
+                        row_data.append(Paragraph(val_str, styles["TableCell"]))
+                        
                 rca_data.append(row_data)
                 
             if len(display_cols) > 2:
@@ -1163,7 +1170,8 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
             else:
                 col_widths = [2.5*inch, 4.0*inch]
                 
-            rca_table = Table(rca_data, colWidths=col_widths)
+            # Removed KeepTogether, Enabled repeatRows=1 to allow cross-page layout
+            rca_table = Table(rca_data, colWidths=col_widths, repeatRows=1)
             rca_table.setStyle(TableStyle([
                 ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#0F172A")),
                 ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
@@ -1180,10 +1188,9 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
                 ('BACKGROUND', (0, i), (-1, i), colors.HexColor("#F8FAFC")) for i in range(2, len(rca_data), 2)
             ]))
             
-            story.append(KeepTogether([
-                Paragraph("Structural Risk Debt™: Root Cause Ledger", styles["SectionHeader"]),
-                rca_table
-            ]))
+            story.append(Paragraph("Structural Risk Debt™: Root Cause Ledger", styles["SectionHeader"]))
+            story.append(Spacer(1, 8))
+            story.append(rca_table)
         else:
             story.append(Paragraph("Structural Risk Debt™: Root Cause Ledger", styles["SectionHeader"]))
             story.append(Paragraph("No thematic root cause data was detected in the active problem dataset. Ensure the Root Cause Description field is mapped and actively utilized by operational teams.", styles["ExecutiveBody"]))
