@@ -450,12 +450,11 @@ def _problem_signals_by_service(
             elif not prob_svc.empty:
                 rca_fidelity = 0.5
                 
-            # TELEMETRY RICHNESS MODIFIER: Reward organizations mapping extra custom fields
+            # TELEMETRY RICHNESS MODIFIER
             if dynamic_cols:
                 valid_dynamic_cols = [c for c in dynamic_cols if c in prob_svc.columns]
                 if valid_dynamic_cols:
                     fill_rate = prob_svc[valid_dynamic_cols].replace("", np.nan).notna().mean().mean()
-                    # Boost fidelity by up to 25% for high operational discipline
                     rca_fidelity = min(1.0, rca_fidelity + (fill_rate * 0.25))
             
         missing_problem_penalty = (1.0 - linked_ratio) * min(incident_count * 0.08, 1.0)
@@ -520,7 +519,6 @@ def _build_rca_pareto(probs: pd.DataFrame) -> pd.DataFrame:
     if probs is None or probs.empty:
         return pd.DataFrame(columns=["Theme", "Frequency", "Cumulative_Pct"])
         
-    # Prefer structured Category/Code for the Pareto Chart, fallback to Text
     use_col = "Root_Cause_Text"
     if "Root_Cause_Category" in probs.columns:
         valid_cats = probs["Root_Cause_Category"].astype(str).str.strip().replace("nan", "")
@@ -584,7 +582,6 @@ def _build_automation_strike_zone(inc: pd.DataFrame, req: pd.DataFrame) -> pd.Da
     if "Channel" in inc.columns:
         channel_series = inc["Channel"].astype(str).str.lower().str.strip()
         
-        # 1. System Alerts -> Automated Remediation
         alert_mask = channel_series.isin(["alert", "event", "system", "integration", "api"])
         alerts = inc[alert_mask]
         
@@ -601,7 +598,6 @@ def _build_automation_strike_zone(inc: pd.DataFrame, req: pd.DataFrame) -> pd.Da
                     "Mandate": "Implement AIOps capacity scaling or script automated service restarts."
                 })
                 
-        # 2. Manual Toil -> Tier 1 Deflection
         manual_mask = ~alert_mask & (channel_series != "unknown") & (channel_series != "nan") & (channel_series != "")
         manuals = inc[manual_mask]
         
@@ -895,6 +891,29 @@ def _build_sip_candidates(service_risk_df: pd.DataFrame, roll: pd.DataFrame, top
         .reset_index(drop=True)
     )
 
+# THE ADDITIVE SVS TRANSLATION LAYER
+def _build_svs_scores(domain_scores: Dict[str, float], readiness_score: float) -> Dict[str, float]:
+    """Translates technical OSIL domain scores into ITIL 4 Service Value System Health Scores"""
+    
+    # 1. Governance (Change & Release Control)
+    gov = domain_scores.get("Change Governance", 0.0)
+    
+    # 2. Continual Improvement (Proactive Elimination of Debt)
+    ci = domain_scores.get("Structural Risk Debt™", 0.0)
+    
+    # 3. Practices (Execution, Process Hygiene, Resilience)
+    prac = round((domain_scores.get("Service Resilience", 0.0) + readiness_score) / 2.0, 1)
+    
+    # 4. Guiding Principles (Focus on Value / Trust Gap / Momentum)
+    gp = domain_scores.get("Reliability Momentum", 0.0)
+    
+    return {
+        "Governance": gov,
+        "Continual Improvement": ci,
+        "Practices": prac,
+        "Guiding Principles": gp
+    }
+
 def run_osil(
     incidents_df: pd.DataFrame,
     changes_df: Optional[pd.DataFrame] = None,
@@ -996,6 +1015,9 @@ def run_osil(
     
     readiness_score = round((readiness_checks / readiness_total) * 100, 1)
     
+    # Safe SVS Extraction
+    svs_scores = _build_svs_scores(domain_scores, readiness_score)
+    
     practice_parts = ["INCIDENT"]
     if changes_df is not None and not changes_df.empty:
         practice_parts.append("CHANGE")
@@ -1019,6 +1041,7 @@ def run_osil(
         "rca_themes_df": rca_themes_df.copy(),
         "rca_pareto_df": rca_pareto_df.copy(),
         "domain_scores": domain_scores,
+        "svs_scores": svs_scores, # Injected here safely
         "service_risk_df": service_risk_df.copy(),
         "top10": service_risk_df.copy(),
         "sip_view": sip_view.copy(),
