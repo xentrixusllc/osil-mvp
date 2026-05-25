@@ -6,10 +6,13 @@ def _lower_cols(df: pd.DataFrame) -> list[str]:
 def detect_practice_type(df: pd.DataFrame) -> str:
     """
     Evaluates columns to determine the operational dataset type.
+    Incident is checked first since it is the required dataset.
     """
     cols = _lower_cols(df)
     joined = " | ".join(cols)
 
+    # INCIDENT checked first — it is the required dataset and should
+    # take precedence over optional datasets that may share keywords.
     incident_signals = [
         "incident", "inc number", "number", "opened", "opened at", "priority",
         "reopened", "incident state"
@@ -35,6 +38,8 @@ def detect_practice_type(df: pd.DataFrame) -> str:
     def has_any(signals: list[str]) -> bool:
         return any(s in joined for s in signals)
 
+    if has_any(incident_signals):
+        return "incident"
     if has_any(change_signals):
         return "change"
     if has_any(problem_signals):
@@ -43,8 +48,6 @@ def detect_practice_type(df: pd.DataFrame) -> str:
         return "request"
     if has_any(telemetry_signals):
         return "telemetry"
-    if has_any(incident_signals):
-        return "incident"
 
     return "unknown"
 
