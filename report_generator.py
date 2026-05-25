@@ -1368,13 +1368,14 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
             headers = [Paragraph(c.replace("_", " "), styles["TableHeader"]) for c in display_cols]
             rca_data = [headers]
             
+            truncation_occurred = False
             for _, row in rca_themes_df.iterrows():
                 row_data = []
                 for idx, c in enumerate(display_cols):
-                    # TRUNCATION PROTOCOL
                     val_str = str(row.get(c, ""))
                     if len(val_str) > 600:
                         val_str = val_str[:600] + " ... [Truncated]"
+                        truncation_occurred = True
                         
                     if idx == 0:
                         row_data.append(Paragraph(val_str, styles["TableCellBold"]))
@@ -1411,6 +1412,13 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
             story.append(Paragraph("Structural Risk Debt™: Root Cause Ledger", styles["PageHeader"]))
             story.append(Spacer(1, 16))
             story.append(rca_table)
+            if truncation_occurred:
+                story.append(Spacer(1, 8))
+                story.append(Paragraph(
+                    "<b>Note:</b> Some root cause descriptions were truncated to 600 characters for layout safety. "
+                    "Full text is available in the source dataset.",
+                    styles["Caption"]
+                ))
         else:
             story.append(Paragraph("Structural Risk Debt™: Root Cause Ledger", styles["PageHeader"]))
             story.append(Paragraph("No thematic root cause data was detected in the active problem dataset. Ensure the Root Cause Description field is mapped and actively utilized by operational teams.", styles["ExecutiveBody"]))
