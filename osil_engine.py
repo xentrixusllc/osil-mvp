@@ -491,15 +491,25 @@ def _extract_rca_themes(probs: pd.DataFrame, dynamic_cols: List[str] = None) -> 
     if valid.empty:
         return pd.DataFrame(columns=cols)
 
+    def _safe_join(x):
+        items = []
+        for item in x.dropna().unique():
+            val = str(item).strip()
+            if val and val.lower() != "nan":
+                items.append(val)
+            if len(items) == 3:
+                break
+        return " | ".join(items)
+
     agg_dict = {
         "Problem_ID": "nunique",
-        "Root_Cause_Text": lambda x: " | ".join(x.astype(str).str.strip().unique()[:3])
+        "Root_Cause_Text": _safe_join
     }
     
     if dynamic_cols:
         for dc in dynamic_cols:
             if dc in valid.columns:
-                agg_dict[dc] = lambda x: " | ".join(x.astype(str).str.strip().replace("nan", "").unique()[:3])
+                agg_dict[dc] = _safe_join
 
     grouped = valid.groupby("Service_Anchor").agg(agg_dict).reset_index()
     
