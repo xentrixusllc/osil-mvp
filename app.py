@@ -274,10 +274,8 @@ REQUEST_MAPPING_SPEC = {
 }
 
 def safe_read_csv(file_or_path):
-    """Safely read CSV with multiple encoding attempts"""
     encodings = ["utf-8", "utf-8-sig", "cp1252", "latin1", "utf-16"]
     last_error = None
-
     for enc in encodings:
         try:
             if isinstance(file_or_path, str):
@@ -287,17 +285,14 @@ def safe_read_csv(file_or_path):
         except Exception as e:
             last_error = e
             continue
-
     raise ValueError(f"Unable to read CSV file. Unsupported encoding or malformed CSV. Last error: {last_error}")
 
 def _safe_read_csv(path: str) -> pd.DataFrame:
-    """Safe read with file existence check"""
     if os.path.exists(path):
         return safe_read_csv(path)
     return pd.DataFrame()
 
 def _load_demo_data() -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-    """Load demo data files"""
     inc = _safe_read_csv(DEMO_INCIDENTS)
     chg = _safe_read_csv(DEMO_CHANGES)
     prb = _safe_read_csv(DEMO_PROBLEMS)
@@ -305,20 +300,16 @@ def _load_demo_data() -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.Data
     return inc, chg, prb, req
 
 def _required_template_text() -> str:
-    """Get required column template"""
     cols = ",".join(INCIDENT_REQUIRED_COLUMNS)
     example = "Customer Portal,2026-01-05 08:00,P2,Closed,Network Services"
     return f"{cols}\n{example}"
 
 def _normalize_col_name(x: str) -> str:
-    """Normalize column name for matching"""
     return str(x).strip().lower().replace("_", " ").replace("-", " ")
 
 def _fuzzy_suggest(columns: List[str], aliases: List[str]) -> str:
-    """Fuzzy match column names"""
     if not columns:
         return "None"
-
     norm_to_original = {_normalize_col_name(c): c for c in columns}
     norm_columns = list(norm_to_original.keys())
 
@@ -346,7 +337,6 @@ def _fuzzy_suggest(columns: List[str], aliases: List[str]) -> str:
     return "None"
 
 def _render_mapping_ui(df: pd.DataFrame, spec: Dict[str, Dict[str, object]], title: str, key_prefix: str) -> Dict[str, Optional[str]]:
-    """Render column mapping UI"""
     st.markdown(f"#### {title}")
     st.caption("Auto detection is only a starting point. Confirm the best field for each canonical OSIL input before running analysis.")
 
@@ -371,19 +361,15 @@ def _render_mapping_ui(df: pd.DataFrame, spec: Dict[str, Dict[str, object]], tit
     return mapping
 
 def _apply_mapping(df: pd.DataFrame, mapping: Dict[str, Optional[str]]) -> pd.DataFrame:
-    """Apply column mapping to DataFrame"""
     out = df.copy()
     rename_map = {}
-
     for canonical, selected in mapping.items():
         if selected and selected in out.columns:
             rename_map[selected] = canonical
-
     out = out.rename(columns=rename_map)
     return out
 
 def _validate_mapping(mapping: Dict[str, Optional[str]], spec: Dict[str, Dict[str, object]], dataset_name: str) -> List[str]:
-    """Validate required mappings are present"""
     missing = []
     for canonical, cfg in spec.items():
         if cfg["required"] and not mapping.get(canonical):
@@ -391,32 +377,12 @@ def _validate_mapping(mapping: Dict[str, Optional[str]], spec: Dict[str, Dict[st
     return missing
 
 def plot_tenant_history(df: pd.DataFrame):
-    """Generate the primary executive macro trendline (BVSI vs Debt)"""
     df = df.copy()
     df["display_date"] = pd.to_datetime(df["run_date"]).dt.strftime('%m/%Y')
     
     fig, ax = plt.subplots(figsize=(8, 4.5), dpi=120)
-    
-    ax.plot(
-        df["display_date"], 
-        df["bvsi_score"], 
-        marker='o', 
-        linewidth=3.5, 
-        color='#0F172A', 
-        markersize=8, 
-        label='Global Stability (BVSI™)'
-    )
-    ax.plot(
-        df["display_date"], 
-        df["debt_score"], 
-        marker='s', 
-        linewidth=2.5, 
-        color='#DC2626', 
-        linestyle='--', 
-        alpha=0.8, 
-        markersize=6, 
-        label='Structural Risk Debt™'
-    )
+    ax.plot(df["display_date"], df["bvsi_score"], marker='o', linewidth=3.5, color='#0F172A', markersize=8, label='Global Stability (BVSI™)')
+    ax.plot(df["display_date"], df["debt_score"], marker='s', linewidth=2.5, color='#DC2626', linestyle='--', alpha=0.8, markersize=6, label='Structural Risk Debt™')
     
     ax.set_ylim(0, 110)
     ax.spines['top'].set_visible(False)
@@ -428,28 +394,18 @@ def plot_tenant_history(df: pd.DataFrame):
     plt.title("Macro Trajectory: Stability vs. Debt", fontweight='bold', color='#0F172A', pad=15, fontsize=12)
     
     for i, txt in enumerate(df["bvsi_score"]):
-        ax.annotate(
-            f"{txt:.0f}", 
-            (df["display_date"].iloc[i], df["bvsi_score"].iloc[i]), 
-            textcoords="offset points", 
-            xytext=(0,10), 
-            ha='center', 
-            fontweight='bold', 
-            color='#0F172A', 
-            fontsize=9
-        )
+        ax.annotate(f"{txt:.0f}", (df["display_date"].iloc[i], df["bvsi_score"].iloc[i]), 
+                    textcoords="offset points", xytext=(0,10), ha='center', fontweight='bold', color='#0F172A', fontsize=9)
                     
     ax.legend(frameon=False, loc='upper center', bbox_to_anchor=(0.5, -0.20), ncol=2, fontsize=9)
     plt.tight_layout(rect=[0, 0.05, 1, 1])
     return fig
 
 def plot_domain_history(df: pd.DataFrame):
-    """Generate the secondary diagnostic trendline (The 4 Domains)"""
     df = df.copy()
     df["display_date"] = pd.to_datetime(df["run_date"]).dt.strftime('%m/%Y')
     
     fig, ax = plt.subplots(figsize=(8, 4.5), dpi=120)
-    
     ax.plot(df["display_date"], df["resilience_score"], marker='^', linewidth=2.0, color='#2563EB', alpha=0.8, markersize=5, label='Resilience')
     ax.plot(df["display_date"], df["governance_score"], marker='d', linewidth=2.0, color='#059669', alpha=0.8, markersize=5, label='Governance')
     ax.plot(df["display_date"], df["momentum_score"], marker='*', linewidth=2.0, color='#D97706', alpha=0.8, markersize=6, label='Momentum')
@@ -468,10 +424,8 @@ def plot_domain_history(df: pd.DataFrame):
     return fig
 
 def heatmap_chart(hm: pd.DataFrame):
-    """Generate heatmap chart for Streamlit display"""
     fig = plt.figure(figsize=(12, 6), dpi=200) 
     ax = plt.gca()
-    
     im = ax.imshow(hm.values, aspect="auto", vmin=0, vmax=100, cmap="RdYlGn_r")
     
     ax.set_xticks(range(len(hm.columns)))
@@ -491,12 +445,10 @@ def heatmap_chart(hm: pd.DataFrame):
     cbar = plt.colorbar(im, ax=ax, fraction=0.03, pad=0.03)
     cbar.set_label("Risk Score", fontsize=11, fontweight='bold', color='#0F172A')
     cbar.ax.tick_params(labelsize=10)
-    
     plt.tight_layout()
     return fig
 
 def radar_chart(domain_scores: dict):
-    """Generate radar chart for Streamlit display"""
     labels = list(domain_scores.keys())
     values = [float(domain_scores[k]) for k in labels]
     angles = np.linspace(0, 2 * np.pi, len(labels), endpoint=False).tolist()
@@ -519,16 +471,13 @@ def radar_chart(domain_scores: dict):
     return fig
 
 def plot_pareto(df: pd.DataFrame):
-    """Generate locked numeric axis Pareto chart for Root Cause Themes"""
     fig, ax1 = plt.subplots(figsize=(8.5, 5.0), dpi=120)
-    
     labels = [textwrap.fill(str(x)[:22] + "..." if len(str(x)) > 22 else str(x), width=18) for x in df["Theme"]]
     x_pos = np.arange(len(df))
     
     ax1.bar(x_pos, df["Frequency"], color="#3B82F6", width=0.55)
     ax1.set_ylabel("Frequency of Root Cause", color="#0F172A", fontweight="bold", fontsize=9)
     ax1.tick_params(axis="y", labelcolor="#0F172A")
-    
     ax1.set_xticks(x_pos)
     ax1.set_xticklabels(labels, rotation=35, ha="right", fontsize=9)
 
@@ -540,26 +489,22 @@ def plot_pareto(df: pd.DataFrame):
     ax1.spines['top'].set_visible(False)
     ax2.spines['top'].set_visible(False)
     
-    plt.title("Eighty Twenty Rule: Top Structural Risk Themes", fontweight="bold", color="#0F172A", pad=15)
-    
+    plt.title("Eighty Twenty Rule: Top Structural Risk Themes", fontweight="bold", color='#0F172A', pad=15)
     plt.gcf().subplots_adjust(bottom=0.35)
     plt.tight_layout()
     return fig
 
 def plot_impact_matrix(service_risk_df: pd.DataFrame):
-    """Generate Dual Axis Chart for Disruption vs Recurrence using Service Risk Data directly"""
     if service_risk_df.empty or "Active_Disruption_P1_P2" not in service_risk_df.columns:
         fig, ax = plt.subplots(figsize=(7, 4.5))
         ax.text(0.5, 0.5, 'Insufficient Data for Impact Matrix', ha='center', va='center')
         return fig
 
     merged = service_risk_df.sort_values(by=["Active_Disruption_P1_P2", "Total_Service_Risk"], ascending=[False, False]).head(5).copy()
-    
     merged["Active_Disruption_P1_P2"] = pd.to_numeric(merged["Active_Disruption_P1_P2"], errors="coerce").fillna(0)
     merged["Recurrence_Risk"] = pd.to_numeric(merged["Recurrence_Risk"], errors="coerce").fillna(0)
         
     fig, ax1 = plt.subplots(figsize=(8.0, 5.0), dpi=120)
-    
     x_pos = np.arange(len(merged))
     labels = [textwrap.fill(str(x)[:20], width=12) for x in merged["Service"]]
     
@@ -626,19 +571,16 @@ def plot_impact_matrix(service_risk_df: pd.DataFrame):
 
     ax1.spines['top'].set_visible(False)
     ax2.spines['top'].set_visible(False)
-    
     plt.title("Executive Strike Zone: Top 5 Services (Disruption vs Recurrence)", fontweight="bold", color="#0F172A", pad=15)
     
     lines_1, labels_1 = ax1.get_legend_handles_labels()
     lines_2, labels_2 = ax2.get_legend_handles_labels()
     ax1.legend(lines_1 + lines_2, labels_1 + labels_2, loc='upper center', bbox_to_anchor=(0.5, -0.15), frameon=False, ncol=2, fontsize=9)
-    
     plt.gcf().subplots_adjust(bottom=0.25)
     plt.tight_layout()
     return fig
 
 def render_service_instability_leaders(service_risk_df: pd.DataFrame) -> None:
-    """Render service instability leaders section"""
     st.subheader("Service Instability Leaders (Top 5)")
     st.caption("Narrative view of the services currently driving the highest operational instability risk.")
 
@@ -1040,11 +982,13 @@ def main():
                 <div style="background-color: {c_plan}; padding: 12px; border-radius: 6px; text-align: center; color: white; font-weight: bold; font-size: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
                     Plan ({svc.get('Plan', 0.0):.1f})
                 </div>
+                
                 <div style="display: flex; gap: 10px; min-height: 180px;">
                     <div style="flex: 1; background-color: {c_eng}; padding: 12px; border-radius: 6px; display: flex; flex-direction: column; align-items: center; justify-content: center; color: white; font-weight: bold; font-size: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
                         <div>Engage</div>
                         <div style="font-size: 14px; font-weight: normal; margin-top: 4px;">({svc.get('Engage', 0.0):.1f})</div>
                     </div>
+                    
                     <div style="flex: 2; display: flex; flex-direction: column; gap: 10px;">
                         <div style="flex: 1; background-color: {c_dt}; border-radius: 6px; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; font-size: 15px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
                             Design & Transition ({svc.get('Design & Transition', 0.0):.1f})
@@ -1057,6 +1001,7 @@ def main():
                         </div>
                     </div>
                 </div>
+                
                 <div style="background-color: {c_imp}; padding: 12px; border-radius: 6px; text-align: center; color: white; font-weight: bold; font-size: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
                     Improve ({svc.get('Improve', 0.0):.1f})
                 </div>
@@ -1075,6 +1020,36 @@ def main():
         <b>Obtain/Build:</b> Blended indicator of deployment safety and artifact resilience.
         </div>
         """, unsafe_allow_html=True)
+        
+    # AUTOMATED REMEDIATION MANDATE
+    st.markdown("<br>", unsafe_allow_html=True)
+    st.subheader("Executive Remediation Mandate")
+    
+    weakest_svs = min(svs, key=svs.get)
+    svs_advice = {
+        "Governance": "Invest in policy enforcement automation and formalize change impact analysis protocols.",
+        "Continual Improvement": "Reallocate 20% of engineering capacity from feature development to technical debt paydown.",
+        "Practices": "Standardize assignment routing and enforce mandatory resolution code discipline.",
+        "Guiding Principles": "Conduct a value-stream mapping workshop to realign IT delivery with business outcome priorities."
+    }
+    
+    weakest_svc = min(svc, key=svc.get)
+    svc_advice = {
+        "Plan": "Immediate data audit required: current planning telemetry is incomplete or inaccurate.",
+        "Improve": "Implement a formal Problem Management loop to address the specific recurring themes identified in our Pareto analysis.",
+        "Engage": "Bridge the trust gap; implement proactive stakeholder communication for high-friction services.",
+        "Design & Transition": "Enforce mandatory Tier 1 change validation to stop release-driven instability.",
+        "Obtain/Build": "Formalize quality gates and automated testing in the build pipeline.",
+        "Deliver & Support": "Deploy shift-left knowledge articles and automated service restoration playbooks."
+    }
+
+    c1, c2 = st.columns(2)
+    with c1:
+        st.markdown(f"**SVS Focus:** {weakest_svs}")
+        st.info(svs_advice.get(weakest_svs, "Standard optimization required."))
+    with c2:
+        st.markdown(f"**SVC Focus:** {weakest_svc}")
+        st.warning(svc_advice.get(weakest_svc, "Review operational throughput."))
     # --- END SURGICAL INJECTION ---
 
     st.divider()
