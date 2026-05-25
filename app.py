@@ -998,7 +998,18 @@ def main():
     st.divider()
     st.subheader("ITIL 4 Service Value System Assessment")
     st.markdown("Translating technical friction into enterprise operating model health based on ITIL 4 principles.")
-    
+
+    with st.expander("What is the Service Value System and why does it matter?", expanded=False):
+        st.markdown("""
+        <div style="background-color: #F8FAFC; border-left: 4px solid #2563EB; padding: 16px; margin-bottom: 16px; border-radius: 4px;">
+            <p style="margin: 0; font-size: 13px; color: #334155; line-height: 1.6;">
+                <b>WHAT:</b> The ITIL 4 Service Value System is the governing operating model that determines how IT creates and protects business value. It assesses four pillars — <b>Governance</b> (leadership direction and change control), <b>Continual Improvement</b> (proactive elimination of technical debt), <b>Practices</b> (execution discipline and operational hygiene), and <b>Guiding Principles</b> (value-driven culture and automation maturity).<br><br>
+                <b>WHY:</b> These pillars represent the foundation of every service your business runs. When any pillar weakens, value erosion accelerates — projects slip, outages multiply, and technical debt compounds. Strong scores here mean IT is a strategic partner; weak scores mean IT is a liability consuming resources without delivering stable outcomes.<br><br>
+                <b>HOW:</b> Focus executive attention on the <b>lowest-scoring pillar first</b> — it is the bottleneck constraining all other value creation. Authorize targeted Service Improvement Programs, assign named ownership, and demand monthly score recovery until the pillar reaches green. Do not distribute investment evenly; attack the constraint.
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
+
     svs = results.get("svs_scores", {})
     if svs:
         sc1, sc2, sc3, sc4 = st.columns(4)
@@ -1019,7 +1030,18 @@ def main():
     st.markdown("<br>", unsafe_allow_html=True)
     st.subheader("ITIL 4 Service Value Chain (SVC)")
     st.markdown("Isolating operational friction into specific ITIL 4 value chain activities. **Green** (Controlled), **Orange** (Exposed), **Red** (Critical).")
-    
+
+    with st.expander("What is the Service Value Chain and how should leaders use it?", expanded=False):
+        st.markdown("""
+        <div style="background-color: #F8FAFC; border-left: 4px solid #059669; padding: 16px; margin-bottom: 16px; border-radius: 4px;">
+            <p style="margin: 0; font-size: 13px; color: #334155; line-height: 1.6;">
+                <b>WHAT:</b> The ITIL 4 Service Value Chain maps the six critical activities every service passes through — <b>Plan</b> (data readiness and strategy), <b>Engage</b> (stakeholder and intake management), <b>Design & Transition</b> (change governance and release safety), <b>Obtain/Build</b> (development and procurement), <b>Deliver & Support</b> (operational resilience and incident response), and <b>Improve</b> (continuous learning and debt reduction).<br><br>
+                <b>WHY:</b> Every business service your revenue depends on flows through this chain. A red or orange score at any stage means friction, risk, or failure is being injected directly into production services. Unlike the SVS which measures governance pillars, the SVC pinpoints <b>exactly where in the service lifecycle problems originate</b>.<br><br>
+                <b>HOW:</b> <b>Green</b> scores require standard monitoring — maintain current controls. <b>Orange</b> scores demand assigned ownership and a 30-day recovery plan with clear milestones. <b>Red</b> scores trigger immediate executive action — halt non-essential changes, activate crisis protocols, and redirect engineering resources until the activity stabilizes above 55.
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
+
     svc = results.get("svc_scores", {})
     if svc:
         def _get_svc_color(score):
