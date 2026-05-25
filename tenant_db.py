@@ -2,11 +2,12 @@
 import sqlite3
 import os
 from datetime import datetime
+from pathlib import Path
 from typing import Dict
 
 import pandas as pd
 
-DB_PATH = "osil_tenant_history.db"
+DB_PATH = str(Path(__file__).parent / "osil_tenant_history.db")
 
 def init_db() -> None:
     """Initialize the SQLite database and create the history table if it does not exist."""
