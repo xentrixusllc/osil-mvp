@@ -862,14 +862,35 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
             svs_intro = (
                 "Translating technical friction into enterprise operating model health based on ITIL 4 principles."
             )
+            svs_why = (
+                "<b>WHAT:</b> The ITIL 4 Service Value System is the governing operating model that determines how IT creates and protects business value. "
+                "It assesses four pillars &mdash; <b>Governance</b> (leadership direction and change control), <b>Continual Improvement</b> (proactive elimination of technical debt), "
+                "<b>Practices</b> (execution discipline and operational hygiene), and <b>Guiding Principles</b> (value-driven culture and automation maturity).<br/><br/>"
+                "<b>WHY:</b> These pillars represent the foundation of every service your business runs. When any pillar weakens, value erosion accelerates &mdash; projects slip, outages multiply, "
+                "and technical debt compounds. Strong scores mean IT is a strategic partner; weak scores mean IT is a liability consuming resources without delivering stable outcomes.<br/><br/>"
+                "<b>HOW:</b> Focus executive attention on the <b>lowest-scoring pillar first</b> &mdash; it is the bottleneck constraining all other value creation. "
+                "Authorize targeted Service Improvement Programs, assign named ownership, and demand monthly score recovery until the pillar reaches green. Do not distribute investment evenly; attack the constraint."
+            )
             
             svs_rows = [
                 [
-                    Paragraph("ITIL 4 SVS Pillar", styles["TableHeader"]), 
-                    Paragraph("Score", styles["TableHeader"]), 
+                    Paragraph("ITIL 4 SVS Pillar", styles["TableHeader"]),
+                    Paragraph("Score", styles["TableHeader"]),
                     Paragraph("Executive Interpretation", styles["TableHeader"])
                 ]
             ]
+
+            # Render SVS WHAT/WHY/HOW explainer box
+            svs_explainer_data = [[Paragraph(svs_why, styles["ExecutiveBody"])]]
+            svs_explainer_table = Table(svs_explainer_data, colWidths=[7.0*inch])
+            svs_explainer_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#EFF6FF')),
+                ('BOX', (0, 0), (-1, -1), 1, colors.HexColor('#2563EB')),
+                ('LEFTPADDING', (0, 0), (-1, -1), 12),
+                ('RIGHTPADDING', (0, 0), (-1, -1), 12),
+                ('TOPPADDING', (0, 0), (-1, -1), 12),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 12),
+            ]))
             
             svs_definitions = {
                 "Governance": "Evaluates enterprise release policies and change collision rates. High scores indicate strong leadership direction executing cleanly at the engineering layer.",
@@ -914,12 +935,23 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
                 Paragraph("ITIL 4 Service Value System Assessment", styles["SectionHeader"]),
                 Paragraph(svs_intro, styles["ExecutiveBody"]),
                 Spacer(1, 8),
+                svs_explainer_table,
+                Spacer(1, 12),
                 svs_table
             ]))
             
         # ADDED: SERVICE VALUE CHAIN DIAGRAM (PDF NATIVE)
         if svc_scores:
             svc_intro = "Isolating operational friction into specific ITIL 4 Service Value Chain activities. Green (Controlled), Orange (Exposed), Red (Critical)."
+            svc_why = (
+                "<b>WHAT:</b> The ITIL 4 Service Value Chain maps the six critical activities every service passes through &mdash; <b>Plan</b> (data readiness and strategy), "
+                "<b>Engage</b> (stakeholder and intake management), <b>Design &amp; Transition</b> (change governance and release safety), <b>Obtain/Build</b> (development and procurement), "
+                "<b>Deliver &amp; Support</b> (operational resilience and incident response), and <b>Improve</b> (continuous learning and debt reduction).<br/><br/>"
+                "<b>WHY:</b> Every business service your revenue depends on flows through this chain. A red or orange score at any stage means friction, risk, or failure is being injected "
+                "directly into production services. Unlike the SVS which measures governance pillars, the SVC pinpoints <b>exactly where in the service lifecycle problems originate</b>.<br/><br/>"
+                "<b>HOW:</b> <b>Green</b> scores require standard monitoring &mdash; maintain current controls. <b>Orange</b> scores demand assigned ownership and a 30-day recovery plan with clear milestones. "
+                "<b>Red</b> scores trigger immediate executive action &mdash; halt non-essential changes, activate crisis protocols, and redirect engineering resources until the activity stabilizes above 55."
+            )
             
             def _get_svc_pdf_color(score):
                 if score >= 70: return colors.HexColor("#059669") # Emerald Green
@@ -1009,9 +1041,24 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
             )
             
             story.append(Spacer(1, 24))
+
+            # Build SVC explainer box
+            svc_explainer_data = [[Paragraph(svc_why, styles["ExecutiveBody"])]]
+            svc_explainer_table = Table(svc_explainer_data, colWidths=[7.0*inch])
+            svc_explainer_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#ECFDF5')),
+                ('BOX', (0, 0), (-1, -1), 1, colors.HexColor('#059669')),
+                ('LEFTPADDING', (0, 0), (-1, -1), 12),
+                ('RIGHTPADDING', (0, 0), (-1, -1), 12),
+                ('TOPPADDING', (0, 0), (-1, -1), 12),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 12),
+            ]))
+
             story.append(KeepTogether([
                 Paragraph("ITIL 4 Service Value Chain (SVC)", styles["SectionHeader"]),
                 Paragraph(svc_intro, styles["ExecutiveBody"]),
+                Spacer(1, 8),
+                svc_explainer_table,
                 Spacer(1, 12),
                 svc_diagram,
                 Spacer(1, 16),
