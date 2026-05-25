@@ -25,10 +25,14 @@ st.set_page_config(
     layout="wide",
 )
 
+import os
+
+MASTER_PASSWORD = os.environ.get("OSIL_PASSWORD", "Xentrixus2026!")
+
 def check_password() -> bool:
     """Returns True if the user enters the correct master password."""
     def password_entered():
-        if st.session_state["password"] == "Xentrixus2026!":
+        if st.session_state["password"] == MASTER_PASSWORD:
             st.session_state["password_correct"] = True
             del st.session_state["password"]  
         else:
