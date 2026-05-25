@@ -1,4 +1,5 @@
 from __future__ import annotations
+import re
 from datetime import date
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -950,6 +951,32 @@ def run_osil(
     requests_df: Optional[pd.DataFrame] = None,
     dynamic_prb_cols: List[str] = None
 ) -> Dict[str, Any]:
+    """
+    Execute the full OSIL analysis pipeline.
+
+    Parameters
+    ----------
+    incidents_df : pd.DataFrame
+        Required incident data. Must contain at minimum Service/Service_Anchor,
+        Opened_Date, Priority, State, and Assignment_Group.
+    changes_df : pd.DataFrame, optional
+        Change request data for change governance analysis.
+    problems_df : pd.DataFrame, optional
+        Problem record data for structural risk debt analysis.
+    requests_df : pd.DataFrame, optional
+        Service request data for automation strike zone analysis.
+    dynamic_prb_cols : list[str], optional
+        Custom problem fields to inject for enhanced telemetry richness.
+
+    Returns
+    -------
+    dict
+        Complete OSIL results including bvsi, posture, domain_scores,
+        svc_scores, svs_scores, service_risk_df, top10, sip_view,
+        automation_df, trust_gap analysis, rca themes, readiness_score,
+        practice_type, anchor_used, as_of date, exec_text, and
+        trust_gap_narrative.
+    """
     
     inc, anchor_used = _prepare_incidents(incidents_df)
     chg = _prepare_changes(changes_df)
