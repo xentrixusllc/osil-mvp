@@ -659,6 +659,7 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
         svc_scores = payload.get("svc_scores", {}) or {} # ADDED SVC
         service_risk_df = _safe_df(payload.get("service_risk_top10"))
         sip_candidates = _safe_df(payload.get("sip_candidates"))
+        executive_action_plan = _safe_df(payload.get("executive_action_plan"))
         automation_df = _safe_df(payload.get("automation_df"))
         trust_gap_df = _safe_df(payload.get("trust_gap_df"))
         rca_themes_df = _safe_df(payload.get("rca_themes_df"))
@@ -755,6 +756,47 @@ def build_osil_pdf_report(payload: Dict[str, Any]) -> bytes:
         
         story.append(imp_table)
         story.append(Spacer(1, 20))
+
+        if not executive_action_plan.empty:
+            story.append(Paragraph("Executive Action Plan", styles["SectionHeader"]))
+            action_rows = [
+                [
+                    Paragraph("Priority", styles["TableHeader"]),
+                    Paragraph("Horizon", styles["TableHeader"]),
+                    Paragraph("Action", styles["TableHeader"]),
+                    Paragraph("Owner", styles["TableHeader"]),
+                    Paragraph("Cadence", styles["TableHeader"]),
+                ]
+            ]
+            for _, row in executive_action_plan.head(4).iterrows():
+                action_rows.append([
+                    Paragraph(_clean_text(row.get("Priority", "")), styles["TableCellBold"]),
+                    Paragraph(_clean_text(row.get("Horizon", "")), styles["TableCell"]),
+                    Paragraph(_clean_text(row.get("Executive_Action", "")), styles["TableCell"]),
+                    Paragraph(_clean_text(row.get("Owner", "")), styles["TableCell"]),
+                    Paragraph(_clean_text(row.get("Cadence", "")), styles["TableCell"]),
+                ])
+
+            action_table = Table(
+                action_rows,
+                colWidths=[0.65*inch, 0.9*inch, 3.0*inch, 1.35*inch, 1.1*inch],
+            )
+            action_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#0F172A")),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+                ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+                ('LEFTPADDING', (0, 0), (-1, -1), 8),
+                ('RIGHTPADDING', (0, 0), (-1, -1), 8),
+                ('TOPPADDING', (0, 0), (-1, -1), 8),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+            ] + [
+                ('LINEBELOW', (0, i), (-1, i), 0.5, colors.HexColor("#E2E8F0")) for i in range(1, len(action_rows))
+            ] + [
+                ('BACKGROUND', (0, i), (-1, i), colors.HexColor("#F8FAFC")) for i in range(1, len(action_rows), 2)
+            ]))
+            story.append(action_table)
+            story.append(Spacer(1, 16))
+
         story.append(Paragraph(f"Data Sources: {detected_dataset} | Classification: Confidential", styles["Caption"]))
 
         story.append(PageBreak())
