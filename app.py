@@ -25,9 +25,8 @@ st.set_page_config(
     layout="wide",
 )
 
-import os
-
-MASTER_PASSWORD = os.environ.get("OSIL_PASSWORD", "Xentrixus2026!")
+DEFAULT_MASTER_PASSWORD = "Xentrixus2026!"
+MASTER_PASSWORD = os.environ.get("OSIL_PASSWORD", DEFAULT_MASTER_PASSWORD)
 
 def check_password() -> bool:
     """Returns True if the user enters the correct master password."""
@@ -712,6 +711,7 @@ def _build_pdf_payload(results: dict, tenant_name: str, history_df: pd.DataFrame
         "as_of": results.get("as_of", ""),
         "executive_interpretation": results.get("exec_text", ""),
         "trust_gap_narrative": results.get("trust_gap_narrative", ""),
+        "executive_action_plan": results.get("executive_action_plan", pd.DataFrame()),
         "trust_gap_df": results.get("trust_gap_df", pd.DataFrame()),
         "rca_themes_df": results.get("rca_themes_df", pd.DataFrame()),
         "rca_pareto_df": results.get("rca_pareto_df", pd.DataFrame()),
@@ -742,13 +742,19 @@ def main():
             
         st.divider()
         st.markdown("#### System Administration")
-        if st.button("⚠️ Factory Reset Ledger", use_container_width=True):
-            import os
-            if os.path.exists("osil_tenant_history.db"):
-                os.remove("osil_tenant_history.db")
-                st.success("Database destroyed. Please refresh your browser.")
-            else:
-                st.info("Database is already clean.")
+        if MASTER_PASSWORD == DEFAULT_MASTER_PASSWORD:
+            st.warning("Default master key is active. Set OSIL_PASSWORD before using customer data.")
+
+        confirm_reset = st.checkbox("Confirm ledger reset", key="confirm_ledger_reset")
+        if confirm_reset:
+            if st.button("⚠️ Factory Reset Ledger", use_container_width=True):
+                if os.path.exists("osil_tenant_history.db"):
+                    os.remove("osil_tenant_history.db")
+                    st.success("Database destroyed. Please refresh your browser.")
+                else:
+                    st.info("Database is already clean.")
+        else:
+            st.caption("Check the confirmation box to enable ledger reset.")
 
     st.title(APP_TITLE)
     st.caption(APP_SUB)
@@ -997,6 +1003,12 @@ def main():
     st.divider()
     st.subheader("Executive Interpretation")
     st.write(results["exec_text"])
+
+    action_plan = results.get("executive_action_plan", pd.DataFrame())
+    if isinstance(action_plan, pd.DataFrame) and not action_plan.empty:
+        st.markdown("### Executive Action Plan")
+        st.caption("Prioritized response protocol generated from BVSI™, the weakest OSIL domain, and data readiness.")
+        st.dataframe(action_plan, use_container_width=True, hide_index=True)
     
     # --- START SURGICAL INJECTION: ITIL 4 SVS & SVC DASHBOARDS ---
     st.divider()
