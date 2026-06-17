@@ -538,7 +538,7 @@ def _build_rca_pareto(probs: pd.DataFrame) -> pd.DataFrame:
     if use_col not in probs.columns:
          return pd.DataFrame(columns=["Theme", "Frequency", "Cumulative_Pct"])
          
-    valid = probs[probs[use_col].astype(str).str.strip().replace("nan", "") != ""]
+    valid = probs[probs[use_col].astype(str).str.strip().replace("nan", "") != ""].copy()
     if valid.empty:
         return pd.DataFrame(columns=["Theme", "Frequency", "Cumulative_Pct"])
         
@@ -549,6 +549,99 @@ def _build_rca_pareto(probs: pd.DataFrame) -> pd.DataFrame:
     pareto["Cumulative_Pct"] = (pareto["Frequency"].cumsum() / pareto["Frequency"].sum() * 100).round(1)
     
     return pareto
+
+def _domain_action(domain: str) -> Dict[str, str]:
+    """Return executive action guidance for the lowest-scoring OSIL domain."""
+    if "Resilience" in domain:
+        return {
+            "Owner": "Head of Service Operations",
+            "Mandate": "Stabilize incident execution through runbook automation, reassignment controls, and stricter closure quality.",
+            "Success_Metric": "Reduce MTTR drag, reopen churn, and assignment churn in the next OSIL run.",
+        }
+    if "Governance" in domain:
+        return {
+            "Owner": "Change Advisory / Release Governance",
+            "Mandate": "Freeze non-essential changes on high-risk services until change collision and rollback signals recover.",
+            "Success_Metric": "Reduce change collision risk and failed-change rate below the orange threshold.",
+        }
+    if "Debt" in domain:
+        return {
+            "Owner": "Problem Management / Engineering Leads",
+            "Mandate": "Authorize a Structural Risk Debt paydown sprint focused on recurring services and incomplete RCA records.",
+            "Success_Metric": "Increase RCA fidelity and lower recurrence-driven problem gap risk.",
+        }
+    return {
+        "Owner": "CIO / Service Portfolio Leadership",
+        "Mandate": "Run an executive stability review across the service lifecycle and assign named owners for the weakest signals.",
+        "Success_Metric": "Raise Reliability Momentum above 70 or show month-over-month recovery.",
+    }
+
+def _build_executive_action_plan(
+    bvsi: float,
+    posture: str,
+    weakest_domain: str,
+    readiness_score: float,
+) -> pd.DataFrame:
+    """Create a concise leadership action plan from OSIL posture and domain signals."""
+    domain_action = _domain_action(weakest_domain)
+
+    if bvsi < 40:
+        posture_action = "Activate crisis protocol, establish a daily stabilization bridge, and pause non-emergency changes."
+        cadence = "Daily"
+    elif bvsi < 55:
+        posture_action = "Start executive intervention, halt high-risk perimeter changes, and fund emergency stabilization."
+        cadence = "Weekly"
+    elif bvsi < 70:
+        posture_action = "Launch targeted SIPs in the weakest domain with a 30-day recovery plan."
+        cadence = "Biweekly"
+    elif bvsi < 85:
+        posture_action = "Maintain operating controls and selectively invest in weak-domain SIPs."
+        cadence = "Monthly"
+    else:
+        posture_action = "Invest in scaling and resilience leverage while preserving current governance controls."
+        cadence = "Monthly"
+
+    rows = [
+        {
+            "Priority": "1",
+            "Horizon": "Now",
+            "Trigger": f"BVSI {bvsi:.1f}: {posture}",
+            "Executive_Action": posture_action,
+            "Owner": "CEO / CIO",
+            "Cadence": cadence,
+        },
+        {
+            "Priority": "2",
+            "Horizon": "Next 30 days",
+            "Trigger": f"Weakest domain: {weakest_domain}",
+            "Executive_Action": domain_action["Mandate"],
+            "Owner": domain_action["Owner"],
+            "Cadence": "Weekly until green",
+        },
+        {
+            "Priority": "3",
+            "Horizon": "Next OSIL run",
+            "Trigger": "Recovery proof required",
+            "Executive_Action": f"Measure success: {domain_action['Success_Metric']}",
+            "Owner": "OSIL Program Lead",
+            "Cadence": "Next reporting cycle",
+        },
+    ]
+
+    if readiness_score < 70:
+        rows.insert(
+            1,
+            {
+                "Priority": "1A",
+                "Horizon": "Now",
+                "Trigger": f"Data readiness {readiness_score:.1f}%",
+                "Executive_Action": "Enforce data hygiene before funding technical remediation for low-confidence services.",
+                "Owner": "ITSM Process Owner",
+                "Cadence": "Weekly",
+            },
+        )
+
+    return pd.DataFrame(rows)
 
 def _analyze_trust_gap(roll: pd.DataFrame) -> Tuple[pd.DataFrame, str]:
     if roll.empty or "high_urgency_count" not in roll.columns:
@@ -839,6 +932,7 @@ def _build_sip_candidates(service_risk_df: pd.DataFrame, roll: pd.DataFrame, top
                 "Suggested_Theme",
                 "SIP_Priority_Score",
                 "Priority_Label",
+                "Mandate",
                 "Why_Flagged",
                 "Data_Hygiene_Check",
             ]
@@ -880,10 +974,24 @@ def _build_sip_candidates(service_risk_df: pd.DataFrame, roll: pd.DataFrame, top
         if parts:
             return " + ".join(parts)
         return "multi factor stability exposure"
+
+    def _mandate(row: pd.Series) -> str:
+        if _safe_float(row.get("Change_Collision_Risk", 0)) >= 60:
+            return "Stabilize release controls and review recent changes before additional deployment."
+        if _safe_float(row.get("Problem_Gap_Risk", 0)) >= 60:
+            return "Open a funded root-cause remediation track and close RCA documentation gaps."
+        if _safe_float(row.get("Execution_Churn_Risk", 0)) >= 60:
+            return "Reduce resolver handoffs with clearer routing, ownership, and runbook automation."
+        if _safe_float(row.get("MTTR_Drag_Risk", 0)) >= 60:
+            return "Compress recovery time through escalation thresholds and automation of repeat fixes."
+        if _safe_float(row.get("Recurrence_Risk", 0)) >= 60:
+            return "Treat recurrence as structural debt and assign a service owner for permanent fix delivery."
+        return "Monitor through the next OSIL cycle and assign ownership if the score worsens."
         
     merged["Priority_Label"] = merged["SIP_Priority_Score"].apply(_label)
     merged["Suggested_Theme"] = merged["category"].fillna("Stability Improvement").astype(str)
     merged["Why_Flagged"] = merged.apply(_why, axis=1)
+    merged["Mandate"] = merged.apply(_mandate, axis=1)
     merged["Data_Hygiene_Check"] = merged["Data_Confidence"] 
     
     return (
@@ -894,6 +1002,7 @@ def _build_sip_candidates(service_risk_df: pd.DataFrame, roll: pd.DataFrame, top
                 "Suggested_Theme",
                 "SIP_Priority_Score",
                 "Priority_Label",
+                "Mandate",
                 "Why_Flagged",
                 "Data_Hygiene_Check",
             ]
@@ -1073,6 +1182,12 @@ def run_osil(
     
     svs_scores = _build_svs_scores(domain_scores, readiness_score)
     svc_scores = _build_svc_scores(domain_scores, readiness_score)
+    executive_action_plan = _build_executive_action_plan(
+        bvsi=bvsi,
+        posture=posture,
+        weakest_domain=weakest_domain,
+        readiness_score=readiness_score,
+    )
     
     practice_parts = ["INCIDENT"]
     if changes_df is not None and not changes_df.empty:
@@ -1093,6 +1208,7 @@ def run_osil(
         "as_of": as_of,
         "exec_text": exec_text,
         "trust_gap_narrative": trust_gap_narrative,
+        "executive_action_plan": executive_action_plan.copy(),
         "trust_gap_df": trust_gap_df.copy(),
         "rca_themes_df": rca_themes_df.copy(),
         "rca_pareto_df": rca_pareto_df.copy(),
